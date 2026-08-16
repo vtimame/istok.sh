@@ -1,0 +1,53 @@
+module s26.dev/istok-cli
+
+go 1.26.5
+
+require (
+	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/adrg/xdg v0.5.3
+	github.com/alecthomas/kong v1.16.1
+	github.com/creativeprojects/go-selfupdate v1.6.0
+	github.com/google/uuid v1.6.0
+	github.com/jedib0t/go-pretty/v6 v6.8.3
+	github.com/jotaen/kong-completion v0.0.14
+	github.com/mattn/go-sqlite3 v1.14.49
+	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/pressly/goose/v3 v3.27.3
+	go.uber.org/fx v1.24.0
+)
+
+require (
+	code.gitea.io/sdk/gitea v0.23.2 // indirect
+	github.com/42wim/httpsig v1.2.4 // indirect
+	github.com/davidmz/go-pageant v1.0.2 // indirect
+	github.com/go-fed/httpsig v1.1.0 // indirect
+	github.com/google/go-github/v86 v86.0.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
+	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/posener/complete v1.2.3 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/sethvargo/go-retry v0.4.0 // indirect
+	github.com/ulikunitz/xz v0.5.15 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	gitlab.com/gitlab-org/api/client-go v1.46.0 // indirect
+	go.uber.org/dig v1.19.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.26.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
