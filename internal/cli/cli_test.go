@@ -25,6 +25,7 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 		{"project", "list", "--help"},
 		{"task", "--help"},
 		{"task", "list", "--help"},
+		{"task", "show", "--help"},
 		{"completion", "zsh"},
 	} {
 		var output bytes.Buffer
@@ -50,23 +51,59 @@ func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 			t.Errorf("root help does not contain %q:\n%s", command, result)
 		}
 	}
-	for _, unexpected := range []string{"project show", "project list", "project rename", "task list", "--database"} {
+	for _, unexpected := range []string{"project show", "project list", "project rename", "task list", "task show", "--database"} {
 		if strings.Contains(result, unexpected) {
 			t.Errorf("root help unexpectedly contains %q:\n%s", unexpected, result)
 		}
 	}
 }
 
-func TestTaskHelpShowsOnlyListSubcommand(t *testing.T) {
+func TestTaskHelpShowsReadSubcommands(t *testing.T) {
 	result := executeHelp(t, "task", "--help")
 
 	if !strings.Contains(result, "task list") {
 		t.Errorf("task help does not contain list command:\n%s", result)
 	}
-	for _, unexpected := range []string{"task show"} {
-		if strings.Contains(result, unexpected) {
-			t.Errorf("task help unexpectedly contains %q:\n%s", unexpected, result)
+	if !strings.Contains(result, "task show") {
+		t.Errorf("task help does not contain show command:\n%s", result)
+	}
+}
+
+func TestTaskShowHelpContainsDatabaseAndArgumentFlags(t *testing.T) {
+	result := executeHelp(t, "task", "show", "--help")
+	compact := strings.Join(strings.Fields(result), " ")
+
+	for _, want := range []string{
+		"Show one task from the current project.",
+		"Project-scoped task number in the current project.",
+		"Path to the SQLite database",
+	} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("task show help does not contain %q:\n%s", want, result)
 		}
+	}
+}
+
+func TestTaskShowParseErrorDoesNotCreateDatabase(t *testing.T) {
+	dataDir := t.TempDir()
+	setXDGDataHome(t, dataDir)
+
+	for _, args := range [][]string{
+		{"task", "show"},
+		{"task", "show", "abc"},
+		{"task", "show", "-1"},
+		{"task", "show", "18446744073709551616"},
+	} {
+		var output bytes.Buffer
+		var errorOutput bytes.Buffer
+		err := ExecuteAt(context.Background(), args, strings.NewReader(""), &output, &errorOutput, t.TempDir())
+		if err == nil {
+			t.Fatalf("expected parse error for %q, got nil", args)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(dataDir, "istok", "istok.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database was unexpectedly created, stat error = %v", err)
 	}
 }
 

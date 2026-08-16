@@ -110,24 +110,77 @@ func (r *Repository) List(ctx context.Context, projectID string, options task.Li
 	return result, nil
 }
 
-func (r *Repository) activeBlockers(ctx context.Context, taskID string) ([]task.BlockerSummary, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT t.id,t.number,t.status,t.title FROM task_dependencies d JOIN tasks t ON t.id=d.blocker_task_id WHERE d.blocked_task_id=? AND t.deleted_at IS NULL AND t.status != 'done' ORDER BY t.number`, taskID)
+func (r *Repository) activeBlockers(ctx context.Context, taskID string) ([]task.TaskSummary, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT t.id,t.number,t.status,t.title,t.deleted_at FROM task_dependencies d JOIN tasks t ON t.id=d.blocker_task_id WHERE d.blocked_task_id=? AND t.deleted_at IS NULL AND t.status != 'done' ORDER BY t.number`, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("list active blockers: %w", err)
 	}
 	defer rows.Close()
 
-	var result []task.BlockerSummary
+	var result []task.TaskSummary
 	for rows.Next() {
-		var v task.BlockerSummary
-		if err := rows.Scan(&v.ID, &v.Number, &v.Status, &v.Title); err != nil {
+		v, err := scanTaskSummary(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan active blocker: %w", err)
 		}
 
 		result = append(result, v)
 	}
 
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active blockers: %w", err)
+	}
+
+	return result, nil
+}
+
+func (r *Repository) relatedTaskSummaries(ctx context.Context, taskID string, incoming bool) ([]task.TaskSummary, error) {
+	var query string
+	if incoming {
+		query = `SELECT t.id,t.number,t.status,t.title,t.deleted_at FROM task_dependencies d JOIN tasks t ON t.id=d.blocker_task_id WHERE d.blocked_task_id=?`
+	} else {
+		query = `SELECT t.id,t.number,t.status,t.title,t.deleted_at FROM task_dependencies d JOIN tasks t ON t.id=d.blocked_task_id WHERE d.blocker_task_id=?`
+	}
+	query += ` ORDER BY t.number,t.id`
+
+	rows, err := r.db.QueryContext(ctx, query, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list dependency task summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var result []task.TaskSummary
+	for rows.Next() {
+		v, err := scanTaskSummary(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate related task summaries: %w", err)
+	}
+
+	return result, nil
+}
+
+func scanTaskSummary(row scanner) (task.TaskSummary, error) {
+	var value task.TaskSummary
+	var deleted sql.NullString
+
+	if err := row.Scan(&value.ID, &value.Number, &value.Status, &value.Title, &deleted); err != nil {
+		return task.TaskSummary{}, fmt.Errorf("scan task summary: %w", err)
+	}
+	if deleted.Valid {
+		deletedAt, err := parseTime(deleted.String)
+		if err != nil {
+			return task.TaskSummary{}, fmt.Errorf("parse task summary deletion time: %w", err)
+		}
+		value.DeletedAt = deletedAt
+	}
+
+	return value, nil
 }
 
 func getTask(ctx context.Context, conn *sql.Conn, id string) (task.Task, error) {

@@ -1,6 +1,9 @@
 package task
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestUUIDv7ValidationRequiresCanonicalUUIDv7(t *testing.T) {
 	id, err := NewID()
@@ -32,5 +35,54 @@ func TestPatchAndTransitionsAreStorageIndependent(t *testing.T) {
 	}
 	if err := value.Unblock(); err != nil || value.Status != StatusOpen {
 		t.Fatalf("Unblock() = %v, status %s", err, value.Status)
+	}
+}
+
+func TestDerivedStatePrecedenceAndActiveBlockers(t *testing.T) {
+	deletedAt := time.Now()
+
+	for _, test := range []struct {
+		name          string
+		target        Task
+		activeRun     bool
+		blockers      []TaskSummary
+		expectedState EffectiveState
+	}{
+		{
+			name:          "done wins over inconsistent active run",
+			target:        Task{Status: StatusDone},
+			activeRun:     true,
+			expectedState: EffectiveStateDone,
+		},
+		{
+			name:          "active run",
+			target:        Task{Status: StatusOpen},
+			activeRun:     true,
+			blockers:      []TaskSummary{{Status: StatusOpen}},
+			expectedState: EffectiveStateInProgress,
+		},
+		{
+			name:          "persisted blocked",
+			target:        Task{Status: StatusBlocked},
+			expectedState: EffectiveStateBlocked,
+		},
+		{
+			name:          "active blocker",
+			target:        Task{Status: StatusOpen},
+			blockers:      []TaskSummary{{Status: StatusOpen}},
+			expectedState: EffectiveStateBlocked,
+		},
+		{
+			name:          "done and deleted blockers are inactive",
+			target:        Task{Status: StatusOpen},
+			blockers:      []TaskSummary{{Status: StatusDone}, {Status: StatusOpen, DeletedAt: &deletedAt}},
+			expectedState: EffectiveStateReady,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := DeriveState(test.target, test.activeRun, test.blockers); got != test.expectedState {
+				t.Fatalf("DeriveState() = %q, want %q", got, test.expectedState)
+			}
+		})
 	}
 }

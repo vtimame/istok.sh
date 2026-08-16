@@ -18,7 +18,7 @@ func TestTaskReadResolverShowResolvesProjectAndSelectsByProjectScopedNumber(t *t
 	}
 	resolver := newTaskReadResolver(projectService, taskService)
 
-	_, err := resolver.Show(context.Background(), "/tmp/cwd", taskShowCommand{Number: 3})
+	_, err := resolver.Show(context.Background(), "/tmp/cwd", TaskShowCommand{ID: 3})
 	if err != nil {
 		t.Fatalf("Show() = %v", err)
 	}

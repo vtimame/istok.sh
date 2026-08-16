@@ -163,33 +163,211 @@ func TestEmptyTaskListOutputsExactNoOpenTasksMessage(t *testing.T) {
 	}
 }
 
-func TestTaskShowCommandIsNotRegisteredYet(t *testing.T) {
-	result := executeHelp(t, "task", "--help")
-	if strings.Contains(result, "task show") {
-		t.Fatalf("task show help unexpectedly registered: %s", result)
+func TestTaskShowCommandOutputsDetailedTask(t *testing.T) {
+	root := t.TempDir()
+	otherRoot := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("create nested directory: %v", err)
+	}
+	database := filepath.Join(t.TempDir(), "istok.db")
+
+	initializedRoot := executeAt(t, root, database, "init", "--json")
+	initializedOther := executeAt(t, otherRoot, database, "init", "--json")
+
+	rootProjectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initializedRoot.output).Project.ID
+	otherProjectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initializedOther.output).Project.ID
+	if rootProjectID == otherProjectID {
+		t.Fatalf("separate roots resolved to the same project %q", rootProjectID)
 	}
 
-	var output bytes.Buffer
-	var errorOutput bytes.Buffer
-	err := ExecuteAt(context.Background(), []string{"task", "show", "1"}, strings.NewReader(""), &output, &errorOutput, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "unexpected argument") {
-		t.Fatalf("expected unsupported command error, got %v (%q)", err, output.String())
+	repository, _ := newTaskRepositoryForTest(t, database)
+	actor := task.ActorSnapshot{ID: "local-user", Kind: "user", Name: "Local User"}
+	ctx := context.Background()
+
+	excluded, err := repository.Create(ctx, task.CreateInput{ProjectID: otherProjectID, Title: "excluded other-project task"}, actor)
+	if err != nil {
+		t.Fatalf("create other-project task: %v", err)
+	}
+	target, err := repository.Create(ctx, task.CreateInput{
+		ProjectID:          rootProjectID,
+		Title:              "current target",
+		Description:        "target details",
+		AcceptanceCriteria: "target acceptance",
+		Notes:              "target notes",
+	}, actor)
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	blocker, err := repository.Create(ctx, task.CreateInput{ProjectID: rootProjectID, Title: "current blocker"}, actor)
+	if err != nil {
+		t.Fatalf("create blocker: %v", err)
+	}
+	dependent, err := repository.Create(ctx, task.CreateInput{ProjectID: rootProjectID, Title: "current dependent"}, actor)
+	if err != nil {
+		t.Fatalf("create dependent: %v", err)
+	}
+	target, err = repository.AddDependency(ctx, blocker.ID, target.ID, target.Revision, actor)
+	if err != nil {
+		t.Fatalf("add blocker dependency: %v", err)
+	}
+	_, err = repository.AddDependency(ctx, target.ID, dependent.ID, dependent.Revision, actor)
+	if err != nil {
+		t.Fatalf("add dependent dependency: %v", err)
+	}
+	target, err = repository.Comment(ctx, target.ID, target.Revision, "progress updated", actor)
+	if err != nil {
+		t.Fatalf("comment target: %v", err)
+	}
+
+	eventsBefore, err := repository.Events(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("list target events before show: %v", err)
+	}
+
+	result := executeAt(t, nested, database, "task", "show", strconv.FormatInt(target.Number, 10))
+	if result.err != nil {
+		t.Fatalf("task show: %v", result.err)
+	}
+
+	if target.Number != 1 || excluded.Number != 1 {
+		t.Fatalf("project-scoped numbers = target #%d, excluded #%d; want both #1", target.Number, excluded.Number)
+	}
+	if !strings.Contains(result.output, "Task #1\n") {
+		t.Fatalf("show output missing task header:\n%s", result.output)
+	}
+	if !strings.Contains(result.output, "State: BLOCKED\n") {
+		t.Fatalf("show output missing state:\n%s", result.output)
+	}
+	expectedRevision := "Revision: " + strconv.FormatInt(target.Revision, 10) + "\n"
+	if !strings.Contains(result.output, expectedRevision) {
+		t.Fatalf("show output missing revision %q:\n%s", expectedRevision, result.output)
+	}
+	for _, want := range []string{
+		"Title: current target",
+		"Description:\n", "target details",
+		"Acceptance criteria:\n", "target acceptance",
+		"Notes:\n", "target notes",
+		"Blockers:\n", "current blocker",
+		"Dependents:\n", "current dependent",
+		"Event history:\n", "commented", "progress updated",
+	} {
+		if !strings.Contains(result.output, want) {
+			t.Fatalf("show output missing %q:\n%s", want, result.output)
+		}
+	}
+	if strings.Contains(result.output, excluded.Title) {
+		t.Fatalf("show output leaked excluded project task:\n%s", result.output)
+	}
+	if strings.Contains(result.output, target.ID) {
+		t.Fatalf("show output exposes target UUID as human identity:\n%s", result.output)
+	}
+	if !strings.Contains(result.output, "#"+strconv.FormatInt(blocker.Number, 10)) {
+		t.Fatalf("show output missing blocker #%d:\n%s", blocker.Number, result.output)
+	}
+	if !strings.Contains(result.output, "#"+strconv.FormatInt(dependent.Number, 10)) {
+		t.Fatalf("show output missing dependent #%d:\n%s", dependent.Number, result.output)
+	}
+	if !strings.HasSuffix(result.output, "\n") {
+		t.Fatalf("show output does not end with newline:\n%s", result.output)
+	}
+	if strings.Contains(result.output, "\x1b[") {
+		t.Fatalf("show output contains ANSI escape sequence:\n%q", result.output)
+	}
+
+	refreshed, err := repository.Get(ctx, target.ID, false)
+	if err != nil {
+		t.Fatalf("Get(target) error = %v", err)
+	}
+	if refreshed.Revision != target.Revision {
+		t.Fatalf("show command mutated task: got revision %d, want %d", refreshed.Revision, target.Revision)
+	}
+	eventsAfter, err := repository.Events(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("list target events after show: %v", err)
+	}
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("show command mutated event history: before=%d after=%d", len(eventsBefore), len(eventsAfter))
 	}
 }
 
-func TestTaskCLICompletionIncludesListSubcommand(t *testing.T) {
+func TestTaskShowCommandNotFoundForMissingAndDeletedTasks(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	executeAt(t, root, database, "init", "--json")
+
+	result := executeAt(t, root, database, "task", "show", "1")
+	if task.ErrorCode(result.err) != task.CodeNotFound {
+		t.Fatalf("show missing task error = %v", result.err)
+	}
+
+	repository, _ := newTaskRepositoryForTest(t, database)
+	ctx := context.Background()
+	actor := task.ActorSnapshot{ID: "local-user", Kind: "user", Name: "Local User"}
+	value, err := repository.Create(ctx, task.CreateInput{ProjectID: mustProjectIDForCurrent(t, root, database), Title: "temporary"}, actor)
+	if err != nil {
+		t.Fatalf("create temporary task: %v", err)
+	}
+	value, err = repository.Delete(ctx, value.ID, value.Revision, actor)
+	if err != nil {
+		t.Fatalf("delete temporary task: %v", err)
+	}
+
+	result = executeAt(t, root, database, "task", "show", "1")
+	if task.ErrorCode(result.err) != task.CodeNotFound {
+		t.Fatalf("show deleted task error = %v", result.err)
+	}
+}
+
+func TestTaskShowRejectsZeroWithTypedError(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	executeAt(t, root, database, "init", "--json")
+
+	result := executeAt(t, root, database, "task", "show", "0")
+	if task.ErrorCode(result.err) != task.CodeInvalid {
+		t.Fatalf("show task 0 error = %v, want %s", result.err, task.CodeInvalid)
+	}
+}
+
+func TestTaskCLICompletionIncludesShowSubcommand(t *testing.T) {
 	options := completionSuggestionLines(t, "istok task ")
 
 	if len(options) == 0 {
 		t.Fatal("completion returned no suggestions")
 	}
+	gotList := false
+	gotShow := false
 	for _, option := range options {
-		if option == "list" {
-			return
+		switch option {
+		case "list":
+			gotList = true
+		case "show":
+			gotShow = true
 		}
 	}
+	if !gotList || !gotShow {
+		t.Fatalf("completion at \"istok task \" does not include list and show: %v", options)
+	}
+}
 
-	t.Fatalf("completion at \"istok task \" does not include list:\n%v", options)
+func mustProjectIDForCurrent(t *testing.T, cwd, database string) string {
+	t.Helper()
+	result := executeAt(t, cwd, database, "project", "show", "--json")
+	if result.err != nil {
+		t.Fatalf("project show for %q: %v", cwd, result.err)
+	}
+	return decodeJSONResult[struct {
+		ID string `json:"id"`
+	}](t, result.output).ID
 }
 
 func TestTaskListRendererStableBlockedBySorting(t *testing.T) {

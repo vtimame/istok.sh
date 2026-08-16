@@ -7,10 +7,6 @@ import (
 	"s26.dev/istok-cli/internal/task"
 )
 
-type taskShowCommand struct {
-	Number int64 `arg:"" required:"" help:"Task number in the current project."`
-}
-
 type taskProjectResolver interface {
 	Current(context.Context, string) (project.Project, error)
 }
@@ -27,7 +23,7 @@ type taskReadResolver struct {
 
 type taskReadAPI interface {
 	List(ctx context.Context, cwd string) ([]task.TaskListItem, error)
-	Show(ctx context.Context, cwd string, command taskShowCommand) (task.Show, error)
+	Show(ctx context.Context, cwd string, command TaskShowCommand) (task.Show, error)
 }
 
 func newTaskReadResolver(projects taskProjectResolver, tasks taskReadService) taskReadAPI {
@@ -45,7 +41,7 @@ func (r taskReadResolver) List(ctx context.Context, cwd string) ([]task.TaskList
 	})
 }
 
-func (r taskReadResolver) Show(ctx context.Context, cwd string, command taskShowCommand) (task.Show, error) {
+func (r taskReadResolver) Show(ctx context.Context, cwd string, command TaskShowCommand) (task.Show, error) {
 	current, err := r.projects.Current(ctx, cwd)
 	if err != nil {
 		return task.Show{}, err
@@ -53,6 +49,6 @@ func (r taskReadResolver) Show(ctx context.Context, cwd string, command taskShow
 
 	return r.tasks.Show(ctx, task.Selector{
 		ProjectID: current.ID,
-		Number:    command.Number,
+		Number:    command.ID,
 	}, false)
 }

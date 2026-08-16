@@ -15,6 +15,28 @@ import (
 )
 
 func runTaskList(ctx context.Context, database, cwd string, output io.Writer) error {
+	return runTaskRead(ctx, database, output, func(resolver taskReadAPI) (string, error) {
+		read, err := resolver.List(ctx, cwd)
+		if err != nil {
+			return "", err
+		}
+
+		return humanTaskRenderer{}.RenderTaskList(read), nil
+	})
+}
+
+func runTaskShow(ctx context.Context, command TaskShowCommand, cwd string, output io.Writer) error {
+	return runTaskRead(ctx, command.Database, output, func(resolver taskReadAPI) (string, error) {
+		read, err := resolver.Show(ctx, cwd, command)
+		if err != nil {
+			return "", err
+		}
+
+		return humanTaskRenderer{}.RenderTaskShow(read), nil
+	})
+}
+
+func runTaskRead(ctx context.Context, database string, output io.Writer, run func(taskReadAPI) (string, error)) error {
 	var resolver taskReadAPI
 
 	app := fx.New(
@@ -29,7 +51,8 @@ func runTaskList(ctx context.Context, database, cwd string, output io.Writer) er
 		return fmt.Errorf("start task application: %w", err)
 	}
 
-	read, err := resolver.List(ctx, cwd)
+	rendered, runErr := run(resolver)
+
 	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -37,11 +60,10 @@ func runTaskList(ctx context.Context, database, cwd string, output io.Writer) er
 	if stopErr != nil {
 		stopErr = fmt.Errorf("stop task application: %w", stopErr)
 	}
-	if err != nil || stopErr != nil {
-		return errors.Join(err, stopErr)
+	if runErr != nil || stopErr != nil {
+		return errors.Join(runErr, stopErr)
 	}
 
-	table := taskListTableRenderer{}.RenderTaskList(read)
-	_, writeErr := fmt.Fprint(output, table)
-	return errors.Join(writeErr, stopErr)
+	_, writeErr := fmt.Fprint(output, rendered)
+	return writeErr
 }

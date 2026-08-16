@@ -77,7 +77,18 @@ func (s *Service) Show(ctx context.Context, selector task.Selector, deleted bool
 		return task.Show{}, err
 	}
 
-	return s.repository.Show(ctx, selector, deleted)
+	value, err := s.repository.Show(ctx, selector, deleted)
+	if err != nil {
+		return task.Show{}, err
+	}
+
+	active, err := s.runs.HasActiveRun(ctx, value.Task.ID)
+	if err != nil {
+		return task.Show{}, fmt.Errorf("check active run for task %q: %w", value.Task.ID, err)
+	}
+
+	value.HasActiveRun = active
+	return value, nil
 }
 
 func (s *Service) Ready(ctx context.Context, projectID string) ([]task.TaskListItem, error) {

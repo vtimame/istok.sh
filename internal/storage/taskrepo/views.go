@@ -52,11 +52,21 @@ func (r *Repository) Show(ctx context.Context, selector task.Selector, includeDe
 	if err != nil {
 		return task.Show{}, err
 	}
+	blockers, err := r.relatedTaskSummaries(ctx, value.ID, true)
+	if err != nil {
+		return task.Show{}, err
+	}
+	dependents, err := r.relatedTaskSummaries(ctx, value.ID, false)
+	if err != nil {
+		return task.Show{}, err
+	}
 
 	return task.Show{
-		Task:     value,
-		Events:   events,
-		Incoming: incoming,
-		Outgoing: outgoing,
+		Task:       value,
+		Events:     events,
+		Incoming:   incoming,
+		Outgoing:   outgoing,
+		Blockers:   blockers,
+		Dependents: dependents,
 	}, nil
 }

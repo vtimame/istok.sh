@@ -11,11 +11,16 @@ import (
 )
 
 type fakeRepository struct {
-	value      task.Task
-	values     map[string]task.Task
-	deleteCall bool
-	addCall    bool
-	listValues []task.TaskListItem
+	value        task.Task
+	values       map[string]task.Task
+	deleteCall   bool
+	addCall      bool
+	listValues   []task.TaskListItem
+	showValue    task.Show
+	showErr      error
+	showCalled   bool
+	showSelector task.Selector
+	showDeleted  bool
 }
 
 func (r *fakeRepository) unexpected() { panic("unexpected repository call") }
@@ -63,9 +68,11 @@ func (r *fakeRepository) List(context.Context, string, task.ListOptions) ([]task
 	r.unexpected()
 	return nil, nil
 }
-func (r *fakeRepository) Show(context.Context, task.Selector, bool) (task.Show, error) {
-	r.unexpected()
-	return task.Show{}, nil
+func (r *fakeRepository) Show(_ context.Context, selector task.Selector, includeDeleted bool) (task.Show, error) {
+	r.showCalled = true
+	r.showSelector = selector
+	r.showDeleted = includeDeleted
+	return r.showValue, r.showErr
 }
 func (r *fakeRepository) Ready(context.Context, string) ([]task.TaskListItem, error) {
 	r.unexpected()
@@ -129,6 +136,42 @@ func TestListReturnsActiveRunInspectorErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), taskID) {
 		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestShowSetsActiveRunStateInResult(t *testing.T) {
+	projectID := mustTaskID(t)
+	taskID := mustTaskID(t)
+	repository := &fakeRepository{
+		showValue: task.Show{Task: task.Task{ID: taskID, ProjectID: projectID}},
+	}
+	service := NewService(repository, activeRunsByID{taskID: true})
+
+	show, err := service.Show(context.Background(), task.Selector{ProjectID: projectID, ID: taskID}, false)
+	if err != nil {
+		t.Fatalf("Show() error = %v", err)
+	}
+	if !show.HasActiveRun {
+		t.Fatalf("Show() = %#v", show)
+	}
+	if !repository.showCalled || repository.showSelector.ID != taskID || repository.showDeleted {
+		t.Fatalf("Show() selector=%#v includeDeleted=%t called=%t", repository.showSelector, repository.showDeleted, repository.showCalled)
+	}
+}
+
+func TestShowReturnsActiveRunInspectorErrorWithTaskID(t *testing.T) {
+	projectID := mustTaskID(t)
+	taskID := mustTaskID(t)
+	inspectErr := errors.New("inspector unavailable")
+	repository := &fakeRepository{showValue: task.Show{Task: task.Task{ID: taskID, ProjectID: projectID}}}
+	service := NewService(repository, runInspectorError{err: inspectErr})
+
+	_, err := service.Show(context.Background(), task.Selector{ProjectID: projectID, ID: taskID}, false)
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("Show() error = %v", err)
+	}
+	if !strings.Contains(err.Error(), taskID) {
+		t.Fatalf("Show() error = %v", err)
 	}
 }
 

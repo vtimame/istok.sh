@@ -3,6 +3,7 @@ package taskrepo
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -202,6 +203,223 @@ func TestListDoesNotDeadlockOnSingleConnection(t *testing.T) {
 	}
 	if _, err = repo.List(ctx, p.ID, task.ListOptions{}); err != nil {
 		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestShowIncludesDoneAndDeletedDependencySummariesAndRawDependencies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	repo, _, p := newTaskRepository(t)
+	repo.db.SetMaxOpenConns(1)
+
+	target, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "target"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openBlocker, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "open blocker"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doneBlocker, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "done blocker"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedBlocker, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "deleted blocker"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openDependent, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "open dependent"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doneDependent, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "done dependent"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedDependent, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "deleted dependent"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = repo.db.ExecContext(ctx, `UPDATE tasks SET status='done' WHERE id=?`, doneBlocker.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err = repo.AddDependency(ctx, openBlocker.ID, target.ID, target.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = repo.AddDependency(ctx, doneBlocker.ID, target.ID, target.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = repo.AddDependency(ctx, deletedBlocker.ID, target.ID, target.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err = repo.db.ExecContext(ctx, `UPDATE tasks SET deleted_at=? WHERE id=?`, deletedAt, deletedBlocker.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = repo.AddDependency(ctx, target.ID, openDependent.ID, openDependent.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.AddDependency(ctx, target.ID, doneDependent.ID, doneDependent.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.AddDependency(ctx, target.ID, deletedDependent.ID, deletedDependent.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Update dependent terminal statuses so summary state rendering and status filtering are meaningful.
+	if _, err = repo.db.ExecContext(ctx, `UPDATE tasks SET status='done' WHERE id=?`, doneDependent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.db.ExecContext(ctx, `UPDATE tasks SET deleted_at=? WHERE id=?`, deletedAt, deletedDependent.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err = repo.Comment(ctx, target.ID, target.Revision, "observer comment", actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	show, err := repo.Show(ctx, task.Selector{ProjectID: p.ID, ID: target.ID}, false)
+	if err != nil {
+		t.Fatalf("Show()=%#v, %v", show, err)
+	}
+
+	if len(show.Incoming) != 3 {
+		t.Fatalf("incoming dependency count = %d, want 3", len(show.Incoming))
+	}
+	if len(show.Outgoing) != 3 {
+		t.Fatalf("outgoing dependency count = %d, want 3", len(show.Outgoing))
+	}
+	if len(show.Blockers) != 3 {
+		t.Fatalf("blocker summary count = %d, want 3", len(show.Blockers))
+	}
+	if len(show.Dependents) != 3 {
+		t.Fatalf("dependent summary count = %d, want 3", len(show.Dependents))
+	}
+
+	incoming := map[string]struct{}{
+		openBlocker.ID:    {},
+		doneBlocker.ID:    {},
+		deletedBlocker.ID: {},
+	}
+	for _, dependency := range show.Incoming {
+		delete(incoming, dependency.BlockerTaskID)
+	}
+	if len(incoming) != 0 {
+		t.Fatalf("Show() outgoing raw dependencies misses blockers: %#v", incoming)
+	}
+
+	outgoing := map[string]struct{}{
+		openDependent.ID:    {},
+		doneDependent.ID:    {},
+		deletedDependent.ID: {},
+	}
+	for _, dependency := range show.Outgoing {
+		delete(outgoing, dependency.BlockedTaskID)
+	}
+	if len(outgoing) != 0 {
+		t.Fatalf("Show() incoming raw dependencies misses dependents: %#v", outgoing)
+	}
+
+	blockerNumbers := make([]int64, len(show.Blockers))
+	for index, blocker := range show.Blockers {
+		blockerNumbers[index] = blocker.Number
+	}
+	if !sort.SliceIsSorted(blockerNumbers, func(i, j int) bool { return blockerNumbers[i] < blockerNumbers[j] }) {
+		t.Fatalf("blocker summaries are unsorted: %#v", blockerNumbers)
+	}
+
+	dependentNumbers := make([]int64, len(show.Dependents))
+	for index, dependent := range show.Dependents {
+		dependentNumbers[index] = dependent.Number
+	}
+	if !sort.SliceIsSorted(dependentNumbers, func(i, j int) bool { return dependentNumbers[i] < dependentNumbers[j] }) {
+		t.Fatalf("dependent summaries are unsorted: %#v", dependentNumbers)
+	}
+
+	if len(show.Events) < 5 {
+		t.Fatalf("show event count = %d, want at least 5", len(show.Events))
+	}
+	if show.Events[0].Type != "created" {
+		t.Fatalf("first event type = %s, want created", show.Events[0].Type)
+	}
+	if show.Events[len(show.Events)-1].Type != "commented" {
+		t.Fatalf("last event type = %s, want commented", show.Events[len(show.Events)-1].Type)
+	}
+
+	hasDoneBlocker := false
+	hasDeletedBlocker := false
+	for _, blocker := range show.Blockers {
+		if blocker.ID == doneBlocker.ID {
+			if blocker.Status != task.StatusDone || blocker.Title != doneBlocker.Title {
+				t.Fatalf("done blocker summary = %#v", blocker)
+			}
+			hasDoneBlocker = true
+		}
+		if blocker.ID == deletedBlocker.ID {
+			if blocker.DeletedAt == nil || blocker.Title != deletedBlocker.Title {
+				t.Fatalf("deleted blocker summary = %#v", blocker)
+			}
+			hasDeletedBlocker = true
+		}
+	}
+	if !hasDoneBlocker || !hasDeletedBlocker {
+		t.Fatalf("show blockers missing expected statuses: done=%t deleted=%t", hasDoneBlocker, hasDeletedBlocker)
+	}
+
+	hasDeletedDependent := false
+	hasDoneDependent := false
+	for _, dependent := range show.Dependents {
+		if dependent.ID == doneDependent.ID {
+			if dependent.Status != task.StatusDone || dependent.Title != doneDependent.Title {
+				t.Fatalf("done dependent summary = %#v", dependent)
+			}
+			hasDoneDependent = true
+		}
+		if dependent.ID == deletedDependent.ID {
+			if dependent.DeletedAt == nil || dependent.Title != deletedDependent.Title {
+				t.Fatalf("deleted dependent summary = %#v", dependent)
+			}
+			hasDeletedDependent = true
+		}
+	}
+	if !hasDoneDependent || !hasDeletedDependent {
+		t.Fatalf("show dependents missing expected statuses: done=%t deleted=%t", hasDoneDependent, hasDeletedDependent)
+	}
+}
+
+func TestShowDoesNotDeadlockOnSingleConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	repo, _, p := newTaskRepository(t)
+	repo.db.SetMaxOpenConns(1)
+
+	target, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "target"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := repo.Create(ctx, task.CreateInput{ProjectID: p.ID, Title: "blocker"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = repo.AddDependency(ctx, blocker.ID, target.ID, target.Revision, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.Show(ctx, task.Selector{ProjectID: p.ID, ID: target.ID}, false); err != nil {
+		t.Fatalf("Show() error = %v", err)
 	}
 }
 

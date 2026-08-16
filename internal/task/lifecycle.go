@@ -114,12 +114,15 @@ type Dependency struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-type BlockerSummary struct {
-	ID     string `json:"id"`
-	Number int64  `json:"number"`
-	Status Status `json:"status"`
-	Title  string `json:"title"`
+type TaskSummary struct {
+	ID        string     `json:"id"`
+	Number    int64      `json:"number"`
+	Status    Status     `json:"status"`
+	Title     string     `json:"title"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
+
+type BlockerSummary = TaskSummary
 
 type ListOptions struct {
 	Statuses       []Status
@@ -159,9 +162,45 @@ type TaskListItem struct {
 	ActiveBlockers []BlockerSummary `json:"active_blockers,omitempty"`
 }
 
+type EffectiveState string
+
+const (
+	EffectiveStateReady      EffectiveState = "ready"
+	EffectiveStateInProgress EffectiveState = "in_progress"
+	EffectiveStateBlocked    EffectiveState = "blocked"
+	EffectiveStateDone       EffectiveState = "done"
+)
+
+func DeriveState(target Task, hasActiveRun bool, blockers []TaskSummary) EffectiveState {
+	if target.Status == StatusDone {
+		return EffectiveStateDone
+	}
+	if hasActiveRun {
+		return EffectiveStateInProgress
+	}
+	if target.Status == StatusBlocked || hasActiveBlocker(blockers) {
+		return EffectiveStateBlocked
+	}
+
+	return EffectiveStateReady
+}
+
+func hasActiveBlocker(blockers []TaskSummary) bool {
+	for _, blocker := range blockers {
+		if blocker.DeletedAt == nil && blocker.Status != StatusDone {
+			return true
+		}
+	}
+
+	return false
+}
+
 type Show struct {
-	Task     Task         `json:"task"`
-	Events   []Event      `json:"events"`
-	Incoming []Dependency `json:"incoming"`
-	Outgoing []Dependency `json:"outgoing"`
+	Task         Task          `json:"task"`
+	Events       []Event       `json:"events"`
+	Incoming     []Dependency  `json:"incoming"`
+	Outgoing     []Dependency  `json:"outgoing"`
+	HasActiveRun bool          `json:"has_active_run"`
+	Blockers     []TaskSummary `json:"blockers"`
+	Dependents   []TaskSummary `json:"dependents"`
 }

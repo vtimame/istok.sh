@@ -226,6 +226,8 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		})
 	case commandName == "task list":
 		return runTaskList(ctx, command.Task.List.Database, cwd, output)
+	case strings.HasPrefix(commandName, "task show"):
+		return runTaskShow(ctx, command.Task.Show, cwd, output)
 	case commandName == "update":
 		return runUpdate(ctx, command.Update, input, output)
 	case commandName == "migrate":
