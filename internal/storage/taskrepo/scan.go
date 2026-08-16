@@ -29,6 +29,107 @@ func (r *Repository) Get(ctx context.Context, id string, includeDeleted bool) (t
 	return scanTask(r.db.QueryRowContext(ctx, taskQuery+where, id))
 }
 
+func (r *Repository) Resolve(ctx context.Context, selector task.Selector, includeDeleted bool) (task.Task, error) {
+	if err := selector.Validate(); err != nil {
+		return task.Task{}, err
+	}
+
+	where := "WHERE project_id=?"
+	arg := []any{selector.ProjectID}
+	if selector.ID != "" {
+		where += " AND id=?"
+		arg = append(arg, selector.ID)
+	} else {
+		where += " AND number=?"
+		arg = append(arg, selector.Number)
+	}
+	if !includeDeleted {
+		where += " AND deleted_at IS NULL"
+	}
+
+	return scanTask(r.db.QueryRowContext(ctx, taskQuery+where, arg...))
+}
+
+func (r *Repository) List(ctx context.Context, projectID string, options task.ListOptions) ([]task.TaskListItem, error) {
+	if !task.IsUUIDv7(projectID) {
+		return nil, task.NewError(task.CodeInvalid, "project id must be a canonical UUIDv7")
+	}
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
+
+	where := " WHERE t.project_id=?"
+	args := []any{projectID}
+	if !options.IncludeDeleted {
+		where += " AND t.deleted_at IS NULL"
+	}
+	if len(options.Statuses) > 0 {
+		where += " AND t.status IN ("
+		for i, status := range options.Statuses {
+			if i > 0 {
+				where += ","
+			}
+			where += "?"
+			args = append(args, status)
+		}
+		where += ")"
+	}
+
+	rows, err := r.db.QueryContext(ctx, taskQuery+"t"+where+" ORDER BY t.number", args...)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var values []task.Task
+	for rows.Next() {
+		value, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tasks: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close task list: %w", err)
+	}
+
+	result := make([]task.TaskListItem, 0, len(values))
+	for _, value := range values {
+		blockers, err := r.activeBlockers(ctx, value.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, task.TaskListItem{Task: value, ActiveBlockers: blockers})
+	}
+
+	return result, nil
+}
+
+func (r *Repository) activeBlockers(ctx context.Context, taskID string) ([]task.BlockerSummary, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT t.id,t.number,t.status,t.title FROM task_dependencies d JOIN tasks t ON t.id=d.blocker_task_id WHERE d.blocked_task_id=? AND t.deleted_at IS NULL AND t.status != 'done' ORDER BY t.number`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("list active blockers: %w", err)
+	}
+	defer rows.Close()
+
+	var result []task.BlockerSummary
+	for rows.Next() {
+		var v task.BlockerSummary
+		if err := rows.Scan(&v.ID, &v.Number, &v.Status, &v.Title); err != nil {
+			return nil, fmt.Errorf("scan active blocker: %w", err)
+		}
+
+		result = append(result, v)
+	}
+
+	return result, rows.Err()
+}
+
 func getTask(ctx context.Context, conn *sql.Conn, id string) (task.Task, error) {
 	return scanTask(conn.QueryRowContext(ctx, taskQuery+`WHERE id=?`, id))
 }

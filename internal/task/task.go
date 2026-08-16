@@ -2,45 +2,9 @@
 package task
 
 import (
-	"errors"
-	"fmt"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
-
-type Code string
-
-const (
-	CodeInvalid          Code = "invalid_argument"
-	CodeNotFound         Code = "task_not_found"
-	CodeConflict         Code = "task_conflict"
-	CodeRevisionConflict Code = "revision_conflict"
-	CodeInternal         Code = "internal_error"
-)
-
-type Error struct {
-	Code    Code
-	Message string
-}
-
-func (e *Error) Error() string {
-	return e.Message
-}
-
-func ErrorCode(err error) Code {
-	var value *Error
-	if errors.As(err, &value) {
-		return value.Code
-	}
-
-	return CodeInternal
-}
-
-func NewError(code Code, format string, args ...any) error {
-	return &Error{Code: code, Message: fmt.Sprintf(format, args...)}
-}
 
 type Status string
 
@@ -116,18 +80,4 @@ type Event struct {
 	TaskRevision int64         `json:"task_revision"`
 	Actor        ActorSnapshot `json:"actor"`
 	CreatedAt    time.Time     `json:"created_at"`
-}
-
-func NewID() (string, error) {
-	value, err := uuid.NewV7()
-	if err != nil {
-		return "", err
-	}
-
-	return value.String(), nil
-}
-
-func IsUUIDv7(value string) bool {
-	parsed, err := uuid.Parse(value)
-	return err == nil && parsed.Version() == 7 && parsed.String() == value
 }

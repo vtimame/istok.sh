@@ -37,6 +37,16 @@ func (r *Repository) changeDeleted(ctx context.Context, id string, expected int6
 		if value.Revision != expected {
 			return task.Task{}, task.NewError(task.CodeRevisionConflict, "task revision does not match expected_revision")
 		}
+		if deleted && value.Status != task.StatusDone {
+			var targetID string
+			err := conn.QueryRowContext(ctx, `SELECT target.id FROM task_dependencies d JOIN tasks target ON target.id=d.blocked_task_id WHERE d.blocker_task_id=? AND target.deleted_at IS NULL AND target.status != 'done' LIMIT 1`, id).Scan(&targetID)
+			if err == nil {
+				return task.Task{}, task.NewError(task.CodeConflict, "cannot delete a blocker for an active non-done task")
+			}
+			if err != nil && err != sql.ErrNoRows {
+				return task.Task{}, fmt.Errorf("check active dependent tasks: %w", err)
+			}
+		}
 
 		now := time.Now().UTC()
 		result, err := updateDeleted(ctx, conn, id, expected, deleted, now)
