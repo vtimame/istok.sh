@@ -183,8 +183,8 @@ func verify(path string) (err error) {
 	if err := db.QueryRow("SELECT version_id FROM goose_db_version ORDER BY id DESC LIMIT 1").Scan(&version); err != nil {
 		return fmt.Errorf("read goose version: %w", err)
 	}
-	if version != 4 {
-		return fmt.Errorf("goose version = %d, want 4", version)
+	if version != 7 {
+		return fmt.Errorf("goose version = %d, want 7", version)
 	}
 	fmt.Println(version)
 	return nil

@@ -20,7 +20,7 @@ LDFLAGS := -s -w \
 	-X s26.dev/istok-cli/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
 	-X s26.dev/istok-cli/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
 
-.PHONY: build install update-dev update-dev-down test-update mcp-inspect
+.PHONY: build install update-dev update-dev-down test-update mcp-inspect release-secret
 
 build:
 	@mkdir -p "$(dir $(BUILD_OUTPUT))"
@@ -49,3 +49,6 @@ test-update:
 
 mcp-inspect: install
 	pnpm dlx @modelcontextprotocol/inspector istok mcp
+
+release-secret:
+	@go run ./tools/release secret

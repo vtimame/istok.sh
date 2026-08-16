@@ -1,0 +1,217 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Validate stable release tag
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" != ""
+          printf '%s\n' "$GITHUB_REF_NAME" | grep -Ex '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+      - name: Check formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: Check module files
+        run: go mod tidy -diff
+      - name: Test
+        run: go test -count=1 ./...
+      - name: Race test
+        run: go test -race -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test updater fixture
+        run: make test-update
+
+  prepare:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Validate signing bundle and extract public certificate
+        env:
+          ISTOK_UPDATE_SIGNING_BUNDLE_B64: ${{ secrets.ISTOK_UPDATE_SIGNING_BUNDLE_B64 }}
+        run: |
+          umask 077
+          test -n "$ISTOK_UPDATE_SIGNING_BUNDLE_B64"
+          printf '%s' "$ISTOK_UPDATE_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/signing-bundle.pem"
+          go run ./tools/release certificate --bundle "$RUNNER_TEMP/signing-bundle.pem" > "$RUNNER_TEMP/update-certificate.b64"
+          test -s "$RUNNER_TEMP/update-certificate.b64"
+          test "$(wc -l < "$RUNNER_TEMP/update-certificate.b64")" -eq 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: update-certificate
+          path: ${{ runner.temp }}/update-certificate.b64
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: [test, prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            goos: linux
+            goarch: amd64
+            cc: gcc
+          - os: ubuntu-22.04
+            goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            install: gcc-aarch64-linux-gnu
+          - os: macos-15
+            goos: darwin
+            goarch: amd64
+            cc: clang
+          - os: macos-15
+            goos: darwin
+            goarch: arm64
+            cc: clang
+            cgo_cflags: -arch arm64
+            cgo_ldflags: -arch arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Install Linux arm64 cross compiler
+        if: matrix.install != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ${{ matrix.install }}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: update-certificate
+          path: ${{ runner.temp }}/release-certificate
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CGO_ENABLED: '1'
+          CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+          CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
+        run: |
+          mkdir -p dist
+          BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          UPDATE_CERTIFICATE_B64="$(tr -d '\n' < "$RUNNER_TEMP/release-certificate/update-certificate.b64")" \
+            make build VERSION="$GITHUB_REF_NAME" COMMIT="$GITHUB_SHA" BUILD_DATE="$BUILD_DATE" \
+              RELEASE_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/release-feed/" BUILD_OUTPUT=dist/istok
+          chmod 0755 dist/istok
+          tar -C dist -czf "dist/istok_${GOOS}_${GOARCH}.tar.gz" istok
+          rm dist/istok
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/istok_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [test, prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: archive-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble signed release assets
+        env:
+          ISTOK_UPDATE_SIGNING_BUNDLE_B64: ${{ secrets.ISTOK_UPDATE_SIGNING_BUNDLE_B64 }}
+        run: |
+          umask 077
+          test -n "$ISTOK_UPDATE_SIGNING_BUNDLE_B64"
+          printf '%s' "$ISTOK_UPDATE_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/signing-bundle.pem"
+          BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          go run ./tools/release assemble --bundle "$RUNNER_TEMP/signing-bundle.pem" --dist dist \
+            --version "$GITHUB_REF_NAME" --repository "$GITHUB_REPOSITORY" --published-at "$BUILD_DATE"
+      - name: Create and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [ "$state" = true ]; then
+            gh release delete "$GITHUB_REF_NAME" --yes
+          elif [ "$state" = false ]; then
+            if [ "$GITHUB_RUN_ATTEMPT" -eq 1 ]; then
+              echo "published release $GITHUB_REF_NAME already exists; refusing to overwrite it" >&2
+              exit 1
+            fi
+
+            expected="$(printf '%s\n' \
+              SHA256SUMS \
+              istok_darwin_amd64.tar.gz istok_darwin_amd64.tar.gz.sig \
+              istok_darwin_arm64.tar.gz istok_darwin_arm64.tar.gz.sig \
+              istok_linux_amd64.tar.gz istok_linux_amd64.tar.gz.sig \
+              istok_linux_arm64.tar.gz istok_linux_arm64.tar.gz.sig \
+              manifest.yaml | sort)"
+            actual="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | sort)"
+            test "$actual" = "$expected"
+
+            mkdir -p "$RUNNER_TEMP/existing-release"
+            gh release download "$GITHUB_REF_NAME" --pattern manifest.yaml --dir "$RUNNER_TEMP/existing-release"
+            cp "$RUNNER_TEMP/existing-release/manifest.yaml" dist/manifest.yaml
+            exit 0
+          fi
+
+          gh release create "$GITHUB_REF_NAME" --draft --generate-notes \
+            dist/istok_darwin_amd64.tar.gz dist/istok_darwin_amd64.tar.gz.sig \
+            dist/istok_darwin_arm64.tar.gz dist/istok_darwin_arm64.tar.gz.sig \
+            dist/istok_linux_amd64.tar.gz dist/istok_linux_amd64.tar.gz.sig \
+            dist/istok_linux_arm64.tar.gz dist/istok_linux_arm64.tar.gz.sig \
+            dist/SHA256SUMS dist/manifest.yaml
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+      - name: Publish updater manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=release-feed
+          ref="repos/$GITHUB_REPOSITORY/git/ref/heads/$branch"
+          if ! gh api "$ref" --silent >/dev/null 2>&1; then
+            commit_sha="$(git rev-parse "$GITHUB_SHA^{commit}")"
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/heads/$branch" -f "sha=$commit_sha" >/dev/null
+          fi
+          content="$(base64 -w0 dist/manifest.yaml)"
+          existing_sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/istok/cli/manifest.yaml?ref=$branch" --jq .sha 2>/dev/null || true)"
+          args=(--method PUT "repos/$GITHUB_REPOSITORY/contents/istok/cli/manifest.yaml" -f "message=Publish Istok CLI manifest for $GITHUB_REF_NAME" -f "content=$content" -f "branch=$branch")
+          if [ -n "$existing_sha" ]; then
+            args+=(-f "sha=$existing_sha")
+          fi
+          gh api "${args[@]}" >/dev/null
