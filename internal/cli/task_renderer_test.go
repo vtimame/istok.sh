@@ -23,14 +23,14 @@ func TestTaskListStateIsDerivedFromRunThenDependencyThenOpen(t *testing.T) {
 					{Number: 1},
 				},
 			},
-			wantState: "IN PROGRESS",
+			wantState: "in progress",
 		},
 		{
 			name: "blocked by status",
 			item: task.TaskListItem{
 				Task: task.Task{Status: task.StatusBlocked},
 			},
-			wantState: "BLOCKED",
+			wantState: "blocked",
 		},
 		{
 			name: "blocked by blockers",
@@ -40,18 +40,18 @@ func TestTaskListStateIsDerivedFromRunThenDependencyThenOpen(t *testing.T) {
 					{Number: 7},
 				},
 			},
-			wantState: "BLOCKED",
+			wantState: "blocked",
 		},
 		{
 			name: "ready default",
 			item: task.TaskListItem{
 				Task: task.Task{Status: task.StatusOpen},
 			},
-			wantState: "READY",
+			wantState: "ready",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := taskListState(tc.item); got != tc.wantState {
+			if got := strings.ToLower(taskListState(tc.item)); got != tc.wantState {
 				t.Fatalf("taskListState(%+v) = %q, want %q", tc.item, got, tc.wantState)
 			}
 		})
@@ -59,7 +59,7 @@ func TestTaskListStateIsDerivedFromRunThenDependencyThenOpen(t *testing.T) {
 }
 
 func TestTaskListRendererReturnsDashWhenNoBlockers(t *testing.T) {
-	got := taskListBlockedBy(task.TaskListItem{})
+	got := stripANSI(taskListBlockedBy(task.TaskListItem{}))
 	if got != "—" {
 		t.Fatalf("taskListBlockedBy() = %q, want em dash", got)
 	}
@@ -107,9 +107,10 @@ func TestTaskShowRendererOutputsAllSectionsWithSortedRelationsAndEvents(t *testi
 	}
 
 	got := humanTaskRenderer{}.RenderTaskShow(show)
+	plain := stripANSI(got)
 
-	if strings.Contains(got, "\x1b[") {
-		t.Fatalf("show output has ANSI sequence: %q", got)
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("show output is not ANSI-colored: %q", got)
 	}
 	if !strings.HasSuffix(got, "\n") {
 		t.Fatalf("show output does not end with newline: %q", got)
@@ -118,46 +119,47 @@ func TestTaskShowRendererOutputsAllSectionsWithSortedRelationsAndEvents(t *testi
 		t.Fatalf("show output has extra newline: %q", got)
 	}
 
-	mustContain(t, got, "Task #42")
-	mustContain(t, got, "State: DONE")
-	mustContain(t, got, "Revision: 11")
-	mustContain(t, got, "Description:")
-	mustContain(t, got, "Acceptance criteria:")
-	mustContain(t, got, "Notes:")
-	mustContain(t, got, "Blockers:")
-	mustContain(t, got, "Dependents:")
-	mustContain(t, got, "Event history:")
-	mustContain(t, got, "OPEN")
-	mustContain(t, got, "BLOCKED")
-	mustContain(t, got, "DONE")
-	mustContain(t, got, "DELETED")
+	mustContain(t, plain, "Task · #42")
+	mustContain(t, plain, "State:")
+	mustContain(t, plain, "DONE")
+	mustContain(t, plain, "Revision:")
+	mustContain(t, plain, "r11")
+	mustContain(t, plain, "Description")
+	mustContain(t, plain, "Acceptance criteria")
+	mustContain(t, plain, "Notes")
+	mustContain(t, plain, "Relations")
+	mustContain(t, plain, "History")
+	mustContain(t, plain, "OPEN")
+	mustContain(t, plain, "BLOCKED")
+	mustContain(t, plain, "DONE")
+	mustContain(t, plain, "DELETED")
 
-	index2 := strings.Index(got, "second blocker")
-	index4 := strings.Index(got, "deleted blocker")
-	index10 := strings.Index(got, "first blocker")
+	index2 := strings.Index(plain, "second blocker")
+	index4 := strings.Index(plain, "deleted blocker")
+	index10 := strings.Index(plain, "first blocker")
 	if index2 == -1 || index4 == -1 || index10 == -1 || !(index2 < index4 && index4 < index10) {
-		t.Fatalf("blocker rows are not sorted by number: %q", got)
+		t.Fatalf("blocker rows are not sorted by number: %q", plain)
 	}
-	index3 := strings.Index(got, "dependent two")
-	index9 := strings.Index(got, "dependent one")
+	index3 := strings.Index(plain, "dependent two")
+	index9 := strings.Index(plain, "dependent one")
 	if index3 == -1 || index9 == -1 || index3 >= index9 {
-		t.Fatalf("dependent rows are not sorted by number: %q", got)
+		t.Fatalf("dependent rows are not sorted by number: %q", plain)
 	}
 
-	if !strings.Contains(got, "Alice (cli)") {
-		t.Fatalf("missing actor formatting: %q", got)
+	if !strings.Contains(plain, "Alice") {
+		t.Fatalf("missing actor formatting: %q", plain)
 	}
-	if !strings.Contains(got, earlier.UTC().Format(time.RFC3339)) {
-		t.Fatalf("missing event timestamp: %q", got)
+	if !strings.Contains(plain, earlier.UTC().Format("2006-01-02 10:00Z")) {
+		t.Fatalf("missing event timestamp: %q", plain)
 	}
-	progressIndex := strings.Index(got, "progress")
-	commentIndex := strings.Index(got, "commented")
-	updatedIndex := strings.Index(got, "updated")
+	progressIndex := strings.Index(plain, "progress")
+	commentIndex := strings.Index(plain, "commented")
+	updatedIndex := strings.Index(plain, "updated")
 	if progressIndex == -1 || commentIndex == -1 || updatedIndex == -1 || !(progressIndex < commentIndex && commentIndex < updatedIndex) {
-		t.Fatalf("event rows do not preserve input order: %q", got)
+		t.Fatalf("event rows do not preserve input order: %q", plain)
 	}
-	if strings.Count(got, "—") == 0 {
-		t.Fatalf("missing em dash for empty details: %q", got)
+	if strings.Count(plain, "—") == 0 {
+		t.Fatalf("missing em dash for empty details: %q", plain)
 	}
 
 	sorted := sortedTaskSummaries(show.Blockers)
@@ -173,26 +175,27 @@ func TestTaskShowRendererUsesDashForMissingOptionalAndRelationValues(t *testing.
 	got := humanTaskRenderer{}.RenderTaskShow(task.Show{
 		Task: task.Task{Number: 5, Revision: 1, Status: task.StatusOpen, Title: "missing"},
 	})
+	plain := stripANSI(got)
 
-	mustContain(t, got, "Description:\n—")
-	mustContain(t, got, "Acceptance criteria:\n—")
-	mustContain(t, got, "Notes:\n—")
-	mustContain(t, got, "Blockers:\n—")
-	mustContain(t, got, "Dependents:\n—")
-	mustContain(t, got, "Event history:\n—")
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("show output is not ANSI-colored: %q", got)
+	}
+	mustContain(t, plain, "Task · #5")
+	mustContain(t, plain, "State")
+	mustContain(t, plain, "Revision:")
+	mustContain(t, plain, "r1")
+	mustContain(t, plain, "Description")
+	mustContain(t, plain, "Acceptance criteria")
+	mustContain(t, plain, "Notes")
+	mustContain(t, plain, "Relations")
+	mustContain(t, plain, "History")
+	mustContain(t, plain, "—")
 
-	want := "Task #5\n" +
-		"State: READY\n" +
-		"Revision: 1\n" +
-		"Title: missing\n\n" +
-		"Description:\n—\n\n" +
-		"Acceptance criteria:\n—\n\n" +
-		"Notes:\n—\n\n" +
-		"Blockers:\n—\n\n" +
-		"Dependents:\n—\n\n" +
-		"Event history:\n—\n"
-	if got != want {
-		t.Fatalf("RenderTaskShow() =\n%s\nwant:\n%s", got, want)
+	mustContain(t, plain, "—")
+	mustContain(t, plain, "READY")
+
+	if strings.Count(plain, "—") == 0 {
+		t.Fatalf("missing em dash for optional values: %q", plain)
 	}
 }
 

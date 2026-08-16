@@ -28,6 +28,13 @@ func (s *Service) Create(ctx context.Context, input task.CreateInput, actor task
 	if err := actor.Validate(); err != nil {
 		return task.Task{}, err
 	}
+	if input.ID == "" {
+		id, err := task.NewID()
+		if err != nil {
+			return task.Task{}, err
+		}
+		input.ID = id
+	}
 
 	return s.repository.Create(ctx, input, actor)
 }
@@ -96,5 +103,23 @@ func (s *Service) Ready(ctx context.Context, projectID string) ([]task.TaskListI
 		return nil, task.NewError(task.CodeInvalid, "project id must be a canonical UUIDv7")
 	}
 
-	return s.repository.Ready(ctx, projectID)
+	values, err := s.repository.Ready(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	ready := make([]task.TaskListItem, 0, len(values))
+	for _, value := range values {
+		active, err := s.runs.HasActiveRun(ctx, value.ID)
+		if err != nil {
+			return nil, fmt.Errorf("check active run for task %q: %w", value.ID, err)
+		}
+		if active {
+			continue
+		}
+
+		ready = append(ready, value)
+	}
+
+	return ready, nil
 }

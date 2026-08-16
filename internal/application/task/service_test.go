@@ -12,10 +12,14 @@ import (
 
 type fakeRepository struct {
 	value        task.Task
+	createInput  task.CreateInput
+	createCall   bool
 	values       map[string]task.Task
 	deleteCall   bool
 	addCall      bool
 	listValues   []task.TaskListItem
+	readyValues  []task.TaskListItem
+	readyErr     error
 	showValue    task.Show
 	showErr      error
 	showCalled   bool
@@ -24,9 +28,10 @@ type fakeRepository struct {
 }
 
 func (r *fakeRepository) unexpected() { panic("unexpected repository call") }
-func (r *fakeRepository) Create(context.Context, task.CreateInput, task.ActorSnapshot) (task.Task, error) {
-	r.unexpected()
-	return task.Task{}, nil
+func (r *fakeRepository) Create(_ context.Context, input task.CreateInput, _ task.ActorSnapshot) (task.Task, error) {
+	r.createInput = input
+	r.createCall = true
+	return r.value, nil
 }
 func (r *fakeRepository) Update(context.Context, string, int64, task.Patch, task.ActorSnapshot) (task.Task, error) {
 	r.unexpected()
@@ -75,6 +80,10 @@ func (r *fakeRepository) Show(_ context.Context, selector task.Selector, include
 	return r.showValue, r.showErr
 }
 func (r *fakeRepository) Ready(context.Context, string) ([]task.TaskListItem, error) {
+	if r.readyValues != nil || r.readyErr != nil {
+		return r.readyValues, r.readyErr
+	}
+
 	r.unexpected()
 	return nil, nil
 }
@@ -100,6 +109,19 @@ type activeRunsByID map[string]bool
 
 func (r activeRunsByID) HasActiveRun(_ context.Context, id string) (bool, error) {
 	return r[id], nil
+}
+
+func TestCreateGeneratesUUIDAtApplicationBoundary(t *testing.T) {
+	projectID := mustProjectID(t)
+	repository := &fakeRepository{value: task.Task{ProjectID: projectID}}
+	service := NewService(repository, NoActiveRuns{})
+
+	if _, err := service.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "Task"}, task.ActorSnapshot{ID: "cli", Kind: "cli", Name: "CLI"}); err != nil {
+		t.Fatal(err)
+	}
+	if !repository.createCall || !task.IsUUIDv7(repository.createInput.ID) {
+		t.Fatalf("Create() input = %#v", repository.createInput)
+	}
 }
 
 func TestListSetsActiveRunStateOnTaskListItems(t *testing.T) {
@@ -136,6 +158,43 @@ func TestListReturnsActiveRunInspectorErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), taskID) {
 		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestReadyExcludesTasksWithActiveRuns(t *testing.T) {
+	first := mustTaskID(t)
+	second := mustTaskID(t)
+	repository := &fakeRepository{
+		readyValues: []task.TaskListItem{
+			{Task: task.Task{ID: first}},
+			{Task: task.Task{ID: second}},
+		},
+	}
+	service := NewService(repository, activeRunsByID{first: true})
+
+	ready, err := service.Ready(context.Background(), mustProjectID(t))
+	if err != nil {
+		t.Fatalf("Ready() error = %v", err)
+	}
+	if len(ready) != 1 || ready[0].ID != second {
+		t.Fatalf("Ready() = %#v", ready)
+	}
+}
+
+func TestReadyReturnsActiveRunInspectorErrors(t *testing.T) {
+	taskID := mustTaskID(t)
+	inspectErr := errors.New("inspector unavailable")
+	repository := &fakeRepository{
+		readyValues: []task.TaskListItem{{Task: task.Task{ID: taskID}}},
+	}
+	service := NewService(repository, runInspectorError{err: inspectErr})
+
+	_, err := service.Ready(context.Background(), mustProjectID(t))
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("Ready() error = %v", err)
+	}
+	if !strings.Contains(err.Error(), taskID) {
+		t.Fatalf("Ready() error = %v", err)
 	}
 }
 

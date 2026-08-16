@@ -5,17 +5,24 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
+	contextapp "s26.dev/istok-cli/internal/application/context"
+	runapp "s26.dev/istok-cli/internal/application/run"
+	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
 	taskapp "s26.dev/istok-cli/internal/application/task"
 	updateapp "s26.dev/istok-cli/internal/application/update"
+	"s26.dev/istok-cli/internal/artifactstore"
 	"s26.dev/istok-cli/internal/buildinfo"
 	"s26.dev/istok-cli/internal/mcpserver"
 	"s26.dev/istok-cli/internal/project"
 	"s26.dev/istok-cli/internal/storage"
+	"s26.dev/istok-cli/internal/storage/contextrepo"
 	"s26.dev/istok-cli/internal/storage/projectrepo"
+	"s26.dev/istok-cli/internal/storage/runrepo"
 	"s26.dev/istok-cli/internal/storage/taskrepo"
 	"s26.dev/istok-cli/internal/updater"
 )
@@ -62,21 +69,72 @@ func ProjectOptions(path string) fx.Option {
 }
 
 func TaskOptions(path string) fx.Option {
+	return kernelOptions(path)
+}
+
+func RunWorkflowOptions(path string) fx.Option {
+	return fx.Options(
+		kernelOptions(path),
+		fx.Provide(func() (*artifactstore.Store, error) {
+			database := path
+			if database == "" {
+				database = storage.DefaultPath()
+			}
+			if database == ":memory:" {
+				return nil, fmt.Errorf("managed run workflow requires a file-backed database")
+			}
+
+			absolute, err := filepath.Abs(database)
+			if err != nil {
+				return nil, fmt.Errorf("resolve artifact database path: %w", err)
+			}
+
+			return artifactstore.New(filepath.Join(filepath.Dir(absolute), "artifacts"))
+		}),
+		fx.Provide(runworkflow.NewService),
+	)
+}
+
+func kernelOptions(path string) fx.Option {
 	return fx.Options(
 		ProjectOptions(path),
 		fx.Provide(taskrepo.New),
 		fx.Provide(func(repository *taskrepo.Repository) taskapp.Repository { return repository }),
-		fx.Provide(func() taskapp.ActiveRunInspector { return taskapp.NoActiveRuns{} }),
+		fx.Provide(func(repository *taskrepo.Repository) runapp.TaskResolver { return repository }),
+		fx.Provide(contextrepo.New),
+		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
+		fx.Provide(contextapp.NewService),
+		fx.Provide(func(service *contextapp.Service) runapp.ContextBuilder { return service }),
+		fx.Provide(runrepo.New),
+		fx.Provide(func(repository *runrepo.Repository) runapp.Repository { return repository }),
+		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),
+		fx.Provide(runapp.NewService),
 		fx.Provide(taskapp.NewService),
 	)
 }
 
-func MCPApp(path, root string, profile mcpserver.Profile, server **mcp.Server) *fx.App {
+func ContextOptions(path string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		fx.Provide(contextrepo.New),
+		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
+		fx.Provide(contextapp.NewService),
+	)
+}
+
+func MCPOptions(path string) fx.Option {
+	return fx.Options(
+		RunWorkflowOptions(path),
+		fx.Provide(func(db *sql.DB) mcpserver.HealthChecker { return db }),
+	)
+}
+
+func MCPApp(path, root string, profile mcpserver.Profile, actorID, actorName string, server **mcp.Server) *fx.App {
 	return fx.New(
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
-		ProjectOptions(path),
-		mcpserver.Module(mcpserver.Config{Profile: profile, Root: root}),
+		MCPOptions(path),
+		mcpserver.Module(mcpserver.Config{Profile: profile, Root: root, ActorID: actorID, ActorName: actorName}),
 		fx.Invoke(func(value *mcp.Server) { *server = value }),
 	)
 }

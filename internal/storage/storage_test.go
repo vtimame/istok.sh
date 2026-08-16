@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/adrg/xdg"
+	"github.com/pressly/goose/v3"
 	"go.uber.org/fx"
 )
 
@@ -38,6 +40,51 @@ func TestDefaultPathUsesXDGDataHome(t *testing.T) {
 	}
 }
 
+func TestRunWorkflowMigrationBackfillsExistingRunLease(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "backfill.db")
+	db, err := sql.Open("sqlite3", sqliteDSN(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrationFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 6); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := "2026-08-16T12:00:00Z"
+	statements := []string{
+		`INSERT INTO projects (id,name,revision,created_at,updated_at) VALUES ('project','Project',1,?,?)`,
+		`INSERT INTO tasks (id,project_id,number,revision,status,title,created_at,updated_at) VALUES ('task','project',1,1,'open','Task',?,?)`,
+		`INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES ('snapshot','1','project',?,?)`,
+		`INSERT INTO runs (id,task_id,context_snapshot_id,revision,status,actor_id,actor_kind,actor_name,started_at,updated_at) VALUES ('run','task','snapshot',1,'active','actor','cli','CLI',?,?)`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement, stamp, stamp); err != nil {
+			t.Fatalf("seed v6 state: %v", err)
+		}
+	}
+
+	if _, err := provider.UpTo(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	var leaseID, heartbeatAt, expiresAt string
+	if err := db.QueryRow(`SELECT lease_id,heartbeat_at,expires_at FROM run_leases WHERE run_id='run'`).Scan(&leaseID, &heartbeatAt, &expiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if leaseID != "run" || heartbeatAt != stamp || expiresAt != stamp {
+		t.Fatalf("backfilled lease = %q, %q, %q", leaseID, heartbeatAt, expiresAt)
+	}
+}
+
 func TestEmbeddedMigrationIsApplied(t *testing.T) {
 	var db *sql.DB
 	app := fx.New(
@@ -61,8 +108,8 @@ func TestEmbeddedMigrationIsApplied(t *testing.T) {
 		t.Fatalf("query goose version: %v", err)
 	}
 
-	if version != 4 {
-		t.Errorf("migration version = %d, want 4", version)
+	if version != 7 {
+		t.Errorf("migration version = %d, want 7", version)
 	}
 }
 

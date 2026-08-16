@@ -3,19 +3,47 @@ package presentation
 
 import "github.com/jedib0t/go-pretty/v6/table"
 
-// RenderTable renders headers and rows using the CLI's stable light table style.
-func RenderTable(headers []string, rows [][]string) string {
-	writer := table.NewWriter()
-	writer.SetStyle(table.StyleLight)
-	writer.AppendHeader(stringsToRow(headers))
+const allowedRowLength = 100
 
+// RenderTable renders headers and rows using the CLI's stable borderless table style.
+func RenderTable(headers []string, rows [][]string) string {
+	writer := newWriter()
+	styledHeaders := make([]string, len(headers))
+	for i, header := range headers {
+		styledHeaders[i] = Header(header)
+	}
+
+	writer.AppendHeader(stringsToRow(styledHeaders))
+	writer.AppendRows(stringsToRows(rows))
+
+	return writer.Render()
+}
+
+// RenderRows renders rows without a header using the CLI's stable borderless table style.
+func RenderRows(rows [][]string) string {
+	writer := newWriter()
+	writer.AppendRows(stringsToRows(rows))
+
+	return writer.Render()
+}
+
+func newWriter() table.Writer {
+	writer := table.NewWriter()
+	style := table.StyleLight
+	style.Options = table.OptionsNoBordersAndSeparators
+	writer.SetStyle(style)
+	writer.SetAllowedRowLength(allowedRowLength)
+
+	return writer
+}
+
+func stringsToRows(rows [][]string) []table.Row {
 	tableRows := make([]table.Row, 0, len(rows))
 	for _, row := range rows {
 		tableRows = append(tableRows, stringsToRow(row))
 	}
-	writer.AppendRows(tableRows)
 
-	return writer.Render()
+	return tableRows
 }
 
 func stringsToRow(values []string) table.Row {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -26,6 +27,19 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 		{"task", "--help"},
 		{"task", "list", "--help"},
 		{"task", "show", "--help"},
+		{"task", "create", "--help"},
+		{"task", "ready", "--help"},
+		{"task", "dependency", "--help"},
+		{"task", "claim", "--help"},
+		{"task", "done", "--help"},
+		{"run", "--help"},
+		{"run", "list", "--help"},
+		{"run", "show", "--help"},
+		{"run", "exec", "--help"},
+		{"run", "validate", "--help"},
+		{"run", "heartbeat", "--help"},
+		{"run", "recover", "--help"},
+		{"run", "artifact", "--help"},
 		{"completion", "zsh"},
 	} {
 		var output bytes.Buffer
@@ -46,7 +60,7 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 	result := executeHelp(t, "--help")
 
-	for _, command := range []string{"version", "mcp", "update", "init", "project", "task"} {
+	for _, command := range []string{"version", "mcp", "update", "init", "project", "task", "run", "context"} {
 		if !strings.Contains(result, command) {
 			t.Errorf("root help does not contain %q:\n%s", command, result)
 		}
@@ -58,14 +72,23 @@ func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 	}
 }
 
-func TestTaskHelpShowsReadSubcommands(t *testing.T) {
+func TestTaskHelpShowsTaskSubcommands(t *testing.T) {
 	result := executeHelp(t, "task", "--help")
 
-	if !strings.Contains(result, "task list") {
-		t.Errorf("task help does not contain list command:\n%s", result)
-	}
-	if !strings.Contains(result, "task show") {
-		t.Errorf("task help does not contain show command:\n%s", result)
+	for _, description := range []string{
+		"Create a task in the current project.",
+		"List open tasks.",
+		"Show task details.",
+		"List tasks ready to claim.",
+		"Add a comment to a task.",
+		"Record task progress.",
+		"Manage task dependencies.",
+		"Claim a ready task and create an active run.",
+		"Complete a task with validation evidence or an override.",
+	} {
+		if !strings.Contains(result, description) {
+			t.Errorf("task help does not contain %q:\n%s", description, result)
+		}
 	}
 }
 
@@ -74,7 +97,7 @@ func TestTaskShowHelpContainsDatabaseAndArgumentFlags(t *testing.T) {
 	compact := strings.Join(strings.Fields(result), " ")
 
 	for _, want := range []string{
-		"Show one task from the current project.",
+		"Show task details.",
 		"Project-scoped task number in the current project.",
 		"Path to the SQLite database",
 	} {
@@ -111,7 +134,7 @@ func TestTaskListHelpContainsDatabaseFlag(t *testing.T) {
 	result := executeHelp(t, "task", "list", "--help")
 	compact := strings.Join(strings.Fields(result), " ")
 
-	for _, want := range []string{"Path to the SQLite database", "List open tasks in the current project."} {
+	for _, want := range []string{"Path to the SQLite database", "List open tasks."} {
 		if !strings.Contains(compact, want) {
 			t.Errorf("task list help does not contain %q:\n%s", want, result)
 		}
@@ -311,17 +334,30 @@ func TestProjectListHumanOutputIsTable(t *testing.T) {
 	if listed.err != nil {
 		t.Fatalf("list: %v", listed.err)
 	}
+	plain := stripANSI(listed.output)
 
-	for _, want := range []string{"ID", "NAME", "STATUS", "REVISION", "ROOT", projectID, filepath.Base(root), "active", root} {
-		if !strings.Contains(listed.output, want) {
+	for _, want := range []string{
+		"Local projects",
+		"NAME",
+		"STATE",
+		"ROOT",
+		filepath.Base(root),
+		"ACTIVE",
+		root,
+		"1 total projects",
+	} {
+		if !strings.Contains(plain, want) {
 			t.Errorf("human list does not contain %q:\n%s", want, listed.output)
 		}
 	}
-	if strings.Contains(listed.output, "\x1b[") {
-		t.Fatalf("human list contains ANSI escape sequence:\n%q", listed.output)
+	if !strings.Contains(listed.output, "\x1b[") {
+		t.Fatalf("human list does not contain ANSI escape sequence:\n%q", listed.output)
 	}
-	if !strings.Contains(listed.output, "┌") || !strings.Contains(listed.output, "└") {
+	if strings.ContainsAny(listed.output, "┌┐└┘") {
 		t.Fatalf("human list is not a StyleLight table:\n%s", listed.output)
+	}
+	if strings.Contains(plain, projectID) {
+		t.Fatalf("human list still contains legacy project ID column:\n%s", listed.output)
 	}
 }
 
@@ -330,18 +366,29 @@ func TestEmptyProjectListHumanOutputIsTable(t *testing.T) {
 	if listed.err != nil {
 		t.Fatalf("list: %v", listed.err)
 	}
+	plain := stripANSI(listed.output)
 
-	for _, want := range []string{"ID", "NAME", "STATUS", "REVISION", "ROOT", "No projects.", "—"} {
-		if !strings.Contains(listed.output, want) {
+	for _, want := range []string{"Local projects", "No local projects."} {
+		if !strings.Contains(plain, want) {
 			t.Errorf("empty human list does not contain %q:\n%s", want, listed.output)
 		}
 	}
-	if strings.Contains(listed.output, "\x1b[") {
-		t.Fatalf("empty human list contains ANSI escape sequence:\n%q", listed.output)
+	if !strings.Contains(listed.output, "\x1b[") {
+		t.Fatalf("empty human list does not contain ANSI escape sequence:\n%q", listed.output)
 	}
-	if !strings.Contains(listed.output, "┌") || !strings.Contains(listed.output, "└") {
+	if strings.ContainsAny(listed.output, "┌┐└┘") {
 		t.Fatalf("empty human list is not a StyleLight table:\n%s", listed.output)
 	}
+
+	if strings.Contains(plain, "No projects.") {
+		t.Fatalf("empty human list still uses legacy title:\n%s", listed.output)
+	}
+}
+
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(value string) string {
+	return ansiEscape.ReplaceAllString(value, "")
 }
 
 func TestProjectCLIDeletionConfirmationAndJSONErrors(t *testing.T) {

@@ -30,7 +30,9 @@ type CLI struct {
 	Update     UpdateCommand          `cmd:"" help:"Check for and securely install a new CLI release."`
 	Init       InitCommand            `cmd:"" help:"Initialize the current directory or PATH as a local project."`
 	Project    ProjectCommand         `cmd:"" help:"Show and manage local projects."`
-	Task       TaskCommand            `cmd:"" help:"Show local tasks for the current project."`
+	Task       TaskCommand            `cmd:"" help:"Inspect tasks in the current project."`
+	Run        RunCommand             `cmd:"" help:"Manage local runs and execution evidence."`
+	Context    ContextCommand         `cmd:"" help:"Manage saved project context."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
 	Migrate    InternalMigrateCommand `cmd:"" hidden:""`
 	Cleanup    InternalCleanupCommand `cmd:"" hidden:""`
@@ -54,8 +56,10 @@ type InternalCleanupCommand struct {
 type VersionCommand struct{}
 
 type MCPCommand struct {
-	Database string            `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
-	Profile  mcpserver.Profile `name:"profile" enum:"worker,admin" default:"worker" help:"MCP tool profile."`
+	Database  string            `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
+	Profile   mcpserver.Profile `name:"profile" enum:"worker,supervisor,admin" default:"worker" help:"MCP tool profile."`
+	ActorID   string            `name:"actor-id" help:"Stable MCP agent ID; generated once at startup when omitted." env:"ISTOK_AGENT_ID"`
+	ActorName string            `name:"actor-name" default:"MCP Agent" help:"MCP agent display name." env:"ISTOK_AGENT_NAME"`
 }
 
 type InitCommand struct {
@@ -143,6 +147,7 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 			FlagsLast:           true,
 			WrapUpperBound:      100,
 		}),
+		kong.Help(taskHelpPrinter),
 		kong.Exit(func(int) { helpShown = true }),
 	)
 	if err != nil {
@@ -180,7 +185,7 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 			return fmt.Errorf("resolve MCP root: %w", err)
 		}
 
-		return runMCP(ctx, command.MCP.Database, root.CanonicalPath, command.MCP.Profile)
+		return runMCP(ctx, command.MCP.Database, root.CanonicalPath, command.MCP.Profile, command.MCP.ActorID, command.MCP.ActorName)
 	case strings.HasPrefix(commandName, "init"):
 		return runProject(ctx, command.Init.Database, command.Init.JSON, output, func(service *project.Service) (any, error) {
 			return service.Init(ctx, resolvePath(cwd, command.Init.Path), command.Init.Name)
@@ -224,10 +229,16 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 
 			return s.Restore(ctx, command.Project.Restore.Selector, path, nil)
 		})
-	case commandName == "task list":
-		return runTaskList(ctx, command.Task.List.Database, cwd, output)
-	case strings.HasPrefix(commandName, "task show"):
-		return runTaskShow(ctx, command.Task.Show, cwd, output)
+	case strings.HasPrefix(commandName, "task claim"):
+		return runTaskClaim(ctx, command.Task.Claim, cwd, output)
+	case strings.HasPrefix(commandName, "task done"):
+		return runTaskDone(ctx, command.Task.Done, cwd, output)
+	case strings.HasPrefix(commandName, "task"):
+		return runTaskCommand(ctx, command.Task, commandName, cwd, output)
+	case strings.HasPrefix(commandName, "run"):
+		return runRunCommand(ctx, command.Run, commandName, cwd, output)
+	case strings.HasPrefix(commandName, "context"):
+		return runContext(ctx, command.Context, commandName, cwd, input, output)
 	case commandName == "update":
 		return runUpdate(ctx, command.Update, input, output)
 	case commandName == "migrate":
@@ -273,9 +284,9 @@ func runVersion(ctx context.Context, output io.Writer) error {
 	return nil
 }
 
-func runMCP(ctx context.Context, database, root string, profile mcpserver.Profile) error {
+func runMCP(ctx context.Context, database, root string, profile mcpserver.Profile, actorID, actorName string) error {
 	var server *mcp.Server
-	app := bootstrap.MCPApp(database, root, profile, &server)
+	app := bootstrap.MCPApp(database, root, profile, actorID, actorName, &server)
 
 	if err := app.Start(ctx); err != nil {
 		return fmt.Errorf("start MCP application: %w", err)
@@ -374,44 +385,100 @@ func jsonError(err error) error {
 func renderProjectValue(value any) string {
 	switch typed := value.(type) {
 	case project.InitResult:
+		result := renderInitResult(typed.Project)
+		header := presentation.SectionTitle("Init")
+
 		if typed.Created {
-			return "Initialized " + renderProjectValue(typed.Project)
+			return fmt.Sprintf("%s\n\n%s", header, result)
 		}
-		return "Already initialized " + renderProjectValue(typed.Project)
+
+		return fmt.Sprintf("%s\n\n%s\n%s", header, presentation.Metadata("Already initialized"), result)
 	case project.Project:
-		status := "active"
-		if typed.DeletedAt != nil {
-			status = "deleted"
-		}
-
-		if typed.Root != nil {
-			return fmt.Sprintf("%s  %s  %s  revision=%d  %s", typed.ID, typed.Name, status, typed.Revision, typed.Root.CanonicalPath)
-		}
-
-		return fmt.Sprintf("%s  %s  %s  revision=%d", typed.ID, typed.Name, status, typed.Revision)
+		return renderProject(typed)
 	case []project.Project:
-		rows := make([][]string, 0, len(typed))
-		for _, item := range typed {
-			status := "active"
-			if item.DeletedAt != nil {
-				status = "deleted"
-			}
-
-			root := "—"
-			if item.Root != nil {
-				root = item.Root.CanonicalPath
-			}
-
-			rows = append(rows, []string{item.ID, item.Name, status, fmt.Sprint(item.Revision), root})
-		}
-		if len(rows) == 0 {
-			rows = append(rows, []string{"—", "No projects.", "—", "—", "—"})
-		}
-
-		return presentation.RenderTable([]string{"ID", "NAME", "STATUS", "REVISION", "ROOT"}, rows)
+		return renderProjectList(typed)
 	default:
 		return fmt.Sprint(value)
 	}
+}
+
+func renderProject(project project.Project) string {
+	status := "active"
+	if project.DeletedAt != nil {
+		status = "deleted"
+	}
+
+	root := "—"
+	if project.Root != nil {
+		root = project.Root.CanonicalPath
+	}
+
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf(
+		"%s\n\n%s %s %s %s\n\n%s\n\n%s",
+		presentation.SectionTitle("Project"),
+		presentation.Brand(project.Name),
+		presentation.StyledStatus(status),
+		presentation.Neutral("·"),
+		presentation.Metadata(fmt.Sprintf("revision %d", project.Revision)),
+		presentation.RailLine(presentation.Path(root)),
+		presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("ID"), presentation.Warning(project.ID))),
+	))
+
+	return output.String()
+}
+
+func renderInitResult(project project.Project) string {
+	status := "active"
+	if project.DeletedAt != nil {
+		status = "deleted"
+	}
+
+	root := "—"
+	if project.Root != nil {
+		root = project.Root.CanonicalPath
+	}
+
+	return fmt.Sprintf(
+		"%s\n%s\n%s\n%s",
+		presentation.RailLine(fmt.Sprintf("Project %s %s", presentation.StyledStatus(status), presentation.Metadata(fmt.Sprintf("revision %d", project.Revision)))),
+		presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Name"), presentation.Brand(project.Name))),
+		presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Root"), presentation.Path(root))),
+		presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("ID"), presentation.Warning(project.ID))),
+	)
+}
+
+func renderProjectList(projects []project.Project) string {
+	var output strings.Builder
+	output.WriteString(presentation.SectionTitle("Local projects"))
+	output.WriteString("\n\n")
+
+	if len(projects) == 0 {
+		output.WriteString(presentation.Metadata("No local projects."))
+		output.WriteString("\n")
+		return output.String()
+	}
+
+	rows := make([][]string, 0, len(projects))
+	for _, item := range projects {
+		status := "active"
+		if item.DeletedAt != nil {
+			status = "deleted"
+		}
+
+		root := "—"
+		if item.Root != nil {
+			root = item.Root.CanonicalPath
+		}
+
+		rows = append(rows, []string{presentation.BrandStrong(item.Name), presentation.StyledStatus(status), presentation.Neutral(root)})
+	}
+
+	output.WriteString(presentation.RenderTable([]string{"NAME", "STATE", "ROOT"}, rows))
+	output.WriteString("\n\n")
+	output.WriteString(presentation.Neutral(fmt.Sprintf("  %d total projects", len(projects))))
+
+	return output.String()
 }
 
 func runWithShutdown(ctx context.Context, run func(context.Context) error, stop func(context.Context) error) error {
@@ -441,7 +508,7 @@ func ValidateMCPGraph(path string) error {
 	return fx.ValidateApp(
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
-		bootstrap.ProjectOptions(path),
+		bootstrap.MCPOptions(path),
 		mcpserver.Module(mcpserver.Config{Profile: mcpserver.Worker, Root: "."}),
 		fx.Invoke(func(*mcp.Server) {}),
 	)

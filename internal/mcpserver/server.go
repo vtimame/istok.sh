@@ -2,13 +2,17 @@ package mcpserver
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
+	contextapp "s26.dev/istok-cli/internal/application/context"
+	runapp "s26.dev/istok-cli/internal/application/run"
+	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
+	taskapp "s26.dev/istok-cli/internal/application/task"
 	"s26.dev/istok-cli/internal/buildinfo"
 	"s26.dev/istok-cli/internal/project"
 )
@@ -16,13 +20,20 @@ import (
 type Profile string
 
 const (
-	Worker Profile = "worker"
-	Admin  Profile = "admin"
+	Worker     Profile = "worker"
+	Supervisor Profile = "supervisor"
+	Admin      Profile = "admin"
 )
 
 type Config struct {
-	Profile Profile
-	Root    string
+	Profile   Profile
+	Root      string
+	ActorID   string
+	ActorName string
+}
+
+type HealthChecker interface {
+	PingContext(context.Context) error
 }
 
 type HealthStatus struct {
@@ -51,27 +62,38 @@ type ListResult struct {
 }
 
 type ToolError struct {
-	Code    project.Code `json:"code"`
-	Message string       `json:"message"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type ErrorResult struct {
 	SchemaVersion string `json:"schema_version"`
 	Error         struct {
-		Code    project.Code `json:"code"`
-		Message string       `json:"message"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
 	} `json:"error"`
 }
 
-func Module(config Config) fx.Option { return fx.Module("mcp", fx.Supply(config), fx.Provide(New)) }
+func Module(config Config) fx.Option {
+	return fx.Module("mcp", fx.Supply(config), fx.Provide(New))
+}
 
-func New(db *sql.DB, service *project.Service, info buildinfo.Info, config Config) *mcp.Server {
+func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
 	if config.Profile == "" {
 		config.Profile = Worker
 	}
+	if config.Profile != Worker && config.Profile != Supervisor && config.Profile != Admin {
+		return nil, fmt.Errorf("unsupported MCP profile %q", config.Profile)
+	}
+
+	actor, err := newActor(config.ActorID, config.ActorName)
+	if err != nil {
+		return nil, fmt.Errorf("create MCP actor identity: %w", err)
+	}
+
 	server := mcp.NewServer(&mcp.Implementation{Name: "istok", Version: info.Version}, nil)
 	mcp.AddTool(server, tool("health", "Check Istok and its SQLite storage.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, HealthStatus, error) {
-		if err := db.PingContext(ctx); err != nil {
+		if err := health.PingContext(ctx); err != nil {
 			return errorTool(err), HealthStatus{}, nil
 		}
 		return nil, HealthStatus{SchemaVersion: "1", Status: "ok", Version: info.Version}, nil
@@ -93,13 +115,17 @@ func New(db *sql.DB, service *project.Service, info buildinfo.Info, config Confi
 
 		return nil, InitResult{SchemaVersion: "1", Project: &initialized.Project, Created: initialized.Created}, nil
 	})
+	addTaskTools(server, service, tasks, config.Root, actor)
+	addContextTools(server, service, contexts, config.Root, actor)
+	addRunTools(server, service, runs, workflow, config.Root, actor, config.Profile)
 	if config.Profile == Admin {
-		addAdmin(server, service, config.Root)
+		addAdmin(server, service, tasks, contexts, config.Root, actor)
 	}
-	return server
+
+	return server, nil
 }
 
-func addAdmin(server *mcp.Server, service *project.Service, root string) {
+func addAdmin(server *mcp.Server, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
 	mcp.AddTool(server, tool("project_list", "List local projects.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
 		IncludeDeleted bool `json:"include_deleted,omitempty"`
 	}) (*mcp.CallToolResult, ListResult, error) {
@@ -153,6 +179,8 @@ func addAdmin(server *mcp.Server, service *project.Service, root string) {
 		}
 		return nil, result(p), nil
 	})
+	addAdminTaskTools(server, service, tasks, root, actor)
+	addAdminContextTools(server, service, contexts, root, actor)
 }
 
 type revisionInput struct {
@@ -176,7 +204,7 @@ func result(p project.Project) Result { return Result{SchemaVersion: "1", Projec
 func errorResult(err error) Result    { return Result{SchemaVersion: "1", Error: toolError(err)} }
 
 func toolError(err error) *ToolError {
-	return &ToolError{Code: project.ErrorCode(err), Message: err.Error()}
+	return &ToolError{Code: errorCode(err), Message: err.Error()}
 }
 func tool(name, description string, readOnly, destructive, idempotent bool) *mcp.Tool {
 	open := false
@@ -195,9 +223,9 @@ func tool(name, description string, readOnly, destructive, idempotent bool) *mcp
 
 func errorTool(err error) *mcp.CallToolResult {
 	encoded, _ := json.Marshal(ErrorResult{SchemaVersion: "1", Error: struct {
-		Code    project.Code `json:"code"`
-		Message string       `json:"message"`
-	}{Code: project.ErrorCode(err), Message: err.Error()}})
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}{Code: errorCode(err), Message: err.Error()}})
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}
 }
 

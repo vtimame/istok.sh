@@ -83,25 +83,33 @@ func TestTaskListUsesCurrentProjectFromCWDAndExcludesDoneOrDeleted(t *testing.T)
 	}
 
 	output := result.output
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("task list output is not ANSI-colored:\n%q", output)
+	}
+	plain := stripANSI(output)
 	if !strings.HasSuffix(output, "\n") {
 		t.Fatalf("task list output has no trailing newline:\n%s", output)
 	}
-	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(plain, "\n"), "\n")
 	if len(lines) < 3 {
 		t.Fatalf("task list output unexpectedly short:\n%s", output)
 	}
-	if !strings.Contains(lines[0], "┌") || !strings.Contains(lines[len(lines)-1], "└") {
+	if !strings.Contains(plain, filepath.Base(root)+" │") {
+		t.Fatalf("task list output missing project name and divider:\n%s", output)
+	}
+	if !strings.Contains(plain, "4 open tasks") {
+		t.Fatalf("task list output missing open tasks count:\n%s", output)
+	}
+	if !strings.Contains(plain, "#") || !strings.Contains(plain, "STATE") || !strings.Contains(plain, "TITLE") {
 		t.Fatalf("task list output is not StyleLight table:\n%s", output)
 	}
-	headerLine := ""
-	for _, line := range lines {
-		if strings.Contains(line, "#") && strings.Contains(line, "STATE") && strings.Contains(line, "TITLE") && strings.Contains(line, "BLOCKED BY") {
-			headerLine = line
-			break
-		}
+	if !strings.Contains(plain, "BLOCKED BY") {
+		t.Fatalf("task list output missing blocked-by header:\n%s", output)
 	}
-	if headerLine == "" {
-		t.Fatalf("task list header line not found:\n%s", output)
+	for _, unexpected := range []string{done.Title, deleted.Title} {
+		if strings.Contains(plain, unexpected) {
+			t.Fatalf("task list output unexpectedly contains %q:\n%s", unexpected, output)
+		}
 	}
 
 	for _, want := range []string{
@@ -112,40 +120,35 @@ func TestTaskListUsesCurrentProjectFromCWDAndExcludesDoneOrDeleted(t *testing.T)
 		"READY",
 		"BLOCKED",
 	} {
-		if !strings.Contains(output, want) {
+		if !strings.Contains(plain, want) {
 			t.Fatalf("task list output missing %q:\n%s", want, output)
 		}
 	}
-	for _, unexpected := range []string{done.Title, deleted.Title} {
-		if strings.Contains(output, unexpected) {
-			t.Fatalf("task list output unexpectedly contains %q:\n%s", unexpected, output)
-		}
-	}
 
-	readyIndex := strings.Index(output, ready.Title)
-	blockerIndex := strings.Index(output, blocker.Title)
-	blockedIndex := strings.Index(output, blocked.Title)
-	explicitIndex := strings.Index(output, explicitBlocked.Title)
+	readyIndex := strings.Index(plain, ready.Title)
+	blockerIndex := strings.Index(plain, blocker.Title)
+	blockedIndex := strings.Index(plain, blocked.Title)
+	explicitIndex := strings.Index(plain, explicitBlocked.Title)
 	if readyIndex >= blockerIndex || blockerIndex >= blockedIndex || blockedIndex >= explicitIndex {
 		t.Fatalf("task list order incorrect:\n%s", output)
 	}
-	readyRow := rowForTitle(output, ready.Title)
+	readyRow := rowForTitle(plain, ready.Title)
 	if !strings.Contains(readyRow, "READY") {
 		t.Fatalf("ready row is not READY:\n%q", readyRow)
 	}
-	blockedRow := rowForTitle(output, blocked.Title)
+	blockedRow := rowForTitle(plain, blocked.Title)
 	if !strings.Contains(blockedRow, "BLOCKED") {
 		t.Fatalf("blocked-by row is not BLOCKED:\n%q", blockedRow)
 	}
-	explicitRow := rowForTitle(output, explicitBlocked.Title)
+	explicitRow := rowForTitle(plain, explicitBlocked.Title)
 	if !strings.Contains(explicitRow, "BLOCKED") {
 		t.Fatalf("explicitly blocked row is not BLOCKED:\n%q", explicitRow)
 	}
-	if !strings.Contains(output, "#"+strconv.FormatInt(blocker.Number, 10)) {
+	if !strings.Contains(plain, "#"+strconv.FormatInt(blocker.Number, 10)) {
 		t.Fatalf("blocked task blocked-by column is missing blocker #%d: \n%s", blocker.Number, output)
 	}
-	if strings.Contains(output, "\x1b[") {
-		t.Fatalf("task list contains ANSI escape sequence:\n%q", output)
+	if strings.ContainsAny(plain, "┌┐└┘") {
+		t.Fatalf("task list output still uses boxed table borders:\n%s", output)
 	}
 }
 
@@ -158,8 +161,18 @@ func TestEmptyTaskListOutputsExactNoOpenTasksMessage(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("empty task list: %v", result.err)
 	}
-	if result.output != "No open tasks\n" {
-		t.Fatalf("task list output = %q", result.output)
+	plain := stripANSI(result.output)
+	if !strings.HasSuffix(result.output, "\n") {
+		t.Fatalf("task list output does not end with newline:\n%s", result.output)
+	}
+	if !strings.Contains(result.output, "\x1b[") {
+		t.Fatalf("task list output is not ANSI-colored:\n%q", result.output)
+	}
+	if !strings.Contains(plain, filepath.Base(root)+" │") {
+		t.Fatalf("empty task list missing project identity:\n%s", result.output)
+	}
+	if !strings.Contains(plain, "no open tasks") {
+		t.Fatalf("empty task list output = %q", result.output)
 	}
 }
 
@@ -237,50 +250,55 @@ func TestTaskShowCommandOutputsDetailedTask(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("task show: %v", result.err)
 	}
+	plain := stripANSI(result.output)
 
 	if target.Number != 1 || excluded.Number != 1 {
 		t.Fatalf("project-scoped numbers = target #%d, excluded #%d; want both #1", target.Number, excluded.Number)
 	}
-	if !strings.Contains(result.output, "Task #1\n") {
+	if !strings.Contains(plain, filepath.Base(root)+" · #1") {
 		t.Fatalf("show output missing task header:\n%s", result.output)
 	}
-	if !strings.Contains(result.output, "State: BLOCKED\n") {
+	if !strings.Contains(plain, "State:") || !strings.Contains(plain, "BLOCKED") {
 		t.Fatalf("show output missing state:\n%s", result.output)
 	}
-	expectedRevision := "Revision: " + strconv.FormatInt(target.Revision, 10) + "\n"
-	if !strings.Contains(result.output, expectedRevision) {
+	expectedRevision := "r" + strconv.FormatInt(target.Revision, 10)
+	if !strings.Contains(plain, "Revision:") || !strings.Contains(plain, expectedRevision) {
 		t.Fatalf("show output missing revision %q:\n%s", expectedRevision, result.output)
 	}
 	for _, want := range []string{
-		"Title: current target",
-		"Description:\n", "target details",
-		"Acceptance criteria:\n", "target acceptance",
-		"Notes:\n", "target notes",
-		"Blockers:\n", "current blocker",
-		"Dependents:\n", "current dependent",
-		"Event history:\n", "commented", "progress updated",
+		"current target",
+		"Description", "target details",
+		"Acceptance criteria", "target acceptance",
+		"Notes", "target notes",
+		"Relations", "Blocked by", "OPEN", "current blocker", "Blocks", "OPEN", "current dependent",
+		"History", "commented", "progress updated",
 	} {
-		if !strings.Contains(result.output, want) {
+		if !strings.Contains(plain, want) {
 			t.Fatalf("show output missing %q:\n%s", want, result.output)
 		}
 	}
-	if strings.Contains(result.output, excluded.Title) {
+	if strings.Contains(plain, excluded.Title) {
 		t.Fatalf("show output leaked excluded project task:\n%s", result.output)
 	}
-	if strings.Contains(result.output, target.ID) {
+	if strings.Contains(plain, target.ID) {
 		t.Fatalf("show output exposes target UUID as human identity:\n%s", result.output)
 	}
-	if !strings.Contains(result.output, "#"+strconv.FormatInt(blocker.Number, 10)) {
+	if !strings.Contains(plain, "#"+strconv.FormatInt(blocker.Number, 10)) {
 		t.Fatalf("show output missing blocker #%d:\n%s", blocker.Number, result.output)
 	}
-	if !strings.Contains(result.output, "#"+strconv.FormatInt(dependent.Number, 10)) {
+	if !strings.Contains(plain, "#"+strconv.FormatInt(dependent.Number, 10)) {
 		t.Fatalf("show output missing dependent #%d:\n%s", dependent.Number, result.output)
+	}
+	commentIndex := strings.Index(plain, "commented")
+	updatedIndex := strings.Index(plain, "progress updated")
+	if commentIndex == -1 || updatedIndex == -1 || commentIndex > updatedIndex {
+		t.Fatalf("event rows not in expected order: %q", plain)
 	}
 	if !strings.HasSuffix(result.output, "\n") {
 		t.Fatalf("show output does not end with newline:\n%s", result.output)
 	}
-	if strings.Contains(result.output, "\x1b[") {
-		t.Fatalf("show output contains ANSI escape sequence:\n%q", result.output)
+	if !strings.Contains(result.output, "\x1b[") {
+		t.Fatalf("show output is not ANSI-colored:\n%q", result.output)
 	}
 
 	refreshed, err := repository.Get(ctx, target.ID, false)
@@ -338,24 +356,27 @@ func TestTaskShowRejectsZeroWithTypedError(t *testing.T) {
 	}
 }
 
-func TestTaskCLICompletionIncludesShowSubcommand(t *testing.T) {
+func TestTaskCLICompletionIncludesTaskSubcommands(t *testing.T) {
 	options := completionSuggestionLines(t, "istok task ")
 
 	if len(options) == 0 {
 		t.Fatal("completion returned no suggestions")
 	}
-	gotList := false
-	gotShow := false
+	want := map[string]bool{
+		"list":  false,
+		"show":  false,
+		"claim": false,
+		"done":  false,
+	}
 	for _, option := range options {
-		switch option {
-		case "list":
-			gotList = true
-		case "show":
-			gotShow = true
+		if _, ok := want[option]; ok {
+			want[option] = true
 		}
 	}
-	if !gotList || !gotShow {
-		t.Fatalf("completion at \"istok task \" does not include list and show: %v", options)
+	for command, present := range want {
+		if !present {
+			t.Errorf("completion at \"istok task \" does not include %q: %v", command, options)
+		}
 	}
 }
 
@@ -377,6 +398,7 @@ func TestTaskListRendererStableBlockedBySorting(t *testing.T) {
 			{Number: 2},
 		},
 	})
+	result = stripANSI(result)
 	if result != "#2, #11" {
 		t.Fatalf("taskListBlockedBy = %q", result)
 	}
