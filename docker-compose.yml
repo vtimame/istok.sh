@@ -1,0 +1,12 @@
+---
+name: "istok-cli"
+
+services:
+  update-server:
+    image: caddy/caddy:2.11.4-alpine
+    container_name: istok-cli-update-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tmp/update-fixture:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
