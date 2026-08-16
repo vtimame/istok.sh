@@ -3,6 +3,7 @@ package taskapp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ type fakeRepository struct {
 	values     map[string]task.Task
 	deleteCall bool
 	addCall    bool
+	listValues []task.TaskListItem
 }
 
 func (r *fakeRepository) unexpected() { panic("unexpected repository call") }
@@ -54,6 +56,10 @@ func (r *fakeRepository) RemoveDependency(context.Context, string, string, int64
 	return task.Task{}, nil
 }
 func (r *fakeRepository) List(context.Context, string, task.ListOptions) ([]task.TaskListItem, error) {
+	if r.listValues != nil {
+		return r.listValues, nil
+	}
+
 	r.unexpected()
 	return nil, nil
 }
@@ -82,6 +88,60 @@ func (r *fakeRepository) Delete(context.Context, string, int64, task.ActorSnapsh
 type activeRuns struct{ active bool }
 
 func (r activeRuns) HasActiveRun(context.Context, string) (bool, error) { return r.active, nil }
+
+type activeRunsByID map[string]bool
+
+func (r activeRunsByID) HasActiveRun(_ context.Context, id string) (bool, error) {
+	return r[id], nil
+}
+
+func TestListSetsActiveRunStateOnTaskListItems(t *testing.T) {
+	first := mustTaskID(t)
+	second := mustTaskID(t)
+	repository := &fakeRepository{
+		listValues: []task.TaskListItem{
+			{Task: task.Task{ID: first}},
+			{Task: task.Task{ID: second}},
+		},
+	}
+	service := NewService(repository, activeRunsByID{first: true})
+	list, err := service.List(context.Background(), mustProjectID(t), task.ListOptions{})
+	if err != nil {
+		t.Fatalf("List() = %v", err)
+	}
+	if !list[0].HasActiveRun || list[1].HasActiveRun {
+		t.Fatalf("List() = %#v", list)
+	}
+}
+
+func TestListReturnsActiveRunInspectorErrors(t *testing.T) {
+	taskID := mustTaskID(t)
+	repository := &fakeRepository{
+		listValues: []task.TaskListItem{
+			{Task: task.Task{ID: taskID}},
+		},
+	}
+	inspectErr := errors.New("inspector unavailable")
+	service := NewService(repository, runInspectorError{err: inspectErr})
+	_, err := service.List(context.Background(), mustProjectID(t), task.ListOptions{})
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("List() error = %v", err)
+	}
+	if !strings.Contains(err.Error(), taskID) {
+		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func mustProjectID(t *testing.T) string {
+	t.Helper()
+
+	id, err := task.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return id
+}
 
 func TestDeleteRejectsActiveRunBeforeRepositoryMutation(t *testing.T) {
 	id, err := task.NewID()

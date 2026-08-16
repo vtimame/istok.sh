@@ -3,6 +3,7 @@ package taskapp
 
 import (
 	"context"
+	"fmt"
 
 	"s26.dev/istok-cli/internal/task"
 )
@@ -55,7 +56,20 @@ func (s *Service) List(ctx context.Context, projectID string, options task.ListO
 		return nil, err
 	}
 
-	return s.repository.List(ctx, projectID, options)
+	values, err := s.repository.List(ctx, projectID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range values {
+		active, err := s.runs.HasActiveRun(ctx, values[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("check active run for task %q: %w", values[i].ID, err)
+		}
+		values[i].HasActiveRun = active
+	}
+
+	return values, nil
 }
 
 func (s *Service) Show(ctx context.Context, selector task.Selector, deleted bool) (task.Show, error) {

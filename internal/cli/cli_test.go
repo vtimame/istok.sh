@@ -23,6 +23,9 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 		{"--help"},
 		{"project", "--help"},
 		{"project", "list", "--help"},
+		{"task", "--help"},
+		{"task", "list", "--help"},
+		{"completion", "zsh"},
 	} {
 		var output bytes.Buffer
 		var errorOutput bytes.Buffer
@@ -42,15 +45,55 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 	result := executeHelp(t, "--help")
 
-	for _, command := range []string{"version", "mcp", "update", "init", "project"} {
+	for _, command := range []string{"version", "mcp", "update", "init", "project", "task"} {
 		if !strings.Contains(result, command) {
 			t.Errorf("root help does not contain %q:\n%s", command, result)
 		}
 	}
-	for _, unexpected := range []string{"project show", "project list", "project rename", "--database"} {
+	for _, unexpected := range []string{"project show", "project list", "project rename", "task list", "--database"} {
 		if strings.Contains(result, unexpected) {
 			t.Errorf("root help unexpectedly contains %q:\n%s", unexpected, result)
 		}
+	}
+}
+
+func TestTaskHelpShowsOnlyListSubcommand(t *testing.T) {
+	result := executeHelp(t, "task", "--help")
+
+	if !strings.Contains(result, "task list") {
+		t.Errorf("task help does not contain list command:\n%s", result)
+	}
+	for _, unexpected := range []string{"task show"} {
+		if strings.Contains(result, unexpected) {
+			t.Errorf("task help unexpectedly contains %q:\n%s", unexpected, result)
+		}
+	}
+}
+
+func TestTaskListHelpContainsDatabaseFlag(t *testing.T) {
+	result := executeHelp(t, "task", "list", "--help")
+	compact := strings.Join(strings.Fields(result), " ")
+
+	for _, want := range []string{"Path to the SQLite database", "List open tasks in the current project."} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("task list help does not contain %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestParseErrorDoesNotCreateDatabase(t *testing.T) {
+	dataDir := t.TempDir()
+	setXDGDataHome(t, dataDir)
+
+	var output bytes.Buffer
+	var errorOutput bytes.Buffer
+	err := ExecuteAt(context.Background(), []string{"task", "list", "--invalid"}, strings.NewReader(""), &output, &errorOutput, t.TempDir())
+	if err == nil {
+		t.Fatal("expected parse error, got nil")
+	}
+
+	if _, err := os.Stat(filepath.Join(dataDir, "istok", "istok.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database was unexpectedly created, stat error = %v", err)
 	}
 }
 

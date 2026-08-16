@@ -30,6 +30,7 @@ type CLI struct {
 	Update     UpdateCommand          `cmd:"" help:"Check for and securely install a new CLI release."`
 	Init       InitCommand            `cmd:"" help:"Initialize the current directory or PATH as a local project."`
 	Project    ProjectCommand         `cmd:"" help:"Show and manage local projects."`
+	Task       TaskCommand            `cmd:"" help:"Show local tasks for the current project."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
 	Migrate    InternalMigrateCommand `cmd:"" hidden:""`
 	Cleanup    InternalCleanupCommand `cmd:"" hidden:""`
@@ -223,6 +224,8 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 
 			return s.Restore(ctx, command.Project.Restore.Selector, path, nil)
 		})
+	case commandName == "task list":
+		return runTaskList(ctx, command.Task.List.Database, cwd, output)
 	case commandName == "update":
 		return runUpdate(ctx, command.Update, input, output)
 	case commandName == "migrate":

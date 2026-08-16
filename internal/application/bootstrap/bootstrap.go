@@ -9,12 +9,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
+	taskapp "s26.dev/istok-cli/internal/application/task"
 	updateapp "s26.dev/istok-cli/internal/application/update"
 	"s26.dev/istok-cli/internal/buildinfo"
 	"s26.dev/istok-cli/internal/mcpserver"
 	"s26.dev/istok-cli/internal/project"
 	"s26.dev/istok-cli/internal/storage"
 	"s26.dev/istok-cli/internal/storage/projectrepo"
+	"s26.dev/istok-cli/internal/storage/taskrepo"
 	"s26.dev/istok-cli/internal/updater"
 )
 
@@ -56,6 +58,16 @@ func ProjectOptions(path string) fx.Option {
 		fx.Provide(projectrepo.New),
 		fx.Provide(func(repository *projectrepo.Repository) project.Repository { return repository }),
 		fx.Provide(project.NewService),
+	)
+}
+
+func TaskOptions(path string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		fx.Provide(taskrepo.New),
+		fx.Provide(func(repository *taskrepo.Repository) taskapp.Repository { return repository }),
+		fx.Provide(func() taskapp.ActiveRunInspector { return taskapp.NoActiveRuns{} }),
+		fx.Provide(taskapp.NewService),
 	)
 }
 

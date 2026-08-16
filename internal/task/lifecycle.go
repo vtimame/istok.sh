@@ -155,6 +155,7 @@ func ValidateDependency(blocker, blocked Task) error {
 
 type TaskListItem struct {
 	Task
+	HasActiveRun   bool             `json:"has_active_run"`
 	ActiveBlockers []BlockerSummary `json:"active_blockers,omitempty"`
 }
 
