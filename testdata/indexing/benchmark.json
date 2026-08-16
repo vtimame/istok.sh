@@ -1,0 +1,128 @@
+{
+  "schema_version": "istok.retrieval-benchmark.v1",
+  "corpus_root": "corpus",
+  "metrics": {
+    "file_recall_at": [5, 10],
+    "symbol_recall_at": [10],
+    "mrr_primary_grade": 2,
+    "max_context_bytes": 32768
+  },
+  "cases": [
+    {
+      "id": "go-order-idempotency",
+      "task": {
+        "title": "Не допустить повторного списания при повторном создании заказа",
+        "description": "CreateOrder должен возвращать существующий заказ для того же ID и не вызывать платёжный gateway повторно.",
+        "acceptance_criteria": "Повторный запрос с тем же order ID не создаёт второй заказ и не выполняет Charge второй раз.",
+        "notes": "Проверить взаимодействие Repository и payment.Gateway."
+      },
+      "relevant": [
+        {
+          "grade": 2,
+          "path": "internal/order/service.go",
+          "symbols": ["Service.CreateOrder"]
+        },
+        {
+          "grade": 1,
+          "path": "internal/order/repository.go",
+          "symbols": ["Repository.FindByID", "Repository.Save", "ErrNotFound"]
+        },
+        {
+          "grade": 1,
+          "path": "internal/payment/gateway.go",
+          "symbols": ["Gateway.Charge"]
+        }
+      ],
+      "negative_paths": [
+        "internal/audit/order_logger.go"
+      ]
+    },
+    {
+      "id": "go-order-http-not-found",
+      "task": {
+        "title": "Возвращать HTTP 404 для отсутствующего заказа",
+        "description": "GET /orders/{id} сейчас не различает отсутствие заказа и внутреннюю ошибку.",
+        "acceptance_criteria": "order.ErrNotFound преобразуется в 404, остальные ошибки остаются 500.",
+        "notes": "Изменение должно остаться на границе HTTP handler и order service."
+      },
+      "relevant": [
+        {
+          "grade": 2,
+          "path": "internal/httpapi/order_handler.go",
+          "symbols": ["OrderHandler.GetOrder"]
+        },
+        {
+          "grade": 1,
+          "path": "internal/order/service.go",
+          "symbols": ["Service.GetOrder"]
+        },
+        {
+          "grade": 1,
+          "path": "internal/order/repository.go",
+          "symbols": ["ErrNotFound", "Repository.FindByID"]
+        }
+      ],
+      "negative_paths": [
+        "docs/order-lifecycle.md"
+      ]
+    },
+    {
+      "id": "typescript-refund-persist-before-email",
+      "task": {
+        "title": "Отправлять письмо о возврате только после сохранения refund",
+        "description": "RefundService должен сначала сохранить результат по requestId, а затем вызвать RefundMailer.",
+        "acceptance_criteria": "При ошибке RefundRepository.save письмо не отправляется; повторный requestId возвращает существующий refund.",
+        "notes": "Сохранить идемпотентность операции возврата."
+      },
+      "relevant": [
+        {
+          "grade": 2,
+          "path": "web/src/refunds/refund-service.ts",
+          "symbols": ["RefundService.createRefund"]
+        },
+        {
+          "grade": 1,
+          "path": "web/src/refunds/refund-repository.ts",
+          "symbols": ["RefundRepository.findByRequestId", "RefundRepository.save"]
+        },
+        {
+          "grade": 1,
+          "path": "web/src/notifications/refund-mailer.ts",
+          "symbols": ["RefundMailer.sendRefundCreated"]
+        }
+      ],
+      "negative_paths": [
+        "web/src/analytics/refund-report.ts"
+      ]
+    },
+    {
+      "id": "typescript-refund-controller-conflict",
+      "task": {
+        "title": "Вернуть существующий refund при повторном requestId",
+        "description": "HTTP controller не должен считать идемпотентный повтор конфликтом и обязан вернуть прежний refund.",
+        "acceptance_criteria": "RefundController делегирует идемпотентность RefundService и возвращает успешный response.",
+        "notes": "Не переносить repository lookup в controller."
+      },
+      "relevant": [
+        {
+          "grade": 2,
+          "path": "web/src/refunds/refund-controller.ts",
+          "symbols": ["RefundController.postRefund"]
+        },
+        {
+          "grade": 2,
+          "path": "web/src/refunds/refund-service.ts",
+          "symbols": ["RefundService.createRefund"]
+        },
+        {
+          "grade": 1,
+          "path": "web/src/refunds/refund-repository.ts",
+          "symbols": ["RefundRepository.findByRequestId"]
+        }
+      ],
+      "negative_paths": [
+        "web/src/analytics/refund-report.ts"
+      ]
+    }
+  ]
+}
