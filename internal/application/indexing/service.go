@@ -109,6 +109,59 @@ func (s *Service) Search(ctx context.Context, value project.Project, request ret
 	return results, status, nil
 }
 
+// SearchTask builds the bounded local seed context used by a future contextpack.
+// It intentionally has no transport, network, or task lifecycle dependency.
+func (s *Service) SearchTask(ctx context.Context, value project.Project, request retrieval.TaskSearchRequest) ([]retrieval.SearchResult, Status, error) {
+	status, err := s.EnsureFresh(ctx, value)
+	if err != nil {
+		return nil, status, err
+	}
+	if status.State != sidecar.StateReady && status.State != sidecar.StateDegraded {
+		err := fmt.Errorf("index is not readable in state %q", status.State)
+		return nil, status, wrapError(status, err)
+	}
+
+	indexedProject, err := s.openProject(ctx, value)
+	if err != nil {
+		status := failedStatus(err)
+		return nil, status, wrapError(status, err)
+	}
+	defer indexedProject.Close()
+
+	generation, err := indexedProject.Current(ctx)
+	if err != nil {
+		status := failedStatus(err)
+		return nil, status, wrapError(status, err)
+	}
+	defer generation.Close()
+
+	state, err := generation.State()
+	if err != nil {
+		status := failedStatus(err)
+		return nil, status, wrapError(status, err)
+	}
+	status = statusFromState(state)
+	if status.State != sidecar.StateReady && status.State != sidecar.StateDegraded {
+		err := fmt.Errorf("index became unreadable in state %q", status.State)
+		return nil, status, wrapError(status, err)
+	}
+
+	store, err := indexstore.Open(generation.SearchPath(), value.ID, generation.Epoch(), state.Revision)
+	if err != nil {
+		status.State = sidecar.StateFailed
+		status.Diagnostics = []string{err.Error()}
+		return nil, status, wrapError(status, err)
+	}
+	defer store.Close()
+
+	results, err := retrieval.SearchTask(ctx, store, graphLookup{repository: generation.Graph()}, request)
+	if err != nil {
+		return nil, status, wrapError(status, err)
+	}
+
+	return results, status, nil
+}
+
 func (s *Service) Status(ctx context.Context, value project.Project) (Status, error) {
 	if err := validateProject(value); err != nil {
 		status := failedStatus(err)

@@ -77,6 +77,36 @@ func TestInitializeCreatesGraphSchema(t *testing.T) {
 	}
 }
 
+func TestLookupNodesByPathRangeAndNeighborsWithMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := openGraphDB(t)
+	if err := Initialize(db); err != nil {
+		t.Fatal(err)
+	}
+	repo := New(db)
+	for _, values := range [][]any{{"source", "function", "go", testPathA, "Source", "pkg.Source", "", 4, 10, "a"}, {"target", "function", "go", testPathB, "Target", "pkg.Target", "", 1, 3, "b"}} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO graph_nodes(id,kind,language,path,name,qualified_name,signature,line_start,line_end,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)`, values...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, edge := range [][]any{
+		{"source", "target", "pkg.Target", "contains", "resolved", 1.0, testPathA, 6},
+		{"source", "target", "pkg.Target", "references", "resolved", .9, testPathA, 7},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO graph_edges(source_id,target_id,target_name,kind,provenance,confidence,evidence_path,evidence_line) VALUES(?,?,?,?,?,?,?,?)`, edge...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nodes, err := repo.LookupNodesByPathRange(ctx, GraphPathRangeRequest{Path: testPathA, LineStart: 5, LineEnd: 5})
+	if err != nil || len(nodes) != 1 || nodes[0].ID != "source" {
+		t.Fatalf("range lookup = %#v, %v", nodes, err)
+	}
+	neighbors, err := repo.NeighborsWithMetadata(ctx, NeighborsWithMetadataRequest{SourceID: "source", Limit: 1})
+	if err != nil || len(neighbors) != 1 || neighbors[0].Kind != "references" || neighbors[0].Provenance != "resolved" {
+		t.Fatalf("metadata neighbors = %#v, %v", neighbors, err)
+	}
+}
+
 func TestReplacePerformsStaleCleanupChangeDeleteRenameAndReResolve(t *testing.T) {
 	ctx := context.Background()
 	db := openGraphDB(t)

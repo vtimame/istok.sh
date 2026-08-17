@@ -13,6 +13,7 @@ type ApplyRequest = retrieval.ApplyRequest
 type Store interface {
 	Apply(request ApplyRequest) error
 	Search(request retrieval.SearchRequest) ([]retrieval.SearchResult, error)
+	LookupByPathRange(path string, lineStart, lineEnd int) ([]retrieval.SearchResult, error)
 	Close() error
 }
 

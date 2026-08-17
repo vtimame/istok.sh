@@ -7,6 +7,14 @@
     "mrr_primary_grade": 2,
     "max_context_bytes": 32768
   },
+  "thresholds": {
+    "file_recall_at_5": 1.0,
+    "file_recall_at_10": 1.0,
+    "symbol_recall_at_10": 1.0,
+    "mrr_primary_grade": 0.875,
+    "max_context_bytes": 32768,
+    "min_graph_only_supporting_ratio": 0.0
+  },
   "cases": [
     {
       "id": "go-order-idempotency",
@@ -63,7 +71,7 @@
         }
       ],
       "negative_paths": [
-        "docs/order-lifecycle.md"
+        "internal/audit/order_logger.go"
       ]
     },
     {

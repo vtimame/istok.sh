@@ -35,8 +35,16 @@ type Document = Chunk
 
 // SearchRequest carries one lexical search request.
 type SearchRequest struct {
-	Query string
-	Limit int
+	Query         string
+	Limit         int
+	WeightedTerms []WeightedSearchTerm
+}
+
+// WeightedSearchTerm adds token-level influence in lexical query composition.
+type WeightedSearchTerm struct {
+	Value  string
+	Weight float64
+	Exact  bool
 }
 
 // SearchResult is the transport-independent contract returned from retrieval store.
@@ -56,7 +64,8 @@ type SearchResult struct {
 	Score           float64  `json:"score"`
 	LexicalScore    float64  `json:"lexical_score"`
 	GraphScore      float64  `json:"graph_score"`
-	Provenance      string   `json:"provenance"`
+	MatchedTerms    []string `json:"matched_terms"`
+	Provenance      []string `json:"provenance"`
 	Reasons         []string `json:"reasons"`
 }
 

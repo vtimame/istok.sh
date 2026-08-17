@@ -34,6 +34,31 @@ type NeighborsRequest struct {
 	Limit    int
 }
 
+// GraphPathRangeRequest selects nodes by source file path and line overlap.
+type GraphPathRangeRequest struct {
+	Path      string
+	LineStart int
+	LineEnd   int
+	Limit     int
+}
+
+// GraphNeighbor carries graph node metadata together with edge metadata.
+type GraphNeighbor struct {
+	Node         codegraph.Node       `json:"node"`
+	Kind         codegraph.EdgeKind   `json:"kind"`
+	Provenance   codegraph.Provenance `json:"provenance"`
+	Confidence   float64              `json:"confidence"`
+	EvidencePath string               `json:"evidence_path"`
+	EvidenceLine int                  `json:"evidence_line"`
+}
+
+// NeighborsWithMetadataRequest mirrors NeighborsRequest and preserves edge metadata.
+type NeighborsWithMetadataRequest struct {
+	SourceID string
+	Kinds    []codegraph.EdgeKind
+	Limit    int
+}
+
 // PathRequest asks a bounded deterministic shortest-path query.
 type PathRequest struct {
 	From       string

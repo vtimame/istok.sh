@@ -355,3 +355,189 @@ func (r *Repository) Neighbors(
 
 	return neighbors, nil
 }
+
+func (r *Repository) LookupNodesByPathRange(ctx context.Context, request GraphPathRangeRequest) ([]codegraph.Node, error) {
+	if r == nil || r.db == nil {
+		return nil, errRepositoryNil
+	}
+	path := normalizePath(request.Path)
+	if path == "" {
+		return nil, fmt.Errorf("lookup path/range: invalid path")
+	}
+	if request.LineStart <= 0 || request.LineEnd <= 0 {
+		return nil, fmt.Errorf("lookup path/range: invalid line range %d..%d", request.LineStart, request.LineEnd)
+	}
+	if request.LineStart > request.LineEnd {
+		return nil, fmt.Errorf("lookup path/range: start line greater than end line")
+	}
+	limit := normalizeAndLimit(request.Limit, defaultLookupLimit, maxResultLimit)
+
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT id, kind, language, path, name, qualified_name, signature, line_start, line_end, content_hash
+		FROM graph_nodes
+		WHERE path = ?
+		AND line_start <= ?
+		AND line_end >= ?
+		ORDER BY line_start ASC, line_end ASC, id ASC
+		LIMIT ?`,
+		path,
+		request.LineEnd,
+		request.LineStart,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]codegraph.Node, 0, limit)
+	for rows.Next() {
+		var node codegraph.Node
+		if err := rows.Scan(
+			&node.ID,
+			&node.Kind,
+			&node.Language,
+			&node.Path,
+			&node.Name,
+			&node.QualifiedName,
+			&node.Signature,
+			&node.LineStart,
+			&node.LineEnd,
+			&node.ContentHash,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (r *Repository) NeighborsWithMetadata(ctx context.Context, request NeighborsWithMetadataRequest) ([]GraphNeighbor, error) {
+	if r == nil || r.db == nil {
+		return nil, errRepositoryNil
+	}
+	sourceID := strings.TrimSpace(request.SourceID)
+	if sourceID == "" {
+		return nil, fmt.Errorf("neighbors: source id is required")
+	}
+	limit := normalizeAndLimit(request.Limit, defaultLookupLimit, maxResultLimit)
+
+	query := `
+		SELECT n.id, n.kind, n.language, n.path, n.name, n.qualified_name, n.signature, n.line_start, n.line_end, n.content_hash,
+		       e.kind, e.provenance, e.confidence, e.evidence_path, e.evidence_line
+		FROM graph_edges e
+		JOIN graph_nodes n ON n.id = e.target_id
+		WHERE e.source_id = ? AND e.target_id IS NOT NULL`
+	args := []any{sourceID}
+
+	kinds := make([]string, 0, len(request.Kinds))
+	for _, value := range request.Kinds {
+		kind := strings.TrimSpace(string(value))
+		if kind == "" {
+			continue
+		}
+		kinds = append(kinds, kind)
+	}
+	if len(kinds) > 0 {
+		query += " AND e.kind IN (" + placeholders(len(kinds)) + ")"
+		sort.Strings(kinds)
+		for _, value := range kinds {
+			args = append(args, value)
+		}
+	}
+	query += ` ORDER BY
+		CASE e.kind
+			WHEN 'calls' THEN 3
+			WHEN 'references' THEN 3
+			WHEN 'inherits' THEN 3
+			WHEN 'implements' THEN 3
+			WHEN 'imports' THEN 2
+			WHEN 'contains' THEN 1
+			ELSE 0
+		END DESC,
+		e.confidence DESC,
+		CASE WHEN n.qualified_name <> '' THEN n.qualified_name WHEN n.name <> '' THEN n.name ELSE n.path END ASC,
+		n.path ASC, n.line_start ASC, n.line_end ASC, n.id ASC, e.kind ASC,
+		e.provenance ASC, e.evidence_path ASC, e.evidence_line ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	neighbors := make([]GraphNeighbor, 0, limit)
+	for rows.Next() {
+		var neighbor GraphNeighbor
+		if err := rows.Scan(
+			&neighbor.Node.ID,
+			&neighbor.Node.Kind,
+			&neighbor.Node.Language,
+			&neighbor.Node.Path,
+			&neighbor.Node.Name,
+			&neighbor.Node.QualifiedName,
+			&neighbor.Node.Signature,
+			&neighbor.Node.LineStart,
+			&neighbor.Node.LineEnd,
+			&neighbor.Node.ContentHash,
+			&neighbor.Kind,
+			&neighbor.Provenance,
+			&neighbor.Confidence,
+			&neighbor.EvidencePath,
+			&neighbor.EvidenceLine,
+		); err != nil {
+			return nil, err
+		}
+		neighbors = append(neighbors, neighbor)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	sort.SliceStable(neighbors, func(i, j int) bool {
+		if neighbors[i].Kind != neighbors[j].Kind {
+			return edgePriority(neighbors[i].Kind) > edgePriority(neighbors[j].Kind)
+		}
+		if neighbors[i].Node.Path != neighbors[j].Node.Path {
+			return neighbors[i].Node.Path < neighbors[j].Node.Path
+		}
+		if neighbors[i].Node.LineStart != neighbors[j].Node.LineStart {
+			return neighbors[i].Node.LineStart < neighbors[j].Node.LineStart
+		}
+		if neighbors[i].Confidence != neighbors[j].Confidence {
+			return neighbors[i].Confidence > neighbors[j].Confidence
+		}
+		if neighbors[i].Node.ID != neighbors[j].Node.ID {
+			return neighbors[i].Node.ID < neighbors[j].Node.ID
+		}
+		if neighbors[i].Provenance != neighbors[j].Provenance {
+			return neighbors[i].Provenance < neighbors[j].Provenance
+		}
+		if neighbors[i].EvidencePath != neighbors[j].EvidencePath {
+			return neighbors[i].EvidencePath < neighbors[j].EvidencePath
+		}
+
+		return neighbors[i].EvidenceLine < neighbors[j].EvidenceLine
+	})
+
+	return neighbors, nil
+}
+
+func edgePriority(kind codegraph.EdgeKind) int {
+	switch kind {
+	case codegraph.EdgeCalls, codegraph.EdgeReferences, codegraph.EdgeInherits, codegraph.EdgeImplements:
+		return 3
+	case codegraph.EdgeImports:
+		return 2
+	case codegraph.EdgeContains:
+		return 1
+	default:
+		return 0
+	}
+}

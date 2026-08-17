@@ -253,6 +253,9 @@ func TestSearchRankingAndReasons(t *testing.T) {
 			ChunkDiscriminator: "b",
 		},
 	}
+	for index := range docs {
+		docs[index].ID = retrieval.DeterministicChunkID(docs[index].Path, docs[index].ContentHash, docs[index].LineStart, docs[index].LineEnd)
+	}
 	for i := range docs {
 		docs[i].ID = retrieval.DeterministicChunkID(docs[i].Path, docs[i].ContentHash, docs[i].LineStart, docs[i].LineEnd, docs[i].ChunkDiscriminator)
 		docs[i].SymbolNormalized = strings.ToLower(docs[i].Symbol)
@@ -295,7 +298,7 @@ func TestSearchRankingAndReasons(t *testing.T) {
 	if ordered[3].Path != "internal/lexical/common.go" || ordered[3].LineStart != 3 || !hasReason(ordered[3].Reasons, retrieval.ReasonLexical) {
 		t.Fatalf("expected lexical fourth, got %#v", ordered[3])
 	}
-	if ordered[0].Provenance == "" || ordered[1].Provenance == "" || ordered[2].Provenance == "" || ordered[3].Provenance == "" {
+	if len(ordered[0].Provenance) == 0 || len(ordered[1].Provenance) == 0 || len(ordered[2].Provenance) == 0 || len(ordered[3].Provenance) == 0 {
 		t.Fatalf("expected provenance fallback set")
 	}
 
@@ -315,6 +318,51 @@ func TestSearchRankingAndReasons(t *testing.T) {
 		ordered[3].LineStart != orderedRepeat[3].LineStart ||
 		ordered[3].ChunkID != orderedRepeat[3].ChunkID {
 		t.Fatalf("expected deterministic lexical tie path/line/chunk for 4th result, got %#v then %#v", ordered[3], orderedRepeat[3])
+	}
+}
+
+func TestWeightedExactTermsBoostAndExplain(t *testing.T) {
+	store, err := Create(filepath.Join(t.TempDir(), "lexical"), uuid.NewString(), uuid.NewString(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	docs := []retrieval.Document{
+		{ID: "path", Path: "internal/order/service.go", Content: "ordinary order content", Symbol: "Service.CreateOrder", LineStart: 1, LineEnd: 2, ContentHash: "a", Provenance: "test", Identifiers: []string{"order"}},
+		{ID: "decoy", Path: "internal/order/other.go", Content: "ordinary order content", Symbol: "Service.Other", LineStart: 1, LineEnd: 2, ContentHash: "b", Provenance: "test", Identifiers: []string{"order"}},
+	}
+	for index := range docs {
+		docs[index].ID = retrieval.DeterministicChunkID(docs[index].Path, docs[index].ContentHash, docs[index].LineStart, docs[index].LineEnd)
+	}
+	if err := store.Apply(ApplyRequest{ProjectID: store.ProjectID(), EpochID: store.EpochID(), Add: docs}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.Search(retrieval.SearchRequest{
+		Query: "order",
+		WeightedTerms: []retrieval.WeightedSearchTerm{
+			{Value: "order", Weight: 1},
+			{Value: "internal/order/service.go", Weight: 3, Exact: true},
+			{Value: "Service.CreateOrder", Weight: 3, Exact: true},
+			{Value: "internal/order/other.go", Weight: 1, Exact: true},
+			{Value: "Service.Other", Weight: 1, Exact: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) < 2 || results[0].Path != "internal/order/service.go" {
+		t.Fatalf("weighted exact ranking = %#v", results)
+	}
+	if !hasReason(results[0].Reasons, retrieval.ReasonExactPath) || !hasReason(results[0].Reasons, retrieval.ReasonExactSymbol) {
+		t.Fatalf("weighted exact reasons = %#v", results[0].Reasons)
+	}
+	if !containsString(results[0].MatchedTerms, "internal/order/service.go") || !containsString(results[0].MatchedTerms, "service.createorder") {
+		t.Fatalf("weighted exact matched terms = %#v", results[0].MatchedTerms)
+	}
+	if results[0].Score <= results[1].Score {
+		t.Fatalf("weighted exact score did not preserve field priority: %#v", results)
 	}
 }
 
@@ -611,6 +659,16 @@ func hasReason(reasons []string, wanted string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+
 	return false
 }
 

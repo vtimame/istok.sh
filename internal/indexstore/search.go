@@ -3,6 +3,7 @@ package indexstore
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,13 @@ import (
 
 const defaultSearchLimit = 20
 
+const (
+	exactPathBoost         = 20.0
+	exactSymbolBoost       = 12.0
+	weightedExactPathBoost = 8.0
+	weightedSymbolBoost    = 4.0
+)
+
 // Search executes deterministic lexical search.
 func (s *LexicalStore) Search(request retrieval.SearchRequest) ([]retrieval.SearchResult, error) {
 	s.mu.Lock()
@@ -24,7 +32,7 @@ func (s *LexicalStore) Search(request retrieval.SearchRequest) ([]retrieval.Sear
 		return nil, fmt.Errorf("index is closed")
 	}
 
-	searchQuery, evidence := buildQuery(request.Query)
+	searchQuery, evidence := buildQuery(request.Query, request.WeightedTerms)
 	if searchQuery == nil {
 		return nil, nil
 	}
@@ -72,8 +80,16 @@ func (s *LexicalStore) Search(request retrieval.SearchRequest) ([]retrieval.Sear
 			Snippet:         asString(hit.Fields["content"]),
 			Score:           hit.Score,
 			LexicalScore:    hit.Score,
-			Provenance:      asString(hit.Fields["provenance"]),
+			MatchedTerms:    []string{},
+			Provenance:      resultProvenance(hit.Fields["provenance"]),
 		}
+		result.MatchedTerms = buildMatchedTerms(
+			result.Path,
+			asString(hit.Fields["symbol_normalized"]),
+			result.Snippet,
+			hit.Fields["identifiers"],
+			evidence,
+		)
 		result.Reasons = buildReasons(
 			result.Path,
 			asString(hit.Fields["symbol_normalized"]),
@@ -90,50 +106,168 @@ func (s *LexicalStore) Search(request retrieval.SearchRequest) ([]retrieval.Sear
 	return results, nil
 }
 
-type queryEvidence struct {
-	tokens      map[string]struct{}
-	exactPath   string
-	exactSymbol string
+// LookupByPathRange returns chunks that overlap the requested range in a specific path.
+func (s *LexicalStore) LookupByPathRange(path string, lineStart int, lineEnd int) ([]retrieval.SearchResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path = retrieval.NormalizePath(path)
+	if path == "" {
+		return nil, fmt.Errorf("invalid path")
+	}
+	if lineStart <= 0 || lineEnd <= 0 {
+		return nil, fmt.Errorf("invalid line range %d..%d", lineStart, lineEnd)
+	}
+	if lineEnd < lineStart {
+		lineStart, lineEnd = lineEnd, lineStart
+	}
+
+	if s.index == nil {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	pathQuery := query.NewTermQuery(path)
+	pathQuery.SetField("path")
+
+	lineStartQuery := query.NewNumericRangeQuery(nil, toFloat64(lineEnd))
+	lineStartQuery.SetField("line_start")
+	lineEndQuery := query.NewNumericRangeQuery(toFloat64(lineStart), nil)
+	lineEndQuery.SetField("line_end")
+
+	searchQuery := query.NewConjunctionQuery([]query.Query{
+		pathQuery,
+		lineStartQuery,
+		lineEndQuery,
+	})
+
+	bleveRequest := bleve.NewSearchRequestOptions(searchQuery, defaultSearchLimit, 0, false)
+	bleveRequest.Fields = []string{
+		"chunk_id",
+		"path",
+		"language",
+		"symbol",
+		"symbol_normalized",
+		"line_start",
+		"line_end",
+		"content_hash",
+		"provenance",
+		"content",
+	}
+	bleveRequest.Sort = stableSortOrderByPathRange()
+
+	raw, err := s.index.Search(bleveRequest)
+	if err != nil {
+		return nil, corrupt(s.path, err)
+	}
+
+	results := make([]retrieval.SearchResult, 0, len(raw.Hits))
+	for _, hit := range raw.Hits {
+		result := retrieval.SearchResult{
+			ContractVersion: retrieval.ContractVersion,
+			ProjectID:       s.projectID,
+			EpochID:         s.epochID,
+			IndexRevision:   s.revision,
+			ChunkID:         asString(hit.Fields["chunk_id"]),
+			Path:            asString(hit.Fields["path"]),
+			Language:        asString(hit.Fields["language"]),
+			Symbol:          asString(hit.Fields["symbol"]),
+			LineStart:       asInt(hit.Fields["line_start"]),
+			LineEnd:         asInt(hit.Fields["line_end"]),
+			ContentHash:     asString(hit.Fields["content_hash"]),
+			Snippet:         asString(hit.Fields["content"]),
+			Score:           hit.Score,
+			LexicalScore:    hit.Score,
+			GraphScore:      0,
+			MatchedTerms:    []string{},
+			Provenance:      resultProvenance(hit.Fields["provenance"]),
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
-func buildQuery(raw string) (query.Query, queryEvidence) {
+func toFloat64(value int) *float64 {
+	floatValue := float64(value)
+	return &floatValue
+}
+
+func resultProvenance(value interface{}) []string {
+	provenance := asString(value)
+	if provenance == "" {
+		return []string{}
+	}
+
+	return []string{provenance}
+}
+
+type queryEvidence struct {
+	tokens       map[string]struct{}
+	exactPaths   map[string]float64
+	exactSymbols map[string]float64
+}
+
+func buildQuery(raw string, weightedTerms []retrieval.WeightedSearchTerm) (query.Query, queryEvidence) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, queryEvidence{}
 	}
 
 	evidence := queryEvidence{
-		tokens:      make(map[string]struct{}),
-		exactPath:   discoverPathQuery(raw),
-		exactSymbol: discoverSymbolQuery(raw),
+		tokens:       make(map[string]struct{}),
+		exactPaths:   make(map[string]float64),
+		exactSymbols: make(map[string]float64),
+	}
+	if len(weightedTerms) == 0 {
+		addExactEvidence(&evidence, raw, 1)
+	}
+	weights := make(map[string]float64, len(weightedTerms))
+	for _, term := range weightedTerms {
+		value := strings.ToLower(strings.TrimSpace(term.Value))
+		if value != "" && term.Weight > weights[value] {
+			weights[value] = term.Weight
+		}
+		if term.Exact {
+			addExactEvidence(&evidence, term.Value, term.Weight)
+		}
 	}
 	tokens := normalizedQueryTokens(raw)
-	parts := make([]query.Query, 0, len(tokens)*2+2)
+	parts := make([]query.Query, 0, len(tokens)*2+len(evidence.exactPaths)+len(evidence.exactSymbols))
+	pathBoost := exactPathBoost
+	symbolBoost := exactSymbolBoost
+	if len(weightedTerms) > 0 {
+		pathBoost = weightedExactPathBoost
+		symbolBoost = weightedSymbolBoost
+	}
 
 	for _, token := range tokens {
 		evidence.tokens[token] = struct{}{}
+		boost := weights[token]
+		if boost <= 0 {
+			boost = 1
+		}
 
 		identifierQuery := query.NewTermQuery(token)
 		identifierQuery.SetField("identifiers")
-		identifierQuery.SetBoost(6)
+		identifierQuery.SetBoost(6 * boost)
 		parts = append(parts, identifierQuery)
 
 		contentQuery := query.NewMatchQuery(token)
 		contentQuery.SetField("content")
-		contentQuery.SetBoost(2)
+		contentQuery.SetBoost(2 * boost)
 		parts = append(parts, contentQuery)
 	}
 
-	if evidence.exactSymbol != "" {
-		symbolQuery := query.NewTermQuery(evidence.exactSymbol)
+	for _, symbol := range sortedWeightKeys(evidence.exactSymbols) {
+		symbolQuery := query.NewTermQuery(symbol)
 		symbolQuery.SetField("symbol_normalized")
-		symbolQuery.SetBoost(12)
+		symbolQuery.SetBoost(symbolBoost * evidence.exactSymbols[symbol])
 		parts = append(parts, symbolQuery)
 	}
-	if evidence.exactPath != "" {
-		pathQuery := query.NewTermQuery(evidence.exactPath)
+	for _, path := range sortedWeightKeys(evidence.exactPaths) {
+		pathQuery := query.NewTermQuery(path)
 		pathQuery.SetField("path")
-		pathQuery.SetBoost(20)
+		pathQuery.SetBoost(pathBoost * evidence.exactPaths[path])
 		parts = append(parts, pathQuery)
 	}
 
@@ -142,6 +276,36 @@ func buildQuery(raw string) (query.Query, queryEvidence) {
 	}
 
 	return query.NewDisjunctionQuery(parts), evidence
+}
+
+func addExactEvidence(evidence *queryEvidence, raw string, weight float64) {
+	if weight <= 0 {
+		weight = 1
+	}
+	if path := discoverPathQuery(raw); path != "" {
+		evidence.exactPaths[path] = maxWeight(evidence.exactPaths[path], weight)
+	}
+	if symbol := discoverSymbolQuery(raw); symbol != "" {
+		evidence.exactSymbols[symbol] = maxWeight(evidence.exactSymbols[symbol], weight)
+	}
+}
+
+func maxWeight(current, candidate float64) float64 {
+	if candidate > current {
+		return candidate
+	}
+
+	return current
+}
+
+func sortedWeightKeys(values map[string]float64) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	return keys
 }
 
 func normalizedQueryTokens(raw string) []string {
@@ -179,6 +343,7 @@ func discoverPathQuery(raw string) string {
 }
 
 func discoverSymbolQuery(raw string) string {
+	raw = strings.TrimSuffix(strings.TrimSpace(raw), "()")
 	if strings.ContainsAny(raw, " \t\r\n/\\") {
 		return ""
 	}
@@ -195,13 +360,21 @@ func stableSortOrder() search.SortOrder {
 	}
 }
 
+func stableSortOrderByPathRange() search.SortOrder {
+	return search.SortOrder{
+		&search.SortField{Field: "path", Type: search.SortFieldAsString},
+		&search.SortField{Field: "line_start", Type: search.SortFieldAsNumber},
+		&search.SortField{Field: "chunk_id", Type: search.SortFieldAsString},
+	}
+}
+
 func buildReasons(path, symbol string, identifiers interface{}, evidence queryEvidence) []string {
 	reasons := make([]string, 0, 3)
 
-	if evidence.exactPath != "" && retrieval.NormalizePath(path) == evidence.exactPath {
+	if _, ok := evidence.exactPaths[retrieval.NormalizePath(path)]; ok {
 		reasons = append(reasons, retrieval.ReasonExactPath)
 	}
-	if evidence.exactSymbol != "" && symbol == evidence.exactSymbol {
+	if _, ok := evidence.exactSymbols[symbol]; ok {
 		reasons = append(reasons, retrieval.ReasonExactSymbol)
 	}
 	if identifiersOverlap(identifiers, evidence.tokens) {
@@ -209,6 +382,33 @@ func buildReasons(path, symbol string, identifiers interface{}, evidence queryEv
 	}
 
 	return reasons
+}
+
+func buildMatchedTerms(path, symbol, content string, identifiers interface{}, evidence queryEvidence) []string {
+	values, _ := toStringSlice(identifiers)
+	haystack := strings.ToLower(strings.Join(append([]string{path, symbol, content}, values...), " "))
+	matched := make(map[string]struct{}, len(evidence.tokens)+2)
+	for token := range evidence.tokens {
+		if strings.Contains(haystack, token) {
+			matched[token] = struct{}{}
+		}
+	}
+
+	normalizedPath := retrieval.NormalizePath(path)
+	if _, ok := evidence.exactPaths[normalizedPath]; ok {
+		matched[normalizedPath] = struct{}{}
+	}
+	if _, ok := evidence.exactSymbols[symbol]; ok {
+		matched[symbol] = struct{}{}
+	}
+
+	terms := make([]string, 0, len(matched))
+	for term := range matched {
+		terms = append(terms, term)
+	}
+	sort.Strings(terms)
+
+	return terms
 }
 
 func identifiersOverlap(value interface{}, requested map[string]struct{}) bool {
