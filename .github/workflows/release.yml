@@ -74,16 +74,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             goos: linux
             goarch: amd64
             cc: gcc
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
-            cc: aarch64-linux-gnu-gcc
-            install: gcc-aarch64-linux-gnu
-          - os: macos-15
+            cc: gcc
+          - os: macos-15-intel
             goos: darwin
             goarch: amd64
             cc: clang
@@ -91,8 +90,6 @@ jobs:
             goos: darwin
             goarch: arm64
             cc: clang
-            cgo_cflags: -arch arm64
-            cgo_ldflags: -arch arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -101,11 +98,6 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-      - name: Install Linux arm64 cross compiler
-        if: matrix.install != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ${{ matrix.install }}
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: update-certificate
@@ -116,21 +108,36 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
           CGO_ENABLED: '1'
-          CGO_CFLAGS: ${{ matrix.cgo_cflags }}
-          CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
         run: |
           mkdir -p dist
           BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          BUILD_OUTPUT="$RUNNER_TEMP/istok"
           UPDATE_CERTIFICATE_B64="$(tr -d '\n' < "$RUNNER_TEMP/release-certificate/update-certificate.b64")" \
             make build VERSION="$GITHUB_REF_NAME" COMMIT="$GITHUB_SHA" BUILD_DATE="$BUILD_DATE" \
-              RELEASE_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/release-feed/" BUILD_OUTPUT=dist/istok
-          chmod 0755 dist/istok
-          tar -C dist -czf "dist/istok_${GOOS}_${GOARCH}.tar.gz" istok
-          rm dist/istok
+              RELEASE_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/release-feed/" BUILD_OUTPUT="$BUILD_OUTPUT"
+          chmod 0755 "$BUILD_OUTPUT"
+          tar -C "$RUNNER_TEMP" -czf "$GITHUB_WORKSPACE/dist/istok_${GOOS}_${GOARCH}.tar.gz" istok
+          rm "$BUILD_OUTPUT"
+      - name: Smoke test release archive
+        run: |
+          set -o pipefail
+          scripts/release-smoke.sh \
+            "dist/istok_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" \
+            "$GITHUB_REF_NAME" \
+            "$GITHUB_SHA" \
+            "${{ matrix.goos }}" \
+            "${{ matrix.goarch }}" \
+            | tee "dist/smoke-${{ matrix.goos }}-${{ matrix.goarch }}.log"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/istok_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/smoke-${{ matrix.goos }}-${{ matrix.goarch }}.log
           if-no-files-found: error
           retention-days: 1
 

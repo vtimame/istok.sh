@@ -59,6 +59,15 @@ istok task ready
 istok context show
 ```
 
+Repository indexing is automatic. Search and inspect the local code graph from
+inside the project:
+
+```sh
+istok index status
+istok search "query"
+istok graph symbol SymbolName
+```
+
 Start the MCP server for an agent from inside the project:
 
 ```sh
@@ -81,7 +90,28 @@ The local database is stored in the platform user data directory by default.
 Set `ISTOK_DATABASE` or pass `--database PATH` to use another database. Back up
 that file before testing alpha releases with important project data.
 
-Istok currently covers the local task/context/run workflow. Cloud sync, a web
-interface, and repository indexing/search are not part of this release.
+Istok currently covers the local task/context/run workflow, automatic repository
+indexing, lexical search, and a lightweight code graph. Cloud sync and a web
+interface are not part of this release.
+
+## Index acceptance
+
+Contributors can run the indexing benchmark and process-level hardening suite
+with Docker Compose v2:
+
+```sh
+make test-index-benchmark
+make test-index-heavy
+make test-index-release
+```
+
+The container has no network access and runs with bounded CPU, memory, and PID
+resources. Reports are written to `tmp/index-acceptance`. The release target
+requires a clean Git worktree and records the exact commit, container image,
+corpus hash, quality metrics, timings, and sidecar size. These Linux container
+tests complement, but do not replace, native release-binary smoke tests on Linux
+and macOS. The release workflow builds each archive on a matching native runner,
+extracts it, and verifies version reporting, indexing, lexical search, Go and
+TypeScript graph lookup, and system-library dependencies before publication.
 
 [releases]: https://github.com/s26-dev/Istok-CLI/releases
