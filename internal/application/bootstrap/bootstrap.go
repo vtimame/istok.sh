@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
 	contextapp "s26.dev/istok-cli/internal/application/context"
+	contextpackapp "s26.dev/istok-cli/internal/application/contextpack"
 	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
@@ -113,13 +115,17 @@ func RunWorkflowOptions(path string) fx.Option {
 func kernelOptions(path string) fx.Option {
 	return fx.Options(
 		ProjectOptions(path),
+		IndexingOptions(os.Getenv("ISTOK_INDEX_ROOT")),
 		fx.Provide(taskrepo.New),
 		fx.Provide(func(repository *taskrepo.Repository) taskapp.Repository { return repository }),
 		fx.Provide(func(repository *taskrepo.Repository) runapp.TaskResolver { return repository }),
 		fx.Provide(contextrepo.New),
 		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
 		fx.Provide(contextapp.NewService),
-		fx.Provide(func(service *contextapp.Service) runapp.ContextBuilder { return service }),
+		fx.Provide(func(service *project.Service) contextpackapp.ProjectResolver { return service }),
+		fx.Provide(func(service *indexingapp.Service) contextpackapp.TaskRetriever { return service }),
+		fx.Provide(contextpackapp.NewService),
+		fx.Provide(func(service *contextpackapp.Service) runapp.ContextPackageBuilder { return service }),
 		fx.Provide(runrepo.New),
 		fx.Provide(func(repository *runrepo.Repository) runapp.Repository { return repository }),
 		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),

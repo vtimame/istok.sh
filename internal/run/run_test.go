@@ -6,6 +6,7 @@ import (
 	"time"
 
 	projectcontext "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 )
 
 func TestStatusValidationAndTerminalStates(t *testing.T) {
@@ -70,6 +71,23 @@ func TestFinishExecutionInputValidateDurationMSNonNegative(t *testing.T) {
 	}
 	if ErrorCode(value.Validate()) != CodeInvalid {
 		t.Fatalf("expected invalid duration, got %v", value.Validate())
+	}
+}
+
+func TestClaimInputRequiresAuditedRetrievalOverride(t *testing.T) {
+	value := ClaimInput{WithoutRetrieval: true}
+	if ErrorCode(value.Validate()) != CodeInvalid {
+		t.Fatalf("ClaimInput.Validate() = %v", value.Validate())
+	}
+
+	value.RetrievalOverrideReason = "  unavailable index  "
+	if err := value.Validate(); err != nil {
+		t.Fatalf("ClaimInput.Validate() = %v", err)
+	}
+
+	value.WithoutRetrieval = false
+	if ErrorCode(value.Validate()) != CodeInvalid {
+		t.Fatalf("ClaimInput.Validate() = %v", value.Validate())
 	}
 }
 
@@ -163,8 +181,8 @@ func TestActorSnapshotValidateUsesTrimmedText(t *testing.T) {
 
 func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 	validHash := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	contextPackage := projectcontext.ContextPackage{
-		SchemaVersion: ContextSnapshotSchemaVersion,
+	contextPackage := contextpack.Package{
+		SchemaVersion: contextpack.SchemaVersion,
 		ProjectID:     mustProjectID(t),
 		GeneratedAt:   time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
 		Records: []projectcontext.ContextPackageItem{
@@ -182,6 +200,12 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 				Tags:           []string{"one", "two"},
 			},
 		},
+		Retrieval: []contextpack.Item{{
+			ItemID: mustID(t), ContractVersion: "istok.retrieval.v1", ChunkID: "chunk",
+			Kind: "file_chunk", Path: "main.go", Language: "go", LineStart: 1, LineEnd: 2,
+			ContentHash: validHash, Snippet: "package main", Score: 1, Visibility: "local_only",
+			MatchedTerms: []string{"title"}, Provenance: []string{}, Reasons: []string{},
+		}},
 	}
 
 	snapshot, err := NewContextSnapshot(mustID(t), contextPackage, contextPackage.ProjectID)
@@ -197,17 +221,24 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 
 	contextPackage.Records[0].Title = "changed"
 	contextPackage.Records[0].Tags[0] = "changed"
+	contextPackage.Retrieval[0].MatchedTerms[0] = "changed"
 	if snapshot.Records[0].Title == "changed" {
 		t.Fatal("snapshot title changed after source mutation")
 	}
 	if snapshot.Records[0].Tags[0] == "changed" {
 		t.Fatal("snapshot tags changed after source mutation")
 	}
+	if snapshot.Retrieval[0].MatchedTerms[0] == "changed" {
+		t.Fatal("snapshot retrieval changed after source mutation")
+	}
+	if snapshot.Retrieval[0].Provenance == nil || snapshot.Retrieval[0].Reasons == nil {
+		t.Fatal("snapshot retrieval arrays must remain non-nil")
+	}
 }
 
 func TestContextSnapshotValidateRequiresProjectMatchAndVersionAndFields(t *testing.T) {
-	contextPackage := projectcontext.ContextPackage{
-		SchemaVersion: ContextSnapshotSchemaVersion,
+	contextPackage := contextpack.Package{
+		SchemaVersion: contextpack.SchemaVersion,
 		ProjectID:     mustProjectID(t),
 		GeneratedAt:   time.Now().UTC(),
 		Records: []projectcontext.ContextPackageItem{
@@ -235,7 +266,7 @@ func TestContextSnapshotValidateRequiresProjectMatchAndVersionAndFields(t *testi
 		t.Fatal("expected schema version error")
 	}
 
-	contextPackage.SchemaVersion = ContextSnapshotSchemaVersion
+	contextPackage.SchemaVersion = contextpack.SchemaVersion
 	contextPackage.Records[0].ContentHash = "zz"
 	snapshot, err := NewContextSnapshot(mustID(t), contextPackage, contextPackage.ProjectID)
 	if err == nil {

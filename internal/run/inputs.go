@@ -8,11 +8,13 @@ import (
 )
 
 type ClaimInput struct {
-	ID           string `json:"id,omitempty"`
-	SnapshotID   string `json:"snapshot_id,omitempty"`
-	ContextLimit int    `json:"context_limit"`
-	BaseBranch   string `json:"base_branch"`
-	BaseCommit   string `json:"base_commit"`
+	ID                      string `json:"id,omitempty"`
+	SnapshotID              string `json:"snapshot_id,omitempty"`
+	ContextLimit            int    `json:"context_limit"`
+	BaseBranch              string `json:"base_branch"`
+	BaseCommit              string `json:"base_commit"`
+	WithoutRetrieval        bool   `json:"without_retrieval"`
+	RetrievalOverrideReason string `json:"retrieval_override_reason"`
 }
 
 func (v ClaimInput) Validate() error {
@@ -24,6 +26,10 @@ func (v ClaimInput) Validate() error {
 	}
 	if v.ContextLimit < 0 {
 		return NewError(CodeInvalid, "context limit must be non-negative")
+	}
+	v.RetrievalOverrideReason = strings.TrimSpace(v.RetrievalOverrideReason)
+	if v.WithoutRetrieval != (v.RetrievalOverrideReason != "") {
+		return NewError(CodeInvalid, "without_retrieval and retrieval_override_reason must be set together")
 	}
 
 	return nil

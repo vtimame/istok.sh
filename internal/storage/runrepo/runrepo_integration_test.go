@@ -18,9 +18,12 @@ import (
 	"go.uber.org/fx"
 
 	contextapp "s26.dev/istok-cli/internal/application/context"
+	contextpackapp "s26.dev/istok-cli/internal/application/contextpack"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	taskapp "s26.dev/istok-cli/internal/application/task"
 	runmodel "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 	"s26.dev/istok-cli/internal/project"
 	"s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/storage"
@@ -113,7 +116,7 @@ func newRunFixtureAtPath(t *testing.T, database string, clock func() time.Time) 
 		tasks:          tasks,
 		contextRecords: records,
 		runs:           runs,
-		runService:     runapp.NewService(runs, tasks, contextapp.NewService(records)),
+		runService:     runapp.NewService(runs, tasks, contextpackapp.NewService(contextapp.NewService(records), service, indexingapp.NewService(indexingapp.Config{IndexRoot: t.TempDir()}))),
 	}
 }
 
@@ -202,8 +205,8 @@ func newSnapshot(t *testing.T, projectID string, hashes map[string]string, recor
 	}
 
 	snapshotID := mustRunID(t)
-	value, err := run.NewContextSnapshot(snapshotID, runmodel.ContextPackage{
-		SchemaVersion: run.ContextSnapshotSchemaVersion,
+	value, err := run.NewContextSnapshot(snapshotID, contextpack.Package{
+		SchemaVersion: contextpack.SchemaVersion,
 		ProjectID:     projectID,
 		GeneratedAt:   time.Unix(1, 0).UTC(),
 		Records:       items,
@@ -252,6 +255,94 @@ func claimRunViaService(
 	}
 
 	return value
+}
+
+func retrievalItem(t *testing.T) run.ContextSnapshotRetrievalItem {
+	t.Helper()
+	return run.ContextSnapshotRetrievalItem{ItemID: mustRunID(t), ContractVersion: "istok.retrieval.v1", ChunkID: "chunk", Kind: "file_chunk", Path: "internal/unique.go", Language: "go", LineStart: 1, LineEnd: 2, ContentHash: strings.Repeat("f", 64), Snippet: "UniqueSymbol", Score: 1, MatchedTerms: []string{}, Provenance: []string{}, Reasons: []string{}, Visibility: "local_only"}
+}
+
+func TestRunRepoSnapshotV2RetrievalRoundTripAndOverrideAudit(t *testing.T) {
+	f := newRunFixture(t)
+	projectValue := newProject(t, f, "retrieval")
+	taskValue := newTask(t, f, projectValue.ID, "retrieval")
+	snapshot := newSnapshot(t, projectValue.ID, nil)
+	snapshot.Retrieval = []run.ContextSnapshotRetrievalItem{retrievalItem(t)}
+	snapshot.Metadata = run.ContextSnapshotRetrievalMetadata{WithoutRetrieval: false}
+	claimed := claimRun(t, f, taskValue.ID, snapshot)
+	show, err := f.runs.ShowRun(context.Background(), claimed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(show.Snapshot.Retrieval) != 1 || show.Snapshot.Retrieval[0].Path != "internal/unique.go" || show.Snapshot.Retrieval[0].MatchedTerms == nil {
+		t.Fatalf("snapshot = %#v", show.Snapshot)
+	}
+
+	overrideTask := newTask(t, f, projectValue.ID, "override")
+	override := newSnapshot(t, projectValue.ID, nil)
+	override.Metadata = run.ContextSnapshotRetrievalMetadata{WithoutRetrieval: true, OverrideReason: "maintenance"}
+	overrideRun := claimRun(t, f, overrideTask.ID, override)
+	var body string
+	if err := f.db.QueryRowContext(context.Background(), `SELECT body FROM task_events WHERE task_id=? AND type='claimed'`, overrideTask.ID).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	var event struct {
+		RunID            string `json:"run_id"`
+		WithoutRetrieval bool   `json:"without_retrieval"`
+		OverrideReason   string `json:"override_reason"`
+	}
+	if err := json.Unmarshal([]byte(body), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.RunID != overrideRun.ID || !event.WithoutRetrieval || event.OverrideReason != "maintenance" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestRunRepoReadsHistoricalV1Snapshot(t *testing.T) {
+	f := newRunFixture(t)
+	projectValue := newProject(t, f, "v1")
+	taskValue := newTask(t, f, projectValue.ID, "v1")
+	snapshotID, runID := mustRunID(t), mustRunID(t)
+	now := stamp(time.Now().UTC())
+	_, err := f.db.ExecContext(context.Background(), `INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES (?, '1', ?, ?, ?)`, snapshotID, projectValue.ID, now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.db.ExecContext(context.Background(), `INSERT INTO runs (id,task_id,context_snapshot_id,revision,status,actor_id,actor_kind,actor_name,base_branch,base_commit,started_at,updated_at) VALUES (?,?,?,1,'active',?,?,?,?,?,?,?)`, runID, taskValue.ID, snapshotID, testRunActor.ID, testRunActor.Kind, testRunActor.Name, "", "", now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.db.ExecContext(context.Background(), `INSERT INTO run_leases (run_id,lease_id,owner_id,owner_kind,owner_name,heartbeat_at,expires_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`, runID, runID, testRunActor.ID, testRunActor.Kind, testRunActor.Name, now, now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	show, err := f.runs.ShowRun(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.Snapshot.SchemaVersion != run.ContextSnapshotSchemaVersionV1 || show.Snapshot.Retrieval == nil || len(show.Snapshot.Retrieval) != 0 {
+		t.Fatalf("v1 snapshot = %#v", show.Snapshot)
+	}
+}
+
+func TestRunRepoRetrievalInsertFailureRollsBackClaim(t *testing.T) {
+	f := newRunFixture(t)
+	projectValue := newProject(t, f, "rollback-retrieval")
+	taskValue := newTask(t, f, projectValue.ID, "rollback")
+	snapshot := newSnapshot(t, projectValue.ID, nil)
+	first := retrievalItem(t)
+	second := first
+	second.Path = "other.go"
+	snapshot.Retrieval = []run.ContextSnapshotRetrievalItem{first, second}
+	before := countRows(t, f.db, "SELECT COUNT(*) FROM context_snapshots")
+	_, err := f.runs.Claim(context.Background(), run.ClaimRecord{RunID: mustRunID(t), TaskID: taskValue.ID, EventID: mustRunID(t), Snapshot: snapshot, Actor: testRunActor})
+	if err == nil {
+		t.Fatal("expected retrieval insert error")
+	}
+	if countRows(t, f.db, "SELECT COUNT(*) FROM context_snapshots") != before || countRows(t, f.db, "SELECT COUNT(*) FROM runs WHERE task_id=?", taskValue.ID) != 0 || countRows(t, f.db, "SELECT COUNT(*) FROM task_events WHERE task_id=?", taskValue.ID) != 1 {
+		t.Fatal("claim transaction was not rolled back")
+	}
 }
 
 func startExecution(t *testing.T, f *runFixture, runID string) run.Execution {

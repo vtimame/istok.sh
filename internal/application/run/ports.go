@@ -3,7 +3,7 @@ package runapp
 import (
 	"context"
 
-	contextdomain "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 	run "s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
@@ -12,8 +12,8 @@ type TaskResolver interface {
 	Resolve(context.Context, task.Selector, bool) (task.Task, error)
 }
 
-type ContextBuilder interface {
-	BuildPackage(context.Context, string, contextdomain.BuildOptions) (contextdomain.ContextPackage, error)
+type ContextPackageBuilder interface {
+	BuildForTask(context.Context, task.Task, contextpack.BuildOptions) (contextpack.Package, error)
 }
 
 type Repository interface {

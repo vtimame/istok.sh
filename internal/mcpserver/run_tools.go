@@ -26,11 +26,13 @@ func addRunTools(server *mcp.Server, projects *project.Service, runs *runapp.Ser
 			return errorTool(err), runErrorResult(err), nil
 		}
 		value, err := runs.Claim(ctx, selector, run.ClaimInput{
-			ID:           in.RunID,
-			SnapshotID:   in.SnapshotID,
-			ContextLimit: in.ContextLimit,
-			BaseBranch:   in.BaseBranch,
-			BaseCommit:   in.BaseCommit,
+			ID:                      in.RunID,
+			SnapshotID:              in.SnapshotID,
+			ContextLimit:            in.ContextLimit,
+			BaseBranch:              in.BaseBranch,
+			BaseCommit:              in.BaseCommit,
+			WithoutRetrieval:        in.WithoutRetrieval,
+			RetrievalOverrideReason: in.RetrievalOverrideReason,
 		}, actor.run())
 		if err != nil {
 			return errorTool(err), runErrorResult(err), nil

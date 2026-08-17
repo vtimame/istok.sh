@@ -13,6 +13,8 @@ import (
 	"go.uber.org/fx"
 
 	contextapp "s26.dev/istok-cli/internal/application/context"
+	contextpackapp "s26.dev/istok-cli/internal/application/contextpack"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
 	taskapp "s26.dev/istok-cli/internal/application/task"
@@ -546,6 +548,28 @@ func TestRunToolsLifecycleAndCompletion(t *testing.T) {
 	}
 }
 
+func TestTaskClaimOverrideIsPassedToContextSnapshot(t *testing.T) {
+	_, worker := newSession(t, Worker, t.TempDir())
+	initProject(t, worker, "override")
+	created := createTask(t, worker, newTaskID(t), "override claim")
+	claimed := callTool(t, worker, "task_claim", map[string]any{
+		"task_id":                   created.Task.ID,
+		"without_retrieval":         true,
+		"retrieval_override_reason": "maintenance",
+	})
+	var runResult RunResult
+	decodeStructured(t, claimed, &runResult)
+	if runResult.Run == nil {
+		t.Fatalf("claim = %+v", runResult)
+	}
+	show := callTool(t, worker, "run_show", map[string]any{"run_id": runResult.Run.ID})
+	var showResult RunShowResult
+	decodeStructured(t, show, &showResult)
+	if showResult.Show == nil || !showResult.Show.Snapshot.Metadata.WithoutRetrieval || showResult.Show.Snapshot.Metadata.OverrideReason != "maintenance" || showResult.Show.Snapshot.Retrieval == nil {
+		t.Fatalf("show = %+v", showResult)
+	}
+}
+
 func TestRunToolsScopeAndEvidenceConstraints(t *testing.T) {
 	database := filepath.Join(t.TempDir(), "run-scope.db")
 	firstRoot := t.TempDir()
@@ -893,7 +917,12 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),
 		fx.Provide(taskapp.NewService),
 		fx.Provide(func(repository *taskrepo.Repository) runapp.TaskResolver { return repository }),
-		fx.Provide(func(service *contextapp.Service) runapp.ContextBuilder { return service }),
+		fx.Supply(indexingapp.Config{IndexRoot: filepath.Join(filepath.Dir(database), "indexes")}),
+		fx.Provide(indexingapp.NewService),
+		fx.Provide(func(service *project.Service) contextpackapp.ProjectResolver { return service }),
+		fx.Provide(func(service *indexingapp.Service) contextpackapp.TaskRetriever { return service }),
+		fx.Provide(contextpackapp.NewService),
+		fx.Provide(func(service *contextpackapp.Service) runapp.ContextPackageBuilder { return service }),
 		fx.Provide(runapp.NewService),
 		fx.Provide(func() (*artifactstore.Store, error) {
 			return artifactstore.New(filepath.Join(filepath.Dir(database), "artifacts"))

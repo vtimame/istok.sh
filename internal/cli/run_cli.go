@@ -75,11 +75,13 @@ func runTaskClaim(ctx context.Context, command TaskClaimCommand, cwd string, out
 		}
 
 		return kernel.runs.Claim(ctx, task.Selector{ProjectID: current.ID, Number: command.ID}, runmodel.ClaimInput{
-			ID:           command.RunID,
-			SnapshotID:   command.SnapshotID,
-			ContextLimit: command.ContextLimit,
-			BaseBranch:   baseBranch,
-			BaseCommit:   baseCommit,
+			ID:                      command.RunID,
+			SnapshotID:              command.SnapshotID,
+			ContextLimit:            command.ContextLimit,
+			BaseBranch:              baseBranch,
+			BaseCommit:              baseCommit,
+			WithoutRetrieval:        command.WithoutRetrieval,
+			RetrievalOverrideReason: command.RetrievalOverrideReason,
 		}, cliRunActor)
 	})
 }
@@ -599,9 +601,19 @@ func renderRunShowView(value runShowView) string {
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Version"), presentation.Metadata(value.Snapshot.SchemaVersion))))
 	output.WriteString("\n")
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Records"), presentation.Metadata(fmt.Sprint(len(value.Snapshot.Records))))))
+	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Retrieved"), presentation.Metadata(fmt.Sprint(len(value.Snapshot.Retrieval))))))
+	if value.Snapshot.Metadata.WithoutRetrieval {
+		output.WriteString("\n")
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Retrieval override"), presentation.Warning(value.Snapshot.Metadata.OverrideReason))))
+	}
 	for _, record := range value.Snapshot.Records {
 		output.WriteString("\n")
 		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Metadata(fmt.Sprintf("r%d", record.RecordRevision)), record.Title)))
+	}
+	for _, item := range value.Snapshot.Retrieval {
+		output.WriteString("\n")
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s:%d-%d", presentation.Metadata(item.Kind), item.Path, item.LineStart, item.LineEnd)))
 	}
 	output.WriteString("\n\n")
 	output.WriteString(presentation.SectionTitle("Evidence"))

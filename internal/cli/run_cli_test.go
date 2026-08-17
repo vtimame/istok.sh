@@ -172,6 +172,45 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	}
 }
 
+func TestTaskClaimAutomaticallySnapshotsLocalRetrieval(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	path := filepath.Join(root, "unique.go")
+	if err := os.WriteFile(path, []byte("package unique\n\nfunc IstokUniqueClaimSymbol() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	initialized := executeAt(t, root, database, "init", "--json")
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized.output).Project.ID
+	tasks, _ := newTaskRepositoryForTest(t, database)
+	if _, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "IstokUniqueClaimSymbol"}, task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}); err != nil {
+		t.Fatal(err)
+	}
+	claimed := executeAt(t, root, database, "task", "claim", "1", "--json")
+	if claimed.err != nil {
+		t.Fatal(claimed.err)
+	}
+	runValue := decodeJSONResult[runmodel.Run](t, claimed.output)
+	shown := executeAt(t, root, database, "run", "show", runValue.ID, "--json")
+	if shown.err != nil {
+		t.Fatal(shown.err)
+	}
+	before := decodeJSONResult[runmodel.Show](t, shown.output).Snapshot
+	if len(before.Retrieval) == 0 || before.Retrieval[0].Visibility != "local_only" {
+		t.Fatalf("retrieval = %#v", before.Retrieval)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	after := decodeJSONResult[runmodel.Show](t, executeAt(t, root, database, "run", "show", runValue.ID, "--json").output).Snapshot
+	if after.Retrieval[0].Snippet != before.Retrieval[0].Snippet || after.Retrieval[0].ContentHash != before.Retrieval[0].ContentHash {
+		t.Fatalf("snapshot changed: before=%#v after=%#v", before.Retrieval[0], after.Retrieval[0])
+	}
+}
+
 func TestRunCLISuccessRequiresEvidenceAndJSONErrorsAreVersioned(t *testing.T) {
 	root := t.TempDir()
 	database := filepath.Join(t.TempDir(), "istok.db")

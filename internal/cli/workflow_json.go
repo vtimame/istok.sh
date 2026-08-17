@@ -154,12 +154,14 @@ type snapshotItemJSON struct {
 }
 
 type snapshotJSON struct {
-	ID            string             `json:"id"`
-	SchemaVersion string             `json:"schema_version"`
-	ProjectID     string             `json:"project_id"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	CreatedAt     time.Time          `json:"created_at"`
-	Records       []snapshotItemJSON `json:"records"`
+	ID            string                                    `json:"id"`
+	SchemaVersion string                                    `json:"schema_version"`
+	ProjectID     string                                    `json:"project_id"`
+	GeneratedAt   time.Time                                 `json:"generated_at"`
+	CreatedAt     time.Time                                 `json:"created_at"`
+	Records       []snapshotItemJSON                        `json:"records"`
+	Retrieval     []runmodel.ContextSnapshotRetrievalItem   `json:"retrieval"`
+	Metadata      runmodel.ContextSnapshotRetrievalMetadata `json:"metadata"`
 }
 
 type runShowJSON struct {
@@ -283,7 +285,7 @@ func snapshotJSONValue(value runmodel.ContextSnapshot) snapshotJSON {
 		})
 	}
 
-	return snapshotJSON{ID: value.ID, SchemaVersion: value.SchemaVersion, ProjectID: value.ProjectID, GeneratedAt: value.GeneratedAt, CreatedAt: value.CreatedAt, Records: records}
+	return snapshotJSON{ID: value.ID, SchemaVersion: value.SchemaVersion, ProjectID: value.ProjectID, GeneratedAt: value.GeneratedAt, CreatedAt: value.CreatedAt, Records: records, Retrieval: append([]runmodel.ContextSnapshotRetrievalItem{}, value.Retrieval...), Metadata: value.Metadata}
 }
 
 func runShowJSONValue(value runmodel.Show, taskNumber int64) runShowJSON {

@@ -73,6 +73,19 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 			return err
 		}
 
+		body := input.RunID
+		if input.Snapshot.Metadata.WithoutRetrieval {
+			encoded, encodeErr := json.Marshal(struct {
+				RunID            string `json:"run_id"`
+				WithoutRetrieval bool   `json:"without_retrieval"`
+				OverrideReason   string `json:"override_reason"`
+			}{RunID: input.RunID, WithoutRetrieval: true, OverrideReason: input.Snapshot.Metadata.OverrideReason})
+			if encodeErr != nil {
+				return fmt.Errorf("encode claim override event: %w", encodeErr)
+			}
+			body = string(encoded)
+		}
+
 		_, err = conn.ExecContext(ctx, `
 			INSERT INTO runs (
 				id,task_id,context_snapshot_id,revision,status,
@@ -111,7 +124,7 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 		`,
 			input.EventID,
 			input.TaskID,
-			input.RunID,
+			body,
 			current.Revision,
 			input.Actor.ID,
 			input.Actor.Kind,
@@ -168,6 +181,30 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 		)
 		if err != nil {
 			return mapSQLError(err, "context snapshot item conflicts with existing data")
+		}
+	}
+	if snapshot.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+		_, err = conn.ExecContext(ctx, `INSERT INTO context_snapshot_retrieval_metadata (snapshot_id,without_retrieval,override_reason) VALUES (?,?,?)`, snapshot.ID, snapshot.Metadata.WithoutRetrieval, snapshot.Metadata.OverrideReason)
+		if err != nil {
+			return mapSQLError(err, "context snapshot retrieval metadata conflicts with existing data")
+		}
+		for position, item := range snapshot.Retrieval {
+			matchedTerms, err := json.Marshal(item.MatchedTerms)
+			if err != nil {
+				return fmt.Errorf("encode retrieval matched terms: %w", err)
+			}
+			provenance, err := json.Marshal(item.Provenance)
+			if err != nil {
+				return fmt.Errorf("encode retrieval provenance: %w", err)
+			}
+			reasons, err := json.Marshal(item.Reasons)
+			if err != nil {
+				return fmt.Errorf("encode retrieval reasons: %w", err)
+			}
+			_, err = conn.ExecContext(ctx, `INSERT INTO context_snapshot_retrieval_items (snapshot_id,position,item_id,contract_version,chunk_id,kind,path,language,symbol,line_start,line_end,content_hash,snippet,score,lexical_score,graph_score,matched_terms,provenance,reasons,visibility) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, snapshot.ID, position, item.ItemID, item.ContractVersion, item.ChunkID, item.Kind, item.Path, item.Language, item.Symbol, item.LineStart, item.LineEnd, item.ContentHash, item.Snippet, item.Score, item.LexicalScore, item.GraphScore, string(matchedTerms), string(provenance), string(reasons), item.Visibility)
+			if err != nil {
+				return mapSQLError(err, "context snapshot retrieval item conflicts with existing data")
+			}
 		}
 	}
 

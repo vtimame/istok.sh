@@ -7,6 +7,7 @@ import (
 	"time"
 
 	projectcontext "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 	run "s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
@@ -23,8 +24,8 @@ func TestClaimCallsResolverBuilderRepositoryOnce(t *testing.T) {
 		taskValue: taskValue,
 	}
 	builder := &fakeContextBuilder{
-		packageValue: projectcontext.ContextPackage{
-			SchemaVersion: run.ContextSnapshotSchemaVersion,
+		packageValue: contextpack.Package{
+			SchemaVersion: contextpack.SchemaVersion,
 			ProjectID:     projectID,
 			GeneratedAt:   nowTime(),
 			Records: []projectcontext.ContextPackageItem{
@@ -353,15 +354,15 @@ func (f *fakeTaskResolver) Resolve(_ context.Context, _ task.Selector, _ bool) (
 }
 
 type fakeContextBuilder struct {
-	packageValue projectcontext.ContextPackage
+	packageValue contextpack.Package
 	err          error
 	buildCalls   int
 }
 
-func (f *fakeContextBuilder) BuildPackage(_ context.Context, _ string, _ projectcontext.BuildOptions) (projectcontext.ContextPackage, error) {
+func (f *fakeContextBuilder) BuildForTask(_ context.Context, _ task.Task, _ contextpack.BuildOptions) (contextpack.Package, error) {
 	f.buildCalls++
 	if f.err != nil {
-		return projectcontext.ContextPackage{}, f.err
+		return contextpack.Package{}, f.err
 	}
 	return f.packageValue, nil
 }

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	contextdomain "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 	run "s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
@@ -13,12 +13,12 @@ import (
 type Service struct {
 	repository     Repository
 	taskResolver   TaskResolver
-	contextBuilder ContextBuilder
+	contextBuilder ContextPackageBuilder
 }
 
 const defaultLeaseDuration = 15 * time.Minute
 
-func NewService(repository Repository, taskResolver TaskResolver, contextBuilder ContextBuilder) *Service {
+func NewService(repository Repository, taskResolver TaskResolver, contextBuilder ContextPackageBuilder) *Service {
 	return &Service{
 		repository:     repository,
 		taskResolver:   taskResolver,
@@ -48,7 +48,7 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 		return run.Run{}, err
 	}
 
-	pkg, err := s.contextBuilder.BuildPackage(ctx, taskValue.ProjectID, contextdomain.BuildOptions{Limit: input.ContextLimit})
+	pkg, err := s.contextBuilder.BuildForTask(ctx, taskValue, contextpack.BuildOptions{ContextLimit: input.ContextLimit, WithoutRetrieval: input.WithoutRetrieval, RetrievalOverrideReason: input.RetrievalOverrideReason})
 	if err != nil {
 		return run.Run{}, err
 	}

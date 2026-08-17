@@ -123,6 +123,7 @@ func (r *Repository) ShowRun(ctx context.Context, id string) (runmodel.Show, err
 func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.ContextSnapshot, error) {
 	var value runmodel.ContextSnapshot
 	value.Records = make([]runmodel.ContextSnapshotItem, 0)
+	value.Retrieval = make([]runmodel.ContextSnapshotRetrievalItem, 0)
 	var generatedAt, createdAt string
 
 	err := r.db.QueryRowContext(ctx, `
@@ -185,6 +186,41 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	}
 	if err := rows.Err(); err != nil {
 		return runmodel.ContextSnapshot{}, fmt.Errorf("iterate context snapshot items: %w", err)
+	}
+	if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV1 {
+		return value, nil
+	}
+	var withoutRetrieval int
+	err = r.db.QueryRowContext(ctx, `SELECT without_retrieval,override_reason FROM context_snapshot_retrieval_metadata WHERE snapshot_id=?`, id).Scan(&withoutRetrieval, &value.Metadata.OverrideReason)
+	if err != nil {
+		return runmodel.ContextSnapshot{}, fmt.Errorf("get context snapshot retrieval metadata: %w", err)
+	}
+	value.Metadata.WithoutRetrieval = withoutRetrieval != 0
+	retrievalRows, err := r.db.QueryContext(ctx, `SELECT item_id,contract_version,chunk_id,kind,path,language,symbol,line_start,line_end,content_hash,snippet,score,lexical_score,graph_score,matched_terms,provenance,reasons,visibility FROM context_snapshot_retrieval_items WHERE snapshot_id=? ORDER BY position`, id)
+	if err != nil {
+		return runmodel.ContextSnapshot{}, fmt.Errorf("list context snapshot retrieval items: %w", err)
+	}
+	defer retrievalRows.Close()
+	value.Retrieval = make([]runmodel.ContextSnapshotRetrievalItem, 0)
+	for retrievalRows.Next() {
+		var item runmodel.ContextSnapshotRetrievalItem
+		var matchedTerms, provenance, reasons string
+		if err := retrievalRows.Scan(&item.ItemID, &item.ContractVersion, &item.ChunkID, &item.Kind, &item.Path, &item.Language, &item.Symbol, &item.LineStart, &item.LineEnd, &item.ContentHash, &item.Snippet, &item.Score, &item.LexicalScore, &item.GraphScore, &matchedTerms, &provenance, &reasons, &item.Visibility); err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("scan context snapshot retrieval item: %w", err)
+		}
+		if err := json.Unmarshal([]byte(matchedTerms), &item.MatchedTerms); err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("decode retrieval matched terms: %w", err)
+		}
+		if err := json.Unmarshal([]byte(provenance), &item.Provenance); err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("decode retrieval provenance: %w", err)
+		}
+		if err := json.Unmarshal([]byte(reasons), &item.Reasons); err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("decode retrieval reasons: %w", err)
+		}
+		value.Retrieval = append(value.Retrieval, item)
+	}
+	if err := retrievalRows.Err(); err != nil {
+		return runmodel.ContextSnapshot{}, fmt.Errorf("iterate context snapshot retrieval items: %w", err)
 	}
 
 	return value, nil

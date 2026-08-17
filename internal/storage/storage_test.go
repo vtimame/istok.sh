@@ -108,8 +108,8 @@ func TestEmbeddedMigrationIsApplied(t *testing.T) {
 		t.Fatalf("query goose version: %v", err)
 	}
 
-	if version != 7 {
-		t.Errorf("migration version = %d, want 7", version)
+	if version != 8 {
+		t.Errorf("migration version = %d, want 8", version)
 	}
 }
 

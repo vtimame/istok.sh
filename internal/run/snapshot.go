@@ -6,18 +6,31 @@ import (
 	"time"
 
 	projectcontext "s26.dev/istok-cli/internal/context"
+	contextpack "s26.dev/istok-cli/internal/contextpack"
 )
 
-const ContextSnapshotSchemaVersion = "1"
+const (
+	ContextSnapshotSchemaVersionV1 = "1"
+	ContextSnapshotSchemaVersion   = "2"
+)
 
 type ContextSnapshot struct {
-	ID            string                `json:"id"`
-	SchemaVersion string                `json:"schema_version"`
-	ProjectID     string                `json:"project_id"`
-	GeneratedAt   time.Time             `json:"generated_at"`
-	CreatedAt     time.Time             `json:"created_at"`
-	Records       []ContextSnapshotItem `json:"records"`
+	ID            string                           `json:"id"`
+	SchemaVersion string                           `json:"schema_version"`
+	ProjectID     string                           `json:"project_id"`
+	GeneratedAt   time.Time                        `json:"generated_at"`
+	CreatedAt     time.Time                        `json:"created_at"`
+	Records       []ContextSnapshotItem            `json:"records"`
+	Retrieval     []ContextSnapshotRetrievalItem   `json:"retrieval"`
+	Metadata      ContextSnapshotRetrievalMetadata `json:"metadata"`
 }
+
+type ContextSnapshotRetrievalMetadata struct {
+	WithoutRetrieval bool   `json:"without_retrieval"`
+	OverrideReason   string `json:"override_reason,omitempty"`
+}
+
+type ContextSnapshotRetrievalItem = contextpack.Item
 
 type ContextSnapshotItem struct {
 	RecordID       string                     `json:"record_id"`
@@ -40,7 +53,7 @@ func (v ContextSnapshot) Validate() error {
 	if !IsUUIDv7(v.ProjectID) {
 		return NewError(CodeInvalid, "project id must be a canonical UUIDv7")
 	}
-	if v.SchemaVersion != ContextSnapshotSchemaVersion {
+	if v.SchemaVersion != ContextSnapshotSchemaVersionV1 && v.SchemaVersion != ContextSnapshotSchemaVersion {
 		return NewError(CodeInvalid, "invalid context snapshot schema version")
 	}
 	if v.GeneratedAt.IsZero() {
@@ -51,18 +64,35 @@ func (v ContextSnapshot) Validate() error {
 			return err
 		}
 	}
+	if v.SchemaVersion == ContextSnapshotSchemaVersionV1 {
+		if len(v.Retrieval) != 0 || v.Metadata.WithoutRetrieval || v.Metadata.OverrideReason != "" {
+			return NewError(CodeInvalid, "v1 context snapshot cannot contain retrieval")
+		}
+		return nil
+	}
+	if err := (contextpack.Metadata{WithoutRetrieval: v.Metadata.WithoutRetrieval, OverrideReason: v.Metadata.OverrideReason}).Validate(); err != nil {
+		return err
+	}
+	if v.Metadata.WithoutRetrieval && len(v.Retrieval) != 0 {
+		return NewError(CodeInvalid, "without_retrieval snapshot cannot contain retrieval")
+	}
+	for _, item := range v.Retrieval {
+		if err := item.Validate(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func NewContextSnapshot(snapshotID string, value projectcontext.ContextPackage, projectID string) (ContextSnapshot, error) {
+func NewContextSnapshot(snapshotID string, value contextpack.Package, projectID string) (ContextSnapshot, error) {
 	if snapshotID == "" || !IsUUIDv7(snapshotID) {
 		return ContextSnapshot{}, NewError(CodeInvalid, "context snapshot id must be a canonical UUIDv7")
 	}
 	if projectID == "" || !IsUUIDv7(projectID) {
 		return ContextSnapshot{}, NewError(CodeInvalid, "project id must be a canonical UUIDv7")
 	}
-	if value.SchemaVersion != ContextSnapshotSchemaVersion {
+	if value.SchemaVersion != contextpack.SchemaVersion {
 		return ContextSnapshot{}, NewError(CodeInvalid, "invalid context snapshot schema version")
 	}
 	if value.ProjectID == "" || value.ProjectID != projectID {
@@ -70,6 +100,10 @@ func NewContextSnapshot(snapshotID string, value projectcontext.ContextPackage, 
 	}
 	if value.GeneratedAt.IsZero() {
 		return ContextSnapshot{}, NewError(CodeInvalid, "generated at is required")
+	}
+
+	if err := value.Validate(); err != nil {
+		return ContextSnapshot{}, err
 	}
 
 	records := make([]ContextSnapshotItem, len(value.Records))
@@ -98,6 +132,14 @@ func NewContextSnapshot(snapshotID string, value projectcontext.ContextPackage, 
 
 		records[i] = item
 	}
+	retrieval := make([]ContextSnapshotRetrievalItem, len(value.Retrieval))
+	for i := range value.Retrieval {
+		item := value.Retrieval[i]
+		item.MatchedTerms = append([]string{}, item.MatchedTerms...)
+		item.Provenance = append([]string{}, item.Provenance...)
+		item.Reasons = append([]string{}, item.Reasons...)
+		retrieval[i] = item
+	}
 
 	return ContextSnapshot{
 		ID:            snapshotID,
@@ -106,6 +148,8 @@ func NewContextSnapshot(snapshotID string, value projectcontext.ContextPackage, 
 		GeneratedAt:   value.GeneratedAt,
 		CreatedAt:     time.Now(),
 		Records:       records,
+		Retrieval:     retrieval,
+		Metadata:      ContextSnapshotRetrievalMetadata{WithoutRetrieval: value.Metadata.WithoutRetrieval, OverrideReason: value.Metadata.OverrideReason},
 	}, nil
 }
 
