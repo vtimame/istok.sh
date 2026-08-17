@@ -119,11 +119,11 @@ func statusStyle(state string) lipgloss.Style {
 	switch normalizeState(state) {
 	case "active", "ready", "success", "succeeded", "passed", "done":
 		return successStyle
-	case "in_progress", "running":
+	case "in_progress", "running", "updating":
 		return brandStyle
-	case "blocked", "warning", "attention", "cancelled":
+	case "blocked", "warning", "attention", "cancelled", "stale", "degraded":
 		return warningStyle
-	case "open", "inactive":
+	case "open", "inactive", "never_indexed":
 		return mutedStyle
 	case "archived":
 		return metadataStyle
@@ -140,6 +140,12 @@ func statusGlyph(state string) string {
 		return "●"
 	case "ready":
 		return "◆"
+	case "updating":
+		return "◐"
+	case "never_indexed":
+		return "○"
+	case "stale", "degraded":
+		return "!"
 	case "in_progress", "running":
 		return "◐"
 	case "open", "inactive":
@@ -169,6 +175,14 @@ func statusLabel(state string) string {
 		return "IN PROGRESS"
 	case "running":
 		return "RUNNING"
+	case "updating":
+		return "UPDATING"
+	case "never_indexed":
+		return "NEVER INDEXED"
+	case "stale":
+		return "STALE"
+	case "degraded":
+		return "DEGRADED"
 	case "open":
 		return "OPEN"
 	case "inactive":

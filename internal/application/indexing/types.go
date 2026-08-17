@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"s26.dev/istok-cli/internal/codegraph"
 	"s26.dev/istok-cli/internal/indexing/sidecar"
 )
 
@@ -20,6 +21,45 @@ type Status struct {
 	Revision       int64               `json:"revision"`
 	TargetRevision *int64              `json:"target_revision,omitempty"`
 	Diagnostics    []string            `json:"diagnostics,omitempty"`
+}
+
+const (
+	maxSearchLimit    = 500
+	defaultGraphLimit = 50
+	defaultPathLimit  = 10
+	maxGraphLimit     = 500
+)
+
+type SymbolRequest struct {
+	Name  string
+	Limit int
+}
+
+type NeighborsRequest struct {
+	Name  string
+	Kinds []codegraph.EdgeKind
+	Limit int
+}
+
+type GraphNeighbor struct {
+	Source       codegraph.Node       `json:"source"`
+	Target       codegraph.Node       `json:"target"`
+	Kind         codegraph.EdgeKind   `json:"kind"`
+	Provenance   codegraph.Provenance `json:"provenance"`
+	Confidence   float64              `json:"confidence"`
+	EvidencePath string               `json:"evidence_path"`
+	EvidenceLine int                  `json:"evidence_line"`
+}
+
+type PathRequest struct {
+	From     string
+	To       string
+	MaxDepth int
+	Limit    int
+}
+
+type GraphPath struct {
+	Nodes []codegraph.Node `json:"nodes"`
 }
 
 type Error struct {

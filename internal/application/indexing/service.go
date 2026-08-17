@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"golang.org/x/sync/singleflight"
 
@@ -20,6 +21,7 @@ type discoverFunc func(context.Context, string, discovery.Previous) (discovery.R
 type Service struct {
 	config   Config
 	group    singleflight.Group
+	locks    sync.Map
 	discover discoverFunc
 	readFile func(string) ([]byte, error)
 }
@@ -38,9 +40,11 @@ func (s *Service) EnsureFresh(ctx context.Context, value project.Project) (Statu
 		return status, wrapError(status, err)
 	}
 
-	coalescingKey := value.ID + "\x00" + value.Root.CanonicalPath
-	result := s.group.DoChan(coalescingKey, func() (any, error) {
-		return s.ensureFresh(ctx, value)
+	projectKey := value.ID + "\x00" + value.Root.CanonicalPath
+	result := s.group.DoChan("fresh\x00"+projectKey, func() (any, error) {
+		return s.withProjectLock(projectKey, func() (Status, error) {
+			return s.ensureFresh(ctx, value)
+		})
 	})
 
 	select {
@@ -58,7 +62,23 @@ func (s *Service) EnsureFresh(ctx context.Context, value project.Project) (Statu
 	}
 }
 
+func (s *Service) withProjectLock(key string, operation func() (Status, error)) (Status, error) {
+	value, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
+	lock := value.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+
+	return operation()
+}
+
 func (s *Service) Search(ctx context.Context, value project.Project, request retrieval.SearchRequest) ([]retrieval.SearchResult, Status, error) {
+	if request.Limit < 0 || request.Limit > maxSearchLimit {
+		err := fmt.Errorf("search limit must be between 0 and %d", maxSearchLimit)
+		status := failedStatus(err)
+
+		return nil, status, wrapError(status, err)
+	}
+
 	status, err := s.EnsureFresh(ctx, value)
 	if err != nil {
 		return nil, status, err
@@ -109,7 +129,7 @@ func (s *Service) Search(ctx context.Context, value project.Project, request ret
 	return results, status, nil
 }
 
-// SearchTask builds the bounded local seed context used by a future contextpack.
+// SearchTask builds the bounded local code context included in task claims.
 // It intentionally has no transport, network, or task lifecycle dependency.
 func (s *Service) SearchTask(ctx context.Context, value project.Project, request retrieval.TaskSearchRequest) ([]retrieval.SearchResult, Status, error) {
 	status, err := s.EnsureFresh(ctx, value)

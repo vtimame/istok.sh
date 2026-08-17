@@ -43,6 +43,14 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 		{"run", "heartbeat", "--help"},
 		{"run", "recover", "--help"},
 		{"run", "artifact", "--help"},
+		{"index", "--help"},
+		{"index", "status", "--help"},
+		{"index", "rebuild", "--help"},
+		{"search", "--help"},
+		{"graph", "--help"},
+		{"graph", "symbol", "--help"},
+		{"graph", "neighbors", "--help"},
+		{"graph", "path", "--help"},
 		{"completion", "zsh"},
 	} {
 		var output bytes.Buffer
@@ -63,7 +71,7 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 	result := executeHelp(t, "--help")
 
-	for _, command := range []string{"version", "mcp", "update", "init", "project", "task", "run", "context"} {
+	for _, command := range []string{"version", "mcp", "update", "init", "project", "task", "run", "context", "index", "search", "graph"} {
 		if !strings.Contains(result, command) {
 			t.Errorf("root help does not contain %q:\n%s", command, result)
 		}

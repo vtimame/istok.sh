@@ -34,6 +34,9 @@ type CLI struct {
 	Task       TaskCommand            `cmd:"" help:"Inspect tasks in the current project."`
 	Run        RunCommand             `cmd:"" help:"Manage local runs and execution evidence."`
 	Context    ContextCommand         `cmd:"" help:"Manage saved project context."`
+	Index      IndexCommand           `cmd:"" help:"Inspect and rebuild the local code index."`
+	Search     SearchCommand          `cmd:"" help:"Search the local code index."`
+	Graph      GraphCommand           `cmd:"" help:"Explore the local code graph."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
 	Migrate    InternalMigrateCommand `cmd:"" hidden:""`
 	Cleanup    InternalCleanupCommand `cmd:"" hidden:""`
@@ -238,6 +241,14 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runRunCommand(ctx, command.Run, commandName, cwd, output)
 	case strings.HasPrefix(commandName, "context"):
 		return runContext(ctx, command.Context, commandName, cwd, input, output)
+	case commandName == "index status":
+		return runIndexStatus(ctx, command.Index.Status, cwd, output)
+	case commandName == "index rebuild":
+		return runIndexRebuild(ctx, command.Index.Rebuild, cwd, output)
+	case strings.HasPrefix(commandName, "search"):
+		return runIndexSearch(ctx, command.Search, cwd, output)
+	case strings.HasPrefix(commandName, "graph"):
+		return runGraph(ctx, command.Graph, commandName, cwd, output)
 	case commandName == "update":
 		return runUpdate(ctx, command.Update, input, output)
 	case commandName == "migrate":
