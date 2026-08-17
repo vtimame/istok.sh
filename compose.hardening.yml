@@ -1,0 +1,23 @@
+services:
+  index-hardening:
+    profiles:
+      - hardening
+    build:
+      context: .
+      dockerfile: docker/hardening/Dockerfile
+    network_mode: none
+    cpus: 2.0
+    mem_limit: 4g
+    pids_limit: 256
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /workspace
+    environment:
+      ISTOK_COMMIT: "${ISTOK_COMMIT:-unknown}"
+      ISTOK_DIRTY: "${ISTOK_DIRTY:-true}"
+      ISTOK_HARDENING_FILES: "${ISTOK_HARDENING_FILES:-2500}"
+      ISTOK_HARDENING_IMAGE: "${ISTOK_HARDENING_IMAGE:-unknown}"
+      ISTOK_HARDENING_BINARY: /usr/local/bin/istok
+    volumes:
+      - "${REPORT_DIR:-./tmp/index-acceptance}:/reports"
+    tmpfs:
+      - /tmp:rw,exec,mode=1777

@@ -1,0 +1,15 @@
+.git
+
+bin
+tmp
+
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+.cache
+.pytest_cache
+coverage

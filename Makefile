@@ -13,6 +13,13 @@ BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf unknown)
 RELEASE_BASE_URL ?= https://istok.s26.dev/releases/
 UPDATE_CERTIFICATE_B64 ?=
 
+REPORT_DIR ?= tmp/index-acceptance
+ISTOK_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
+ISTOK_DIRTY ?= $(shell if test -n "$$(git status --porcelain 2>/dev/null)"; then printf true; else printf false; fi)
+ISTOK_HARDENING_FILES ?= 2500
+
+HARDENING_COMPOSE := docker compose -f compose.hardening.yml --profile hardening
+
 LDFLAGS := -s -w \
 	-X s26.dev/istok-cli/internal/buildinfo.Version=$(VERSION) \
 	-X s26.dev/istok-cli/internal/buildinfo.Commit=$(COMMIT) \
@@ -20,7 +27,7 @@ LDFLAGS := -s -w \
 	-X s26.dev/istok-cli/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
 	-X s26.dev/istok-cli/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
 
-.PHONY: build install update-dev update-dev-down test-update mcp-inspect release-secret
+.PHONY: build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
 
 build:
 	@mkdir -p "$(dir $(BUILD_OUTPUT))"
@@ -46,6 +53,55 @@ test-update:
 	tmp/update-fixture/istok-old$(GOEXE) update --yes --database "$$data/istok.db"; \
 	test "$$(tmp/update-fixture/istok-old$(GOEXE) version)" = "v0.0.2"; \
 	go run ./tools/updatefixture verify "$$data/istok.db"
+
+test-index-heavy:
+	@mkdir -p "$(REPORT_DIR)"
+	@set -eu; \
+		HOST_UID="$$(id -u)"; \
+		HOST_GID="$$(id -g)"; \
+		export HOST_UID HOST_GID; \
+		export REPORT_DIR="$(abspath $(REPORT_DIR))"; \
+		export ISTOK_COMMIT="$(ISTOK_COMMIT)"; \
+		export ISTOK_DIRTY="$(ISTOK_DIRTY)"; \
+		export ISTOK_HARDENING_FILES="$(ISTOK_HARDENING_FILES)"; \
+		$(HARDENING_COMPOSE) build index-hardening; \
+		image_ref="$$( $(HARDENING_COMPOSE) config --images | sed -n '1p' )"; \
+		image_id="$$(docker image inspect "$$image_ref" --format '{{.Id}}')"; \
+		test -n "$$image_id" || { \
+			printf '%s\n' 'unable to determine the index-hardening image ID' >&2; \
+			exit 1; \
+		}; \
+		ISTOK_HARDENING_IMAGE="$$image_id" $(HARDENING_COMPOSE) run --rm index-hardening heavy
+
+test-index-benchmark:
+	@mkdir -p "$(REPORT_DIR)"
+	@set -eu; \
+		HOST_UID="$$(id -u)"; \
+		HOST_GID="$$(id -g)"; \
+		export HOST_UID HOST_GID; \
+		export REPORT_DIR="$(abspath $(REPORT_DIR))"; \
+		export ISTOK_COMMIT="$(ISTOK_COMMIT)"; \
+		export ISTOK_DIRTY="$(ISTOK_DIRTY)"; \
+		export ISTOK_HARDENING_FILES="$(ISTOK_HARDENING_FILES)"; \
+		$(HARDENING_COMPOSE) build index-hardening; \
+		image_ref="$$( $(HARDENING_COMPOSE) config --images | sed -n '1p' )"; \
+		image_id="$$(docker image inspect "$$image_ref" --format '{{.Id}}')"; \
+		test -n "$$image_id" || { \
+			printf '%s\n' 'unable to determine the index-hardening image ID' >&2; \
+			exit 1; \
+		}; \
+		ISTOK_HARDENING_IMAGE="$$image_id" $(HARDENING_COMPOSE) run --rm index-hardening benchmark
+
+test-index-release:
+	@if test -n "$$(git status --porcelain)"; then \
+		printf '%s\n' 'refusing index release validation from a dirty worktree' >&2; \
+		exit 1; \
+	fi
+	@$(MAKE) test-index-heavy \
+		REPORT_DIR="$(REPORT_DIR)" \
+		ISTOK_COMMIT="$(ISTOK_COMMIT)" \
+		ISTOK_DIRTY=false \
+		ISTOK_HARDENING_FILES="$(ISTOK_HARDENING_FILES)"
 
 mcp-inspect: install
 	pnpm dlx @modelcontextprotocol/inspector istok mcp
