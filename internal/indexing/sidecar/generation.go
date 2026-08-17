@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"s26.dev/istok-cli/internal/codegraph"
+	"s26.dev/istok-cli/internal/graphstore"
 	"s26.dev/istok-cli/internal/indexing/manifest"
 )
 
@@ -258,6 +259,15 @@ func (g *Generation) SearchPath() string {
 	return filepath.Join(g.project.projectDir(), "generations", g.epoch, "search.bleve")
 }
 
+// Graph provides read access to semantic graph facts in this generation.
+func (g *Generation) Graph() *graphstore.Repository {
+	if g == nil || g.db == nil {
+		return nil
+	}
+
+	return graphstore.New(g.db)
+}
+
 func (g *Generation) State() (State, error) {
 	if g == nil || g.project == nil {
 		return State{}, errors.New("generation has no project")
@@ -295,6 +305,29 @@ func (g *Generation) BeginUpdate(targetRevision int64) error {
 // the target revision. state.json intentionally remains updating until Bleve is
 // committed and CompleteUpdate is called.
 func (g *Generation) CommitUpdate(value manifest.Manifest, targetRevision int64, finalStatus StateStatus) error {
+	return g.commitUpdate(context.Background(), value, targetRevision, finalStatus, nil, nil)
+}
+
+// CommitUpdateWithGraph atomically advances the manifest, graph and graph markers.
+func (g *Generation) CommitUpdateWithGraph(
+	ctx context.Context,
+	value manifest.Manifest,
+	targetRevision int64,
+	finalStatus StateStatus,
+	replacePaths []string,
+	files []codegraph.FileGraph,
+) error {
+	return g.commitUpdate(ctx, value, targetRevision, finalStatus, replacePaths, files)
+}
+
+func (g *Generation) commitUpdate(
+	ctx context.Context,
+	value manifest.Manifest,
+	targetRevision int64,
+	finalStatus StateStatus,
+	replacePaths []string,
+	files []codegraph.FileGraph,
+) error {
 	if err := g.requirePublished(); err != nil {
 		return err
 	}
@@ -310,7 +343,7 @@ func (g *Generation) CommitUpdate(value manifest.Manifest, targetRevision int64,
 		return errors.New("generation update target does not match state")
 	}
 
-	return replaceManifestAndMarkers(g.db, value, targetRevision, finalStatus)
+	return replaceManifestGraphAndMarkers(ctx, g.db, value, targetRevision, finalStatus, replacePaths, files)
 }
 
 // CompleteUpdate publishes the committed revision in state.json after both
@@ -334,7 +367,7 @@ func (g *Generation) CompleteUpdate(targetRevision int64, finalStatus StateStatu
 	state.Revision = targetRevision
 	state.TargetRevision = nil
 	state.Status = finalStatus
-	state.Diagnostics = diagnostics
+	state.Diagnostics = limitDiagnostics(diagnostics)
 	state.UpdatedAt = g.project.now().UTC()
 
 	metadata, err := readGraphMetadata(g.db)
@@ -372,7 +405,7 @@ func (g *Generation) MarkStatus(status StateStatus, diagnostics []string) error 
 	}
 
 	state.Status = status
-	state.Diagnostics = diagnostics
+	state.Diagnostics = limitDiagnostics(diagnostics)
 	state.UpdatedAt = g.project.now().UTC()
 
 	return g.writeState(state)
@@ -457,6 +490,25 @@ func (g *Generation) Publish(ctx context.Context) error {
 
 // ReplaceManifest clears and inserts manifest entries in an unpublished generation.
 func (g *Generation) ReplaceManifest(value manifest.Manifest) error {
+	return g.replaceManifestAndGraph(context.Background(), value, nil, nil)
+}
+
+// ReplaceManifestAndGraph prepares all SQLite-derived state for an unpublished generation.
+func (g *Generation) ReplaceManifestAndGraph(
+	ctx context.Context,
+	value manifest.Manifest,
+	replacePaths []string,
+	files []codegraph.FileGraph,
+) error {
+	return g.replaceManifestAndGraph(ctx, value, replacePaths, files)
+}
+
+func (g *Generation) replaceManifestAndGraph(
+	ctx context.Context,
+	value manifest.Manifest,
+	replacePaths []string,
+	files []codegraph.FileGraph,
+) error {
 	if g == nil || g.db == nil {
 		return errors.New("generation is not open")
 	}
@@ -470,32 +522,11 @@ func (g *Generation) ReplaceManifest(value manifest.Manifest) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM manifest_entries`); err != nil {
+	if err := replaceManifest(tx, value); err != nil {
 		return err
 	}
-	statement, err := tx.Prepare(`INSERT INTO manifest_entries(path,size_bytes,mtime_ns,content_hash,language,chunk_count,symbol_count,last_indexed_revision) VALUES(?,?,?,?,?,?,?,?)`)
-	if err != nil {
-		return err
-	}
-	defer statement.Close()
-
-	files := append([]manifest.Entry(nil), value.Files...)
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Path < files[j].Path
-	})
-	for _, file := range files {
-		if _, err := statement.Exec(
-			file.Path,
-			file.SizeBytes,
-			file.ModTimeNs,
-			file.ContentHash,
-			file.Language,
-			file.ChunkCount,
-			file.SymbolCount,
-			file.LastIndexedRevision,
-		); err != nil {
-			return err
-		}
+	if err := graphstore.New(g.db).Replace(ctx, tx, replacePaths, files); err != nil {
+		return fmt.Errorf("replace code graph: %w", err)
 	}
 
 	return tx.Commit()

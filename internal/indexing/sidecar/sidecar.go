@@ -27,7 +27,7 @@ const (
 	SidecarFormat = "istok.index.v1"
 	GraphSchema   = "istok.graph.v1"
 
-	defaultParserSet                = "istok.parsers.v1"
+	defaultParserSet                = "istok.parsers.v2"
 	defaultRanking                  = "istok.ranking.v1"
 	defaultStateVersion             = "1"
 	defaultCompatibilityFingerprint = "parser_set+ranking+schema"

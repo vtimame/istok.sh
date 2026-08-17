@@ -1,12 +1,15 @@
 package sidecar
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 
+	"s26.dev/istok-cli/internal/codegraph"
+	"s26.dev/istok-cli/internal/graphstore"
 	"s26.dev/istok-cli/internal/indexing/manifest"
 )
 
@@ -18,6 +21,9 @@ func initializeGraph(db *sql.DB, state State) error {
 		)
 	`); err != nil {
 		return err
+	}
+	if err := graphstore.Initialize(db); err != nil {
+		return fmt.Errorf("initialize code graph: %w", err)
 	}
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS manifest_entries (
@@ -98,12 +104,39 @@ func graphMetadataMatches(state State, metadata map[string]string) bool {
 }
 
 func replaceManifestAndMarkers(db *sql.DB, value manifest.Manifest, revision int64, status StateStatus) error {
+	return replaceManifestGraphAndMarkers(context.Background(), db, value, revision, status, nil, nil)
+}
+
+func replaceManifestGraphAndMarkers(
+	ctx context.Context,
+	db *sql.DB,
+	value manifest.Manifest,
+	revision int64,
+	status StateStatus,
+	replacePaths []string,
+	files []codegraph.FileGraph,
+) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
+	if err := replaceManifest(tx, value); err != nil {
+		return err
+	}
+	if err := graphstore.New(db).Replace(ctx, tx, replacePaths, files); err != nil {
+		return fmt.Errorf("replace code graph: %w", err)
+	}
+
+	if err := updateRevisionMarkers(tx, revision, status); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func replaceManifest(tx *sql.Tx, value manifest.Manifest) error {
 	if _, err := tx.Exec(`DELETE FROM manifest_entries`); err != nil {
 		return err
 	}
@@ -133,6 +166,10 @@ func replaceManifestAndMarkers(db *sql.DB, value manifest.Manifest, revision int
 		}
 	}
 
+	return nil
+}
+
+func updateRevisionMarkers(tx *sql.Tx, revision int64, status StateStatus) error {
 	for key, value := range map[string]string{
 		markerRevision: fmt.Sprintf("%d", revision),
 		markerStatus:   string(status),
@@ -142,7 +179,7 @@ func replaceManifestAndMarkers(db *sql.DB, value manifest.Manifest, revision int
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func updateGraphStatus(db *sql.DB, status StateStatus) error {
