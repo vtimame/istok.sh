@@ -11,6 +11,7 @@ import (
 	"go.uber.org/fx"
 
 	contextapp "s26.dev/istok-cli/internal/application/context"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
 	taskapp "s26.dev/istok-cli/internal/application/task"
@@ -65,6 +66,20 @@ func ProjectOptions(path string) fx.Option {
 		fx.Provide(projectrepo.New),
 		fx.Provide(func(repository *projectrepo.Repository) project.Repository { return repository }),
 		fx.Provide(project.NewService),
+	)
+}
+
+func InitOptions(path, indexRoot string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		IndexingOptions(indexRoot),
+	)
+}
+
+func IndexingOptions(indexRoot string) fx.Option {
+	return fx.Options(
+		fx.Supply(indexingapp.Config{IndexRoot: indexRoot}),
+		fx.Provide(indexingapp.NewService),
 	)
 }
 

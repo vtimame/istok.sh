@@ -125,19 +125,34 @@ func buildEntry(previous Entry, existed bool, file discovery.File, revision int6
 		LastIndexedRevision: revision,
 	}
 
+	if file.ContentHash != "" {
+		entry.ContentHash = file.ContentHash
+	}
+
 	if existed && previous.SizeBytes == file.SizeBytes && previous.ModTimeNs == file.ModTimeNs {
-		entry.ContentHash = previous.ContentHash
+		if entry.ContentHash == "" {
+			entry.ContentHash = previous.ContentHash
+		}
 		entry.ChunkCount = previous.ChunkCount
 		entry.SymbolCount = previous.SymbolCount
 		entry.LastIndexedRevision = previous.LastIndexedRevision
 		return entry, nil
 	}
 
-	hash, err := hashContent(file.AbsPath)
-	if err != nil {
-		return Entry{}, err
+	if entry.ContentHash != "" && existed && previous.ContentHash == entry.ContentHash {
+		entry.ChunkCount = previous.ChunkCount
+		entry.SymbolCount = previous.SymbolCount
+		entry.LastIndexedRevision = previous.LastIndexedRevision
+		return entry, nil
 	}
-	entry.ContentHash = hash
+
+	if entry.ContentHash == "" {
+		hash, err := hashContent(file.AbsPath)
+		if err != nil {
+			return Entry{}, err
+		}
+		entry.ContentHash = hash
+	}
 
 	if existed && previous.ContentHash == entry.ContentHash {
 		entry.ChunkCount = previous.ChunkCount

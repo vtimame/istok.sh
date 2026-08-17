@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+
+	"s26.dev/istok-cli/internal/indexing/manifest"
 )
 
 func initializeGraph(db *sql.DB, state State) error {
@@ -92,6 +95,59 @@ func graphMetadataMatches(state State, metadata map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func replaceManifestAndMarkers(db *sql.DB, value manifest.Manifest, revision int64, status StateStatus) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM manifest_entries`); err != nil {
+		return err
+	}
+
+	statement, err := tx.Prepare(`INSERT INTO manifest_entries(path,size_bytes,mtime_ns,content_hash,language,chunk_count,symbol_count,last_indexed_revision) VALUES(?,?,?,?,?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer statement.Close()
+
+	files := append([]manifest.Entry(nil), value.Files...)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	for _, file := range files {
+		if _, err := statement.Exec(
+			file.Path,
+			file.SizeBytes,
+			file.ModTimeNs,
+			file.ContentHash,
+			file.Language,
+			file.ChunkCount,
+			file.SymbolCount,
+			file.LastIndexedRevision,
+		); err != nil {
+			return err
+		}
+	}
+
+	for key, value := range map[string]string{
+		markerRevision: fmt.Sprintf("%d", revision),
+		markerStatus:   string(status),
+	} {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO sidecar_meta(key,value) VALUES(?, ?)`, key, value); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func updateGraphStatus(db *sql.DB, status StateStatus) error {
+	_, err := db.Exec(`INSERT OR REPLACE INTO sidecar_meta(key,value) VALUES(?, ?)`, markerStatus, string(status))
+	return err
 }
 
 func openGraphDB(path string) (*sql.DB, error) {

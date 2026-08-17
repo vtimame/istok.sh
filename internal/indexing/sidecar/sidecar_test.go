@@ -202,6 +202,105 @@ func TestSidecarCreateOpenRebindAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestPublishedGenerationIncrementalProtocol(t *testing.T) {
+	t.Parallel()
+
+	project, err := Open(context.Background(), OpenConfig{
+		ProjectID:     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		CanonicalRoot: t.TempDir(),
+		IndexRoot:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer project.Close()
+
+	generation, err := project.CreateGeneration(context.Background(), 1, StateReady, nil)
+	if err != nil {
+		t.Fatalf("CreateGeneration() error = %v", err)
+	}
+	initial := manifest.Manifest{Files: []manifest.Entry{{
+		Path:                "old.go",
+		SizeBytes:           10,
+		ModTimeNs:           20,
+		ContentHash:         "old-hash",
+		Language:            "go",
+		ChunkCount:          1,
+		LastIndexedRevision: 1,
+	}}}
+	if err := generation.ReplaceManifest(initial); err != nil {
+		t.Fatalf("ReplaceManifest() error = %v", err)
+	}
+	if err := generation.Publish(context.Background()); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if err := generation.Close(); err != nil {
+		t.Fatalf("generation.Close() error = %v", err)
+	}
+
+	current, err := project.CurrentForUpdate(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentForUpdate() error = %v", err)
+	}
+	defer current.Close()
+
+	if err := current.BeginUpdate(2); err != nil {
+		t.Fatalf("BeginUpdate() error = %v", err)
+	}
+	updating, err := current.State()
+	if err != nil {
+		t.Fatalf("State() updating error = %v", err)
+	}
+	if updating.Status != StateUpdating || updating.Revision != 1 || updating.TargetRevision == nil || *updating.TargetRevision != 2 {
+		t.Fatalf("updating state = %+v", updating)
+	}
+	if _, err := project.Current(context.Background()); !errors.Is(err, ErrIncompatible) {
+		t.Fatalf("Current() during update error = %v, want incompatible", err)
+	}
+
+	next := manifest.Manifest{Files: []manifest.Entry{{
+		Path:                "next.go",
+		SizeBytes:           30,
+		ModTimeNs:           40,
+		ContentHash:         "next-hash",
+		Language:            "go",
+		ChunkCount:          2,
+		LastIndexedRevision: 2,
+	}}}
+	if err := current.CommitUpdate(next, 2, StateReady); err != nil {
+		t.Fatalf("CommitUpdate() error = %v", err)
+	}
+	if err := current.CompleteUpdate(2, StateReady, []string{"complete"}); err != nil {
+		t.Fatalf("CompleteUpdate() error = %v", err)
+	}
+
+	ready, err := current.State()
+	if err != nil {
+		t.Fatalf("State() ready error = %v", err)
+	}
+	if ready.Status != StateReady || ready.Revision != 2 || ready.TargetRevision != nil {
+		t.Fatalf("ready state = %+v", ready)
+	}
+	gotManifest, err := current.Manifest()
+	if err != nil {
+		t.Fatalf("Manifest() error = %v", err)
+	}
+	if len(gotManifest.Files) != 1 || gotManifest.Files[0].Path != "next.go" {
+		t.Fatalf("manifest = %+v", gotManifest)
+	}
+
+	if err := current.MarkStatus(StateStale, []string{"files kept changing"}); err != nil {
+		t.Fatalf("MarkStatus() error = %v", err)
+	}
+	stale, err := current.State()
+	if err != nil {
+		t.Fatalf("State() stale error = %v", err)
+	}
+	if stale.Status != StateStale || stale.Revision != 2 || len(stale.Diagnostics) != 1 {
+		t.Fatalf("stale state = %+v", stale)
+	}
+}
+
 func TestSidecarMissingGraphDbIsCorrupt(t *testing.T) {
 	t.Parallel()
 

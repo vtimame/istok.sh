@@ -14,6 +14,9 @@ import (
 	"github.com/adrg/xdg"
 
 	"s26.dev/istok-cli/internal/application/bootstrap"
+	"s26.dev/istok-cli/internal/indexing/sidecar"
+	"s26.dev/istok-cli/internal/indexstore"
+	"s26.dev/istok-cli/internal/retrieval"
 )
 
 func TestHelpDoesNotCreateDatabase(t *testing.T) {
@@ -309,6 +312,100 @@ func TestProjectCLIJSONLifecycleAndNoMarkerFiles(t *testing.T) {
 	}
 }
 
+func TestInitBuildsSearchableLocalIndex(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "refund.go"), []byte("package refund\n\nfunc CreateRefund() {}\n"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	database := filepath.Join(t.TempDir(), "istok.db")
+	indexRoot := filepath.Join(filepath.Dir(database), "indexes")
+
+	initialized := executeAt(t, root, database, "init", "--json")
+	if initialized.err != nil {
+		t.Fatalf("init: %v", initialized.err)
+	}
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized.output).Project.ID
+
+	indexedProject, err := sidecar.Open(context.Background(), sidecar.OpenConfig{
+		ProjectID:     projectID,
+		CanonicalRoot: root,
+		IndexRoot:     indexRoot,
+	})
+	if err != nil {
+		t.Fatalf("open index sidecar: %v", err)
+	}
+	defer indexedProject.Close()
+
+	generation, err := indexedProject.Current(context.Background())
+	if err != nil {
+		t.Fatalf("open current generation: %v", err)
+	}
+	defer generation.Close()
+
+	state, err := generation.State()
+	if err != nil {
+		t.Fatalf("read index state: %v", err)
+	}
+	if state.Status != sidecar.StateReady || state.Revision != 1 {
+		t.Fatalf("index state = %+v, want ready revision 1", state)
+	}
+
+	store, err := indexstore.Open(generation.SearchPath(), projectID, generation.Epoch(), state.Revision)
+	if err != nil {
+		t.Fatalf("open lexical index: %v", err)
+	}
+	defer store.Close()
+
+	results, err := store.Search(retrieval.SearchRequest{Query: "CreateRefund"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) == 0 || results[0].Path != "refund.go" {
+		t.Fatalf("search results = %+v", results)
+	}
+}
+
+func TestInitIndexFailureKeepsProjectForAutomaticRecovery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	database := filepath.Join(t.TempDir(), "istok.db")
+	blockedIndexRoot := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockedIndexRoot, []byte("blocked"), 0o600); err != nil {
+		t.Fatalf("write blocked index root: %v", err)
+	}
+	t.Setenv("ISTOK_INDEX_ROOT", blockedIndexRoot)
+
+	var output, errorOutput bytes.Buffer
+	err := ExecuteAt(
+		context.Background(),
+		[]string{"init", "--json", "--database", database},
+		strings.NewReader(""),
+		&output,
+		&errorOutput,
+		root,
+	)
+	if err == nil {
+		t.Fatal("init unexpectedly succeeded with invalid index root")
+	}
+	assertVersionedBusinessError(t, err, "index_failed")
+
+	recovered := executeAt(t, root, database, "init", "--json")
+	if recovered.err != nil {
+		t.Fatalf("recovered init: %v", recovered.err)
+	}
+	if got := decodeJSONResult[struct {
+		Created bool `json:"created"`
+	}](t, recovered.output); got.Created {
+		t.Fatal("recovered init created a second project")
+	}
+}
+
 func TestProjectCLIJSONSuccessIsPureJSON(t *testing.T) {
 	root := t.TempDir()
 	result := executeAt(t, root, filepath.Join(t.TempDir(), "istok.db"), "init", root, "--json")
@@ -450,6 +547,8 @@ func executeAt(t *testing.T, cwd, database string, args ...string) executeResult
 
 func executeAtWithInput(t *testing.T, cwd, database string, input *strings.Reader, args ...string) executeResult {
 	t.Helper()
+	t.Setenv("ISTOK_INDEX_ROOT", filepath.Join(filepath.Dir(database), "indexes"))
+
 	args = append(args, "--database", database)
 	var output, errorOutput bytes.Buffer
 	err := ExecuteAt(context.Background(), args, input, &output, &errorOutput, cwd)

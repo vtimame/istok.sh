@@ -17,6 +17,7 @@ import (
 	"go.uber.org/fx"
 
 	"s26.dev/istok-cli/internal/application/bootstrap"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	updateapp "s26.dev/istok-cli/internal/application/update"
 	"s26.dev/istok-cli/internal/buildinfo"
 	"s26.dev/istok-cli/internal/cli/presentation"
@@ -187,9 +188,7 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 
 		return runMCP(ctx, command.MCP.Database, root.CanonicalPath, command.MCP.Profile, command.MCP.ActorID, command.MCP.ActorName)
 	case strings.HasPrefix(commandName, "init"):
-		return runProject(ctx, command.Init.Database, command.Init.JSON, output, func(service *project.Service) (any, error) {
-			return service.Init(ctx, resolvePath(cwd, command.Init.Path), command.Init.Name)
-		})
+		return runInit(ctx, command.Init, cwd, output)
 	case strings.HasPrefix(commandName, "project show"):
 		return runProject(ctx, command.Project.Show.Database, command.Project.Show.JSON, output, projectAction(ctx, cwd, command.Project.Show.Selector, func(s *project.Service, selector string) (any, error) { return s.Resolve(ctx, selector, false) }))
 	case commandName == "project list":
@@ -322,6 +321,39 @@ func resolvePath(cwd, path string) string {
 func runProject(ctx context.Context, database string, jsonOutput bool, output io.Writer, action func(*project.Service) (any, error)) error {
 	var service *project.Service
 	app := fx.New(fx.NopLogger, bootstrap.ProjectOptions(database), fx.Invoke(func(s *project.Service) { service = s }))
+
+	return runProjectApplication(ctx, jsonOutput, output, app, func() (any, error) {
+		return action(service)
+	})
+}
+
+func runInit(ctx context.Context, command InitCommand, cwd string, output io.Writer) error {
+	var projectService *project.Service
+	var indexService *indexingapp.Service
+	app := fx.New(
+		fx.NopLogger,
+		bootstrap.InitOptions(command.Database, os.Getenv("ISTOK_INDEX_ROOT")),
+		fx.Invoke(func(projects *project.Service, indexes *indexingapp.Service) {
+			projectService = projects
+			indexService = indexes
+		}),
+	)
+
+	return runProjectApplication(ctx, command.JSON, output, app, func() (any, error) {
+		result, err := projectService.Init(ctx, resolvePath(cwd, command.Path), command.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := indexService.EnsureFresh(ctx, result.Project); err != nil {
+			return nil, err
+		}
+
+		return result, nil
+	})
+}
+
+func runProjectApplication(ctx context.Context, jsonOutput bool, output io.Writer, app *fx.App, action func() (any, error)) error {
 	if err := app.Start(ctx); err != nil {
 		if jsonOutput {
 			return jsonError(err)
@@ -330,7 +362,7 @@ func runProject(ctx context.Context, database string, jsonOutput bool, output io
 		return err
 	}
 
-	value, err := action(service)
+	value, err := action()
 	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -374,12 +406,20 @@ func jsonError(err error) error {
 	}{SchemaVersion: "1", Error: struct {
 		Code    project.Code `json:"code"`
 		Message string       `json:"message"`
-	}{Code: project.ErrorCode(err), Message: err.Error()}})
+	}{Code: commandErrorCode(err), Message: err.Error()}})
 	if marshalErr != nil {
 		return err
 	}
 
 	return jsonCommandError{value: string(encoded), cause: err}
+}
+
+func commandErrorCode(err error) project.Code {
+	if indexingapp.IsError(err) {
+		return project.Code(indexingapp.ErrorCode)
+	}
+
+	return project.ErrorCode(err)
 }
 
 func renderProjectValue(value any) string {

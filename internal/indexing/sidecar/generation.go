@@ -82,6 +82,86 @@ func (p *Project) CreateGeneration(ctx context.Context, revision int64, status S
 
 // Current opens active generation through CURRENT and validates metadata markers.
 func (p *Project) Current(ctx context.Context) (*Generation, error) {
+	return p.current(ctx, openGraphDBRead)
+}
+
+// CurrentForUpdate opens the published generation and returns a writable sqlite handle.
+func (p *Project) CurrentForUpdate(ctx context.Context) (*Generation, error) {
+	return p.current(ctx, openGraphDB)
+}
+
+// InspectState reads the published state marker without requiring graph or
+// lexical markers to match. It is intended for status reporting and recovery
+// diagnostics; callers must not use it to authorize reads.
+func (p *Project) InspectState(ctx context.Context) (State, error) {
+	if err := ctx.Err(); err != nil {
+		return State{}, err
+	}
+
+	epoch, err := readCurrent(filepath.Join(p.projectDir(), "CURRENT"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return State{}, classifyError(ProblemMissing, "missing CURRENT", err)
+		}
+
+		return State{}, classifyError(ProblemCorrupt, "read CURRENT", err)
+	}
+	epoch = strings.TrimSpace(epoch)
+	if _, err := uuid.Parse(epoch); err != nil {
+		return State{}, classifyError(ProblemCorrupt, "CURRENT epoch is not UUID", err)
+	}
+
+	statePath := filepath.Join(p.projectDir(), "generations", epoch, "state.json")
+	state, err := readState(statePath)
+	if err != nil {
+		return State{}, classifyError(ProblemCorrupt, "read state.json", err)
+	}
+	if err := validateStateConstants(state); err != nil {
+		return State{}, err
+	}
+	if state.ProjectID != p.projectID || state.Epoch != epoch {
+		return State{}, classifyError(ProblemIncompatible, "generation identity mismatch", nil)
+	}
+	if state.ProjectRootFingerprint != p.rootFingerprint || state.CanonicalRoot != p.canonicalRoot {
+		return State{}, classifyError(ProblemRebind, "project root changed", nil)
+	}
+
+	return state, nil
+}
+
+// CleanupGenerations removes obsolete and interrupted generations while the
+// project lock is held, preserving the supplied current epoch.
+func (p *Project) CleanupGenerations(keepEpoch string) error {
+	if p == nil {
+		return errors.New("nil sidecar project")
+	}
+	if _, err := uuid.Parse(keepEpoch); err != nil {
+		return fmt.Errorf("invalid generation to keep: %w", err)
+	}
+
+	root := filepath.Join(p.projectDir(), "generations")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("read generations: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == keepEpoch {
+			continue
+		}
+
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return fmt.Errorf("remove generation %q: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+func (p *Project) current(ctx context.Context, openGraph func(string) (*sql.DB, error)) (*Generation, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -112,7 +192,7 @@ func (p *Project) Current(ctx context.Context) (*Generation, error) {
 	if err := ensureExists(graphPath); err != nil {
 		return nil, classifyError(ProblemCorrupt, "graph.db missing", err)
 	}
-	db, err := openGraphDBRead(graphPath)
+	db, err := openGraph(graphPath)
 	if err != nil {
 		return nil, classifyError(ProblemCorrupt, "open graph db", err)
 	}
@@ -184,6 +264,156 @@ func (g *Generation) State() (State, error) {
 	}
 	statePath := filepath.Join(g.project.projectDir(), "generations", g.epoch, "state.json")
 	return readState(statePath)
+}
+
+// BeginUpdate records an interrupted-update marker before either derived store
+// advances. The committed revision remains unchanged until CompleteUpdate.
+func (g *Generation) BeginUpdate(targetRevision int64) error {
+	if err := g.requirePublished(); err != nil {
+		return err
+	}
+
+	state, err := g.State()
+	if err != nil {
+		return fmt.Errorf("read generation state: %w", err)
+	}
+	if state.Status == StateUpdating {
+		return errors.New("generation update is already in progress")
+	}
+	if targetRevision <= state.Revision {
+		return fmt.Errorf("target revision %d must be greater than committed revision %d", targetRevision, state.Revision)
+	}
+
+	state.Status = StateUpdating
+	state.TargetRevision = &targetRevision
+	state.UpdatedAt = g.project.now().UTC()
+
+	return g.writeState(state)
+}
+
+// CommitUpdate atomically replaces the manifest and advances graph metadata to
+// the target revision. state.json intentionally remains updating until Bleve is
+// committed and CompleteUpdate is called.
+func (g *Generation) CommitUpdate(value manifest.Manifest, targetRevision int64, finalStatus StateStatus) error {
+	if err := g.requirePublished(); err != nil {
+		return err
+	}
+	if finalStatus != StateReady && finalStatus != StateDegraded {
+		return fmt.Errorf("invalid committed status %q", finalStatus)
+	}
+
+	state, err := g.State()
+	if err != nil {
+		return fmt.Errorf("read generation state: %w", err)
+	}
+	if state.Status != StateUpdating || state.TargetRevision == nil || *state.TargetRevision != targetRevision {
+		return errors.New("generation update target does not match state")
+	}
+
+	return replaceManifestAndMarkers(g.db, value, targetRevision, finalStatus)
+}
+
+// CompleteUpdate publishes the committed revision in state.json after both
+// graph.db and Bleve have advanced to the same target revision.
+func (g *Generation) CompleteUpdate(targetRevision int64, finalStatus StateStatus, diagnostics []string) error {
+	if err := g.requirePublished(); err != nil {
+		return err
+	}
+	if finalStatus != StateReady && finalStatus != StateDegraded {
+		return fmt.Errorf("invalid completed status %q", finalStatus)
+	}
+
+	state, err := g.State()
+	if err != nil {
+		return fmt.Errorf("read generation state: %w", err)
+	}
+	if state.Status != StateUpdating || state.TargetRevision == nil || *state.TargetRevision != targetRevision {
+		return errors.New("generation update target does not match state")
+	}
+
+	state.Revision = targetRevision
+	state.TargetRevision = nil
+	state.Status = finalStatus
+	state.Diagnostics = diagnostics
+	state.UpdatedAt = g.project.now().UTC()
+
+	metadata, err := readGraphMetadata(g.db)
+	if err != nil {
+		return fmt.Errorf("read graph metadata: %w", err)
+	}
+	if !graphMetadataMatches(state, metadata) {
+		return classifyError(ProblemIncompatible, "completed state and graph metadata mismatch", nil)
+	}
+
+	return g.writeState(state)
+}
+
+// MarkStatus changes only the usability status of an otherwise committed
+// generation. A crash between graph and state writes leaves a marker mismatch,
+// which forces recovery on the next open.
+func (g *Generation) MarkStatus(status StateStatus, diagnostics []string) error {
+	if err := g.requirePublished(); err != nil {
+		return err
+	}
+	if status != StateStale && status != StateFailed {
+		return fmt.Errorf("invalid marked status %q", status)
+	}
+
+	state, err := g.State()
+	if err != nil {
+		return fmt.Errorf("read generation state: %w", err)
+	}
+	if state.Status == StateUpdating || state.TargetRevision != nil {
+		return errors.New("cannot mark an interrupted generation")
+	}
+
+	if err := updateGraphStatus(g.db, status); err != nil {
+		return err
+	}
+
+	state.Status = status
+	state.Diagnostics = diagnostics
+	state.UpdatedAt = g.project.now().UTC()
+
+	return g.writeState(state)
+}
+
+func (g *Generation) requirePublished() error {
+	if g == nil || g.project == nil || g.db == nil {
+		return errors.New("generation is not open")
+	}
+	if !g.published {
+		return errors.New("generation is not published")
+	}
+
+	return nil
+}
+
+func (g *Generation) writeState(state State) error {
+	if err := validateStateForWrite(state); err != nil {
+		return err
+	}
+
+	statePath := filepath.Join(g.project.projectDir(), "generations", g.epoch, "state.json")
+	return writeStateAtomic(statePath, state)
+}
+
+func validateStateForWrite(state State) error {
+	if err := validateStateConstants(state); err != nil {
+		return err
+	}
+	if state.Revision < 0 {
+		return errors.New("state revision must be non-negative")
+	}
+	if state.Status == StateUpdating {
+		if state.TargetRevision == nil || *state.TargetRevision <= state.Revision {
+			return errors.New("updating state requires a target revision greater than the committed revision")
+		}
+	} else if state.TargetRevision != nil {
+		return errors.New("target revision is only valid while updating")
+	}
+
+	return nil
 }
 
 // Publish atomically makes a fully prepared generation current.

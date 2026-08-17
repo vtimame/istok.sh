@@ -60,6 +60,53 @@ func TestDiscoverGitTrackedUntrackedIgnored(t *testing.T) {
 	}
 }
 
+func TestDiscoverWithPreviousFastPathSkipsContentRead(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "stable.txt")
+	if err := os.WriteFile(path, []byte("alpha"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	stats, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	previous := Previous{
+		"stable.txt": {
+			SizeBytes:   stats.Size(),
+			ModTimeNs:   stats.ModTime().UnixNano(),
+			ContentHash: "abc123",
+		},
+	}
+
+	originalReadFile := readFile
+	readCallCount := 0
+	readFile = func(string) ([]byte, error) {
+		readCallCount++
+		return nil, errors.New("read forbidden for unchanged fast-path")
+	}
+	t.Cleanup(func() {
+		readFile = originalReadFile
+	})
+
+	result, err := DiscoverWithPrevious(context.Background(), root, previous)
+	if err != nil {
+		t.Fatalf("DiscoverWithPrevious() error = %v", err)
+	}
+	if readCallCount != 0 {
+		t.Fatalf("read hook called %d times, want 0", readCallCount)
+	}
+	if len(result.Files) != 1 {
+		t.Fatalf("files len = %d, want 1", len(result.Files))
+	}
+	if result.Files[0].ContentHash != "abc123" {
+		t.Fatalf("content hash = %q, want %q", result.Files[0].ContentHash, "abc123")
+	}
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %v, want empty", result.Diagnostics)
+	}
+}
+
 func TestDiscoverFallbackNestedGitignoreAndAdditiveIstokIgnore(t *testing.T) {
 	t.Parallel()
 

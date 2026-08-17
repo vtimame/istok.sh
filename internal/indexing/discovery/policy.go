@@ -3,6 +3,7 @@ package discovery
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 	"github.com/denormal/go-gitignore"
 )
 
-func filterCandidate(path string, root string, maxSize int64) (File, SkipReason, string, bool, error) {
+var readFile = os.ReadFile
+
+func filterCandidate(path string, root string, maxSize int64, previous *PreviousFile) (File, SkipReason, string, bool, error) {
 	linkInfo, err := os.Lstat(path)
 	if err != nil {
 		return File{}, SkipUnlisted, err.Error(), false, nil
@@ -56,7 +59,23 @@ func filterCandidate(path string, root string, maxSize int64) (File, SkipReason,
 		return File{}, SkipTooLarge, fmt.Sprintf("size %d > %d", info.Size(), maxSize), false, nil
 	}
 
-	contents, readErr := os.ReadFile(path)
+	if previous != nil {
+		if previous.SizeBytes == info.Size() && previous.ModTimeNs == info.ModTime().UnixNano() {
+			language := LanguageForPath(filepath.Base(path))
+			if language == "" {
+				language = "plain_text"
+			}
+
+			return File{
+				SizeBytes:   info.Size(),
+				ModTimeNs:   info.ModTime().UnixNano(),
+				Language:    language,
+				ContentHash: previous.ContentHash,
+			}, "", "", true, nil
+		}
+	}
+
+	contents, readErr := readFile(path)
 	if readErr != nil {
 		return File{}, SkipUnlisted, readErr.Error(), false, nil
 	}
@@ -71,11 +90,13 @@ func filterCandidate(path string, root string, maxSize int64) (File, SkipReason,
 	if language == "" {
 		language = "plain_text"
 	}
+	hash := sha256.Sum256(contents)
 
 	return File{
-		SizeBytes: info.Size(),
-		ModTimeNs: info.ModTime().UnixNano(),
-		Language:  language,
+		SizeBytes:   info.Size(),
+		ModTimeNs:   info.ModTime().UnixNano(),
+		Language:    language,
+		ContentHash: fmt.Sprintf("%x", hash[:]),
 	}, "", "", true, nil
 }
 

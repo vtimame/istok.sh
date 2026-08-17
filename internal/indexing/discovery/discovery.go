@@ -54,7 +54,19 @@ type File struct {
 	SizeBytes int64
 	ModTimeNs int64
 	Language  string
+	// ContentHash is provided when discovery already computed it from file contents.
+	ContentHash string
 }
+
+// PreviousFile contains metadata used to fast-path unchanged files.
+type PreviousFile struct {
+	SizeBytes   int64
+	ModTimeNs   int64
+	ContentHash string
+}
+
+// Previous maps paths to fast-path metadata.
+type Previous map[string]PreviousFile
 
 // Diagnostic is emitted for every skipped path.
 type Diagnostic struct {
@@ -71,6 +83,12 @@ type Result struct {
 
 // Discover enumerates files in root for indexing.
 func Discover(ctx context.Context, root string) (Result, error) {
+	return DiscoverWithPrevious(ctx, root, nil)
+}
+
+// DiscoverWithPrevious reuses previous manifest metadata to avoid rehashing and rereading
+// unchanged files.
+func DiscoverWithPrevious(ctx context.Context, root string, previous Previous) (Result, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve root: %w", err)
@@ -84,11 +102,17 @@ func Discover(ctx context.Context, root string) (Result, error) {
 	if err != nil {
 		inGit = false
 	}
-	if inGit {
-		return discoverByGit(ctx, canonicalRoot, maxFileSizeBytes)
+
+	previousByPath := make(Previous, len(previous))
+	for path, item := range previous {
+		previousByPath[filepath.ToSlash(path)] = item
 	}
 
-	return discoverByWalker(ctx, canonicalRoot, maxFileSizeBytes)
+	if inGit {
+		return discoverByGit(ctx, canonicalRoot, maxFileSizeBytes, previousByPath)
+	}
+
+	return discoverByWalker(ctx, canonicalRoot, maxFileSizeBytes, previousByPath)
 }
 
 func isGitWorktree(ctx context.Context, root string) (bool, error) {
@@ -100,7 +124,7 @@ func isGitWorktree(ctx context.Context, root string) (bool, error) {
 	return strings.TrimSpace(string(output)) == "true", nil
 }
 
-func discoverByGit(ctx context.Context, root string, maxSize int64) (Result, error) {
+func discoverByGit(ctx context.Context, root string, maxSize int64, previous Previous) (Result, error) {
 	cmd := exec.CommandContext(
 		ctx,
 		"git",
@@ -165,7 +189,17 @@ func discoverByGit(ctx context.Context, root string, maxSize int64) (Result, err
 			continue
 		}
 
-		file, reason, detail, keep, err := filterCandidate(absolute, root, maxSize)
+		previousPath := filepath.ToSlash(relative)
+		previousEntry, hasPrevious := previous[previousPath]
+		var file File
+		var reason SkipReason
+		var detail string
+		var keep bool
+		if hasPrevious {
+			file, reason, detail, keep, err = filterCandidate(absolute, root, maxSize, &previousEntry)
+		} else {
+			file, reason, detail, keep, err = filterCandidate(absolute, root, maxSize, nil)
+		}
 		if err != nil {
 			return Result{}, err
 		}
@@ -242,7 +276,7 @@ func discoverIgnoredByGit(ctx context.Context, root string) ([]string, error) {
 	return result, nil
 }
 
-func discoverByWalker(ctx context.Context, root string, maxSize int64) (Result, error) {
+func discoverByWalker(ctx context.Context, root string, maxSize int64, previous Previous) (Result, error) {
 	ignore, err := gitignore.NewRepository(root)
 	if err != nil {
 		return Result{}, fmt.Errorf("build gitignore matcher: %w", err)
@@ -348,7 +382,16 @@ func discoverByWalker(ctx context.Context, root string, maxSize int64) (Result, 
 			return nil
 		}
 
-		file, reason, detail, keep, err := filterCandidate(path, root, maxSize)
+		var file File
+		var reason SkipReason
+		var detail string
+		var keep bool
+
+		if walkInfo, ok := previous[relative]; ok {
+			file, reason, detail, keep, err = filterCandidate(path, root, maxSize, &walkInfo)
+		} else {
+			file, reason, detail, keep, err = filterCandidate(path, root, maxSize, nil)
+		}
 		if err != nil {
 			return err
 		}

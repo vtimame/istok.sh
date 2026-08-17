@@ -100,6 +100,7 @@ type State struct {
 	CanonicalRoot            string      `json:"canonical_root"`
 	Epoch                    string      `json:"epoch"`
 	Revision                 int64       `json:"revision"`
+	TargetRevision           *int64      `json:"target_revision,omitempty"`
 	Status                   StateStatus `json:"status"`
 	SidecarFormat            string      `json:"sidecar_format"`
 	GraphSchema              string      `json:"graph_schema"`
@@ -291,6 +292,13 @@ func validateStateConstants(state State) error {
 	}
 	if !validStateStatus(state.Status) {
 		return classifyError(ProblemIncompatible, "invalid state status", nil)
+	}
+	if state.Status == StateUpdating {
+		if state.TargetRevision == nil || *state.TargetRevision <= state.Revision {
+			return classifyError(ProblemIncompatible, "invalid updating target revision", nil)
+		}
+	} else if state.TargetRevision != nil {
+		return classifyError(ProblemIncompatible, "target revision outside update", nil)
 	}
 	return nil
 }

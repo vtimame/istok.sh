@@ -149,6 +149,54 @@ func TestBuildManifestModifiedAndUnchanged(t *testing.T) {
 	}
 }
 
+func TestBuildManifestUsesProvidedHashWithoutReadingFile(t *testing.T) {
+	root := t.TempDir()
+	path := writeFile(t, root, "same.txt", "content")
+	previousHash, err := hashContent(path)
+	if err != nil {
+		t.Fatalf("hashContent() error = %v", err)
+	}
+
+	previous := Manifest{Files: []Entry{{
+		Path:                "same.txt",
+		SizeBytes:           int64(len("content")),
+		ModTimeNs:           100,
+		ContentHash:         previousHash,
+		Language:            "text",
+		ChunkCount:          12,
+		SymbolCount:         34,
+		LastIndexedRevision: 3,
+	}}}
+
+	currentFiles := []discovery.File{{
+		Path:        "same.txt",
+		AbsPath:     filepath.Join(root, "missing-after-stat.txt"),
+		SizeBytes:   int64(len("changed")),
+		ModTimeNs:   200,
+		Language:    "text",
+		ContentHash: previousHash,
+	}}
+
+	current, diff, err := Build(previous, currentFiles, 4)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	entry := findByPath(current, "same.txt")
+	if entry.ChunkCount != 12 {
+		t.Fatalf("entry.ChunkCount = %d, want 12", entry.ChunkCount)
+	}
+	if entry.SymbolCount != 34 {
+		t.Fatalf("entry.SymbolCount = %d, want 34", entry.SymbolCount)
+	}
+	if entry.LastIndexedRevision != 3 {
+		t.Fatalf("entry.LastIndexedRevision = %d, want 3", entry.LastIndexedRevision)
+	}
+	if len(diff.Unchanged) != 1 || diff.Unchanged[0] != "same.txt" {
+		t.Fatalf("unchanged = %v, want [same.txt]", diff.Unchanged)
+	}
+}
+
 func TestBuildManifestDuplicateContentRenamesOneToOne(t *testing.T) {
 	t.Parallel()
 
