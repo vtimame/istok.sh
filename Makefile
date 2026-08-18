@@ -18,6 +18,9 @@ ISTOK_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
 ISTOK_DIRTY ?= $(shell if test -n "$$(git status --porcelain 2>/dev/null)"; then printf true; else printf false; fi)
 ISTOK_HARDENING_FILES ?= 2500
 
+INSTALL_DIR ?= $(HOME)/.local/bin
+COMMAND ?= istok
+
 HARDENING_COMPOSE := docker compose -f compose.hardening.yml --profile hardening
 
 LDFLAGS := -s -w \
@@ -34,11 +37,14 @@ build:
 	CGO_ENABLED=1 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BUILD_OUTPUT)" ./cmd/istok
 	@echo "Built $(BUILD_OUTPUT)"
 
-install: export GOBIN := $(INSTALL_DIR)
 install:
-	@mkdir -p "$(GOBIN)"
-	CGO_ENABLED=1 go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/istok
-	@echo "Installed $(GOBIN)/$(COMMAND)"
+	@mkdir -p "$(INSTALL_DIR)"
+	CGO_ENABLED=1 go build \
+		-trimpath \
+		-ldflags "$(LDFLAGS)" \
+		-o "$(INSTALL_DIR)/$(COMMAND)" \
+		./cmd/istok
+	@echo "Installed $(INSTALL_DIR)/$(COMMAND)"
 
 update-dev:
 	go run ./tools/updatefixture serve
