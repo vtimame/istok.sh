@@ -1,6 +1,6 @@
 package cli
 
-import "s26.dev/istok-cli/internal/codegraph"
+import "github.com/vtimame/istok.sh/internal/codegraph"
 
 type IndexCommand struct {
 	Status  IndexStatusCommand  `cmd:"" help:"Show local index state."`

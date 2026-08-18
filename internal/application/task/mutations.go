@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (s *Service) Update(ctx context.Context, selector task.Selector, expected int64, patch task.Patch, actor task.ActorSnapshot) (task.Task, error) {

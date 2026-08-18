@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Create(ctx context.Context, input task.CreateInput, actor task.ActorSnapshot) (task.Task, error) {

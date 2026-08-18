@@ -3,7 +3,7 @@ package cli
 import (
 	"time"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 type RunCommand struct {

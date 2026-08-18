@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Update(ctx context.Context, id string, expected int64, patch task.Patch, actor task.ActorSnapshot) (task.Task, error) {

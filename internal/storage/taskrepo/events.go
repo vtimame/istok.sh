@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Events(ctx context.Context, id string) ([]task.Event, error) {

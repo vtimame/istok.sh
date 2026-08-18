@@ -1,7 +1,7 @@
 package indexstore
 
 import (
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const FormatVersion = "istok.index.v1"

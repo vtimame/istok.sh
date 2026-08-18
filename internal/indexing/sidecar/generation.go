@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/graphstore"
-	"s26.dev/istok-cli/internal/indexing/manifest"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/graphstore"
+	"github.com/vtimame/istok.sh/internal/indexing/manifest"
 )
 
 // CreateGeneration prepares an unpublished generation. Call Publish only after

@@ -11,7 +11,7 @@ import (
 	"github.com/blevesearch/bleve/v2/analysis/analyzer/standard"
 	"github.com/blevesearch/bleve/v2/mapping"
 
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const (

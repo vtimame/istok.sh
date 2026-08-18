@@ -1,10 +1,10 @@
 package mcpserver
 
 import (
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/retrieval"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const indexToolSchemaVersion = "1"

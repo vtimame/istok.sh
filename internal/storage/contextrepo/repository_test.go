@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/storage"
+	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"go.uber.org/fx"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/storage"
-	"s26.dev/istok-cli/internal/storage/projectrepo"
 )
 
 func TestCreateListSearchByKindAndTags(t *testing.T) {

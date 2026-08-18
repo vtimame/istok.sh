@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"s26.dev/istok-cli/internal/cli/presentation"
-	contextmodel "s26.dev/istok-cli/internal/context"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 func renderContextValue(value any) string {

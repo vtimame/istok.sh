@@ -123,7 +123,7 @@ func certificate() (*ecdsa.PrivateKey, []byte, error) {
 	return k, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: d}), nil
 }
 func build(out, v, u, c string) error {
-	cmd := exec.Command("go", "build", "-o", out, "-ldflags", fmt.Sprintf("-X s26.dev/istok-cli/internal/buildinfo.Version=%s -X s26.dev/istok-cli/internal/buildinfo.ReleaseBaseURL=%s -X s26.dev/istok-cli/internal/buildinfo.CertificateBase64=%s", v, u, c), "./cmd/istok")
+	cmd := exec.Command("go", "build", "-o", out, "-ldflags", fmt.Sprintf("-X github.com/vtimame/istok.sh/internal/buildinfo.Version=%s -X github.com/vtimame/istok.sh/internal/buildinfo.ReleaseBaseURL=%s -X github.com/vtimame/istok.sh/internal/buildinfo.CertificateBase64=%s", v, u, c), "./cmd/istok")
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

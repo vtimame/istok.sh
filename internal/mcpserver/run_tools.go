@@ -8,11 +8,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	runapp "s26.dev/istok-cli/internal/application/run"
-	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
+	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func addRunTools(server *mcp.Server, projects *project.Service, runs *runapp.Service, workflow *runworkflow.Service, root string, actor actorIdentity, profile Profile) {

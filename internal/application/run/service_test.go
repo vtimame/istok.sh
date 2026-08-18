@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	projectcontext "s26.dev/istok-cli/internal/context"
-	contextpack "s26.dev/istok-cli/internal/contextpack"
-	run "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	contextpack "github.com/vtimame/istok.sh/internal/contextpack"
+	run "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestClaimCallsResolverBuilderRepositoryOnce(t *testing.T) {

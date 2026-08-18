@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	contextapp "s26.dev/istok-cli/internal/application/context"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/project"
+	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 func addContextTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {

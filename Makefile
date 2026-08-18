@@ -21,11 +21,11 @@ ISTOK_HARDENING_FILES ?= 2500
 HARDENING_COMPOSE := docker compose -f compose.hardening.yml --profile hardening
 
 LDFLAGS := -s -w \
-	-X s26.dev/istok-cli/internal/buildinfo.Version=$(VERSION) \
-	-X s26.dev/istok-cli/internal/buildinfo.Commit=$(COMMIT) \
-	-X s26.dev/istok-cli/internal/buildinfo.BuildDate=$(BUILD_DATE) \
-	-X s26.dev/istok-cli/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
-	-X s26.dev/istok-cli/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
+	-X github.com/vtimame/istok.sh/internal/buildinfo.Version=$(VERSION) \
+	-X github.com/vtimame/istok.sh/internal/buildinfo.Commit=$(COMMIT) \
+	-X github.com/vtimame/istok.sh/internal/buildinfo.BuildDate=$(BUILD_DATE) \
+	-X github.com/vtimame/istok.sh/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
+	-X github.com/vtimame/istok.sh/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
 
 .PHONY: build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
 

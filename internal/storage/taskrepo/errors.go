@@ -5,7 +5,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func mapSQLError(err error) error {

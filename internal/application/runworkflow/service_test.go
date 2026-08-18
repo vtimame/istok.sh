@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"s26.dev/istok-cli/internal/executor"
-	runmodel "s26.dev/istok-cli/internal/run"
+	"github.com/vtimame/istok.sh/internal/executor"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func TestAuthorizeCommandRequiresReasonedDangerousOverride(t *testing.T) {

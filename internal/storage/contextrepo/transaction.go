@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 func (r *Repository) write(ctx context.Context, fn func(*sql.Conn) (contextmodel.ProjectContextRecord, error)) (contextmodel.ProjectContextRecord, error) {

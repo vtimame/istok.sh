@@ -11,12 +11,12 @@
 <p align="center">
   <a href="https://istok.sh">Documentation</a>
   ·
-  <a href="https://github.com/s26-dev/Istok-CLI/releases">Releases</a>
+  <a href="https://github.com/vtimame/istok.sh/releases">Releases</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s26-dev/Istok-CLI/releases">
-    <img src="https://img.shields.io/github/v/release/s26-dev/Istok-CLI?style=flat-square" alt="Release">
+  <a href="https://github.com/vtimame/istok.sh/releases">
+    <img src="https://img.shields.io/github/v/release/vtimame/istok.sh?style=flat-square" alt="Release">
   </a>
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache 2.0">

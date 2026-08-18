@@ -3,9 +3,9 @@ package cli
 import (
 	"time"
 
-	"s26.dev/istok-cli/internal/project"
-	runmodel "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 type actorJSON struct {

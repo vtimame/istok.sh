@@ -5,7 +5,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func mapSQLError(err error, message string) error {

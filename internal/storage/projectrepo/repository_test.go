@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/storage"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/storage"
 )
 
 func TestRepositoryInitConvergesAcrossIndependentDatabaseHandles(t *testing.T) {

@@ -1,6 +1,6 @@
 package mcpserver
 
-import contextmodel "s26.dev/istok-cli/internal/context"
+import contextmodel "github.com/vtimame/istok.sh/internal/context"
 
 const contextSchemaVersion = "1"
 

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func (r *Repository) StartExecution(ctx context.Context, input runmodel.StartExecutionInput, actor runmodel.ActorSnapshot) (runmodel.Execution, error) {

@@ -16,8 +16,8 @@ import (
 
 	selfupdate "github.com/creativeprojects/go-selfupdate"
 
-	"s26.dev/istok-cli/internal/storage"
-	"s26.dev/istok-cli/internal/updater"
+	"github.com/vtimame/istok.sh/internal/storage"
+	"github.com/vtimame/istok.sh/internal/updater"
 )
 
 const migrationStderrLimit = 64 << 10

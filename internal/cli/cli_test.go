@@ -13,10 +13,10 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	"s26.dev/istok-cli/internal/indexing/sidecar"
-	"s26.dev/istok-cli/internal/indexstore"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/indexstore"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestHelpDoesNotCreateDatabase(t *testing.T) {

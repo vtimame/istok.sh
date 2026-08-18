@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestTaskReadResolverShowResolvesProjectAndSelectsByProjectScopedNumber(t *testing.T) {

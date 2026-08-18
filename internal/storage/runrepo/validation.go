@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func (r *Repository) RecordValidation(ctx context.Context, input runmodel.RecordValidationInput, actor runmodel.ActorSnapshot) (runmodel.Validation, error) {

@@ -3,8 +3,8 @@ package mcpserver
 import (
 	"context"
 
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func currentTaskProject(ctx context.Context, projects *project.Service, root string) (project.Project, error) {

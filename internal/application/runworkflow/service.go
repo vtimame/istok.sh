@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	runapp "s26.dev/istok-cli/internal/application/run"
-	"s26.dev/istok-cli/internal/artifactstore"
-	"s26.dev/istok-cli/internal/commandpolicy"
-	"s26.dev/istok-cli/internal/executor"
-	"s26.dev/istok-cli/internal/project"
-	runmodel "s26.dev/istok-cli/internal/run"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
+	"github.com/vtimame/istok.sh/internal/artifactstore"
+	"github.com/vtimame/istok.sh/internal/commandpolicy"
+	"github.com/vtimame/istok.sh/internal/executor"
+	"github.com/vtimame/istok.sh/internal/project"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 const defaultLeaseDuration = 15 * time.Minute

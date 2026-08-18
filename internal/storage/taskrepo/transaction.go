@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) write(ctx context.Context, fn func(*sql.Conn) (task.Task, error)) (task.Task, error) {

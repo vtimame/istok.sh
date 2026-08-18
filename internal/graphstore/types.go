@@ -3,7 +3,7 @@ package graphstore
 import (
 	"database/sql"
 
-	"s26.dev/istok-cli/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/codegraph"
 )
 
 // Repository provides SQLite-backed access to graph facts.

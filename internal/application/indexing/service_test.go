@@ -12,12 +12,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"s26.dev/istok-cli/internal/indexing/discovery"
-	"s26.dev/istok-cli/internal/indexing/manifest"
-	"s26.dev/istok-cli/internal/indexing/sidecar"
-	"s26.dev/istok-cli/internal/indexstore"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/indexing/discovery"
+	"github.com/vtimame/istok.sh/internal/indexing/manifest"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/indexstore"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestIndexingStatusBeforeInitialBuild(t *testing.T) {

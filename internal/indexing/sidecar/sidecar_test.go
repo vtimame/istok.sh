@@ -13,9 +13,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"s26.dev/istok-cli/internal/indexing/manifest"
-	"s26.dev/istok-cli/internal/indexstore"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/indexing/manifest"
+	"github.com/vtimame/istok.sh/internal/indexstore"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestSidecarProjectIsolatedByProjectID(t *testing.T) {

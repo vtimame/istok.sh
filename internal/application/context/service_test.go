@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 type fakeRepository struct {

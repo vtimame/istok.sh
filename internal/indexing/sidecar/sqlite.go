@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/graphstore"
-	"s26.dev/istok-cli/internal/indexing/manifest"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/graphstore"
+	"github.com/vtimame/istok.sh/internal/indexing/manifest"
 )
 
 func initializeGraph(db *sql.DB, state State) error {

@@ -12,12 +12,12 @@ import (
 
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	"s26.dev/istok-cli/internal/cli/presentation"
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const indexSchemaVersion = "1"

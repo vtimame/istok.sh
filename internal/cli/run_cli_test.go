@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	runmodel "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestRunErrorCodeMapsClaimDependencies(t *testing.T) {

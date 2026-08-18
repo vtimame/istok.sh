@@ -9,7 +9,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestTaskCommandParserIncludesWorkflowCommands(t *testing.T) {

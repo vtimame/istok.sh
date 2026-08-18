@@ -7,8 +7,8 @@ import (
 
 	prettytext "github.com/jedib0t/go-pretty/v6/text"
 
-	"s26.dev/istok-cli/internal/cli/presentation"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 type taskRenderer interface {

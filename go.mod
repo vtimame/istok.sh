@@ -1,4 +1,4 @@
-module s26.dev/istok-cli
+module github.com/vtimame/istok.sh
 
 go 1.26.5
 

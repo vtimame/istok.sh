@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"s26.dev/istok-cli/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/codegraph"
 )
 
 func (r *Repository) Path(ctx context.Context, request PathRequest) ([]codegraph.Node, error) {

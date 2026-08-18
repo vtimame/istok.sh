@@ -9,13 +9,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
-	contextapp "s26.dev/istok-cli/internal/application/context"
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	runapp "s26.dev/istok-cli/internal/application/run"
-	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
-	taskapp "s26.dev/istok-cli/internal/application/task"
-	"s26.dev/istok-cli/internal/buildinfo"
-	"s26.dev/istok-cli/internal/project"
+	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
+	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
+	taskapp "github.com/vtimame/istok.sh/internal/application/task"
+	"github.com/vtimame/istok.sh/internal/buildinfo"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 type Profile string

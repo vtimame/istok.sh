@@ -14,16 +14,16 @@ import (
 
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	runapp "s26.dev/istok-cli/internal/application/run"
-	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
-	taskapp "s26.dev/istok-cli/internal/application/task"
-	"s26.dev/istok-cli/internal/cli/presentation"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/project"
-	runmodel "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
+	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
+	taskapp "github.com/vtimame/istok.sh/internal/application/task"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/project"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 const runSchemaVersion = "2"

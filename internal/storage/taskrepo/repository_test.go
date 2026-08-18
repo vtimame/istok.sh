@@ -11,10 +11,10 @@ import (
 
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/storage"
-	"s26.dev/istok-cli/internal/storage/projectrepo"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/storage"
+	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 var actor = task.ActorSnapshot{ID: "local-user", Kind: "user", Name: "Local User"}

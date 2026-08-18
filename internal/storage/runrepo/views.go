@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	projectcontext "s26.dev/istok-cli/internal/context"
-	runmodel "s26.dev/istok-cli/internal/run"
+	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func (r *Repository) GetRun(ctx context.Context, id string) (runmodel.Run, error) {

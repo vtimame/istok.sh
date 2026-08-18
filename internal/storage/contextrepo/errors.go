@@ -5,7 +5,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 func mapSQLError(err error) error {

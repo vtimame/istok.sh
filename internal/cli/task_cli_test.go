@@ -14,9 +14,9 @@ import (
 	"github.com/alecthomas/kong"
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	"s26.dev/istok-cli/internal/storage/taskrepo"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestTaskListUsesCurrentProjectFromCWDAndExcludesDoneOrDeleted(t *testing.T) {

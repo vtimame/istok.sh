@@ -3,7 +3,7 @@ package contextapp
 import (
 	"context"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 func (s *Service) Update(ctx context.Context, id string, expected int64, patch contextmodel.Patch, actor contextmodel.ActorSnapshot) (contextmodel.ProjectContextRecord, error) {

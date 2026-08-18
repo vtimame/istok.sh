@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const (

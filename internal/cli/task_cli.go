@@ -11,10 +11,10 @@ import (
 
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	taskapp "s26.dev/istok-cli/internal/application/task"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	taskapp "github.com/vtimame/istok.sh/internal/application/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 const taskSchemaVersion = "1"

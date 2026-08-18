@@ -16,13 +16,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	updateapp "s26.dev/istok-cli/internal/application/update"
-	"s26.dev/istok-cli/internal/buildinfo"
-	"s26.dev/istok-cli/internal/cli/presentation"
-	"s26.dev/istok-cli/internal/mcpserver"
-	"s26.dev/istok-cli/internal/project"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	updateapp "github.com/vtimame/istok.sh/internal/application/update"
+	"github.com/vtimame/istok.sh/internal/buildinfo"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	"github.com/vtimame/istok.sh/internal/mcpserver"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 type CLI struct {

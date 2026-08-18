@@ -8,13 +8,13 @@ import (
 
 	"github.com/google/uuid"
 
-	contextapp "s26.dev/istok-cli/internal/application/context"
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	contextdomain "s26.dev/istok-cli/internal/context"
-	contextpack "s26.dev/istok-cli/internal/contextpack"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/retrieval"
-	"s26.dev/istok-cli/internal/task"
+	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	contextdomain "github.com/vtimame/istok.sh/internal/context"
+	contextpack "github.com/vtimame/istok.sh/internal/contextpack"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 type ProjectResolver interface {

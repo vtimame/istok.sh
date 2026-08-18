@@ -1,7 +1,7 @@
 package mcpserver
 
 import (
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 const taskSchemaVersion = "1"

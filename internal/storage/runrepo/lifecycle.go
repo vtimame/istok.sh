@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	runmodel "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) FinishRun(ctx context.Context, input runmodel.FinishRunInput, actor runmodel.ActorSnapshot) (runmodel.Run, error) {

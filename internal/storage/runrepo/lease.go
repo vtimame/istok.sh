@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func (r *Repository) Heartbeat(ctx context.Context, input runmodel.HeartbeatInput, actor runmodel.ActorSnapshot) (runmodel.Run, error) {

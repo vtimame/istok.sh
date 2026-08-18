@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) AddDependency(ctx context.Context, blockerID, blockedID string, expected int64, actor task.ActorSnapshot) (task.Task, error) {

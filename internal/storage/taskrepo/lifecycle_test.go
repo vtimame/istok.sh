@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestLifecycleDependencyAndReady(t *testing.T) {

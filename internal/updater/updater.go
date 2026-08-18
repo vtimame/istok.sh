@@ -21,7 +21,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	selfupdate "github.com/creativeprojects/go-selfupdate"
 
-	"s26.dev/istok-cli/internal/buildinfo"
+	"github.com/vtimame/istok.sh/internal/buildinfo"
 )
 
 const RepositoryOwner = "istok"

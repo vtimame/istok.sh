@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Dependencies(ctx context.Context, taskID string, incoming bool) ([]task.Dependency, error) {

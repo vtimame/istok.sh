@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 const artifactQuery = `SELECT id,run_id,execution_id,kind,relative_path,sha256,original_size,stored_size,truncated,media_type,actor_id,actor_kind,actor_name,created_at FROM artifacts `

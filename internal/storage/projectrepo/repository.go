@@ -10,7 +10,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 
-	"s26.dev/istok-cli/internal/project"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 type Repository struct{ db *sql.DB }

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"s26.dev/istok-cli/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/codegraph"
 )
 
 const (

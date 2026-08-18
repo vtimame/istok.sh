@@ -1,6 +1,6 @@
 package cli
 
-import contextmodel "s26.dev/istok-cli/internal/context"
+import contextmodel "github.com/vtimame/istok.sh/internal/context"
 
 type ContextCommand struct {
 	Add     ContextAddCommand     `cmd:"" help:"Add saved context to the current project."`

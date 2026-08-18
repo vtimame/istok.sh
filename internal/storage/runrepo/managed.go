@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	runmodel "s26.dev/istok-cli/internal/run"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
 func (r *Repository) FinishManagedExecution(ctx context.Context, input runmodel.FinishManagedExecutionInput, actor runmodel.ActorSnapshot) (runmodel.FinishManagedExecutionResult, error) {

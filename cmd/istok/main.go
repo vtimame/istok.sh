@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"s26.dev/istok-cli/internal/cli"
+	"github.com/vtimame/istok.sh/internal/cli"
 )
 
 func main() {

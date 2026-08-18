@@ -3,9 +3,9 @@ package runapp
 import (
 	"context"
 
-	contextpack "s26.dev/istok-cli/internal/contextpack"
-	run "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	contextpack "github.com/vtimame/istok.sh/internal/contextpack"
+	run "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 type TaskResolver interface {

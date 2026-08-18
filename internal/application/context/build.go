@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 const schemaVersion = "2"

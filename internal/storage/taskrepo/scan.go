@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 const taskQuery = `SELECT id,project_id,number,revision,status,title,description,acceptance_criteria,notes,created_at,updated_at,deleted_at FROM tasks `

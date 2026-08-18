@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Delete(ctx context.Context, id string, expected int64, actor task.ActorSnapshot) (task.Task, error) {

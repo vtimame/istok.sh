@@ -3,8 +3,8 @@ package indexing
 import (
 	"context"
 
-	"s26.dev/istok-cli/internal/graphstore"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/graphstore"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 type graphLookup struct {

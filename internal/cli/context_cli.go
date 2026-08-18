@@ -12,10 +12,10 @@ import (
 
 	"go.uber.org/fx"
 
-	"s26.dev/istok-cli/internal/application/bootstrap"
-	contextapp "s26.dev/istok-cli/internal/application/context"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/project"
+	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 var cliContextActor = contextmodel.ActorSnapshot{ID: "cli", Kind: "cli", Name: "CLI"}

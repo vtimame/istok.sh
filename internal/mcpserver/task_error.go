@@ -3,11 +3,11 @@ package mcpserver
 import (
 	"errors"
 
-	indexingapp "s26.dev/istok-cli/internal/application/indexing"
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/project"
-	run "s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/project"
+	run "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func errorCode(err error) string {

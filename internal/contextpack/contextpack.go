@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	projectcontext "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/retrieval"
+	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const SchemaVersion = "3"

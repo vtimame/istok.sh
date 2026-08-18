@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/graphstore"
-	"s26.dev/istok-cli/internal/indexing/sidecar"
-	"s26.dev/istok-cli/internal/project"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/graphstore"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 func (s *Service) Symbols(ctx context.Context, value project.Project, request SymbolRequest) ([]codegraph.Node, Status, error) {

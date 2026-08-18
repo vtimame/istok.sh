@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	selfupdate "github.com/creativeprojects/go-selfupdate"
-	"s26.dev/istok-cli/internal/updater"
+	"github.com/vtimame/istok.sh/internal/updater"
 )
 
 func TestRestoreBinaryStagesTargetBeforePromotingOld(t *testing.T) {

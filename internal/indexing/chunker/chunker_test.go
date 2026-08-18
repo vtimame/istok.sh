@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestChunksFallbackDeterministicBasic(t *testing.T) {

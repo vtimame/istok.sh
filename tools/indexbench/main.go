@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"s26.dev/istok-cli/internal/indexbench"
+	"github.com/vtimame/istok.sh/internal/indexbench"
 )
 
 func main() {

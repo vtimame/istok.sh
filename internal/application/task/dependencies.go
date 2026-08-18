@@ -3,7 +3,7 @@ package taskapp
 import (
 	"context"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (s *Service) AddDependency(ctx context.Context, blocker, blocked task.Selector, expected int64, actor task.ActorSnapshot) (task.Task, error) {

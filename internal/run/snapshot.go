@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	projectcontext "s26.dev/istok-cli/internal/context"
-	contextpack "s26.dev/istok-cli/internal/contextpack"
+	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	contextpack "github.com/vtimame/istok.sh/internal/contextpack"
 )
 
 const (

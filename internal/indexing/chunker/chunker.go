@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const (

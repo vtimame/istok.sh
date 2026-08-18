@@ -14,9 +14,9 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/google/uuid"
 
-	"s26.dev/istok-cli/internal/indexing/chunker"
-	"s26.dev/istok-cli/internal/indexing/discovery"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/indexing/chunker"
+	"github.com/vtimame/istok.sh/internal/indexing/discovery"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestCreateOpenMetadataAndMismatch(t *testing.T) {

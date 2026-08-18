@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"s26.dev/istok-cli/internal/indexing/sidecar"
-	"s26.dev/istok-cli/internal/project"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/project"
 )
 
 // Rebuild creates and publishes a complete replacement generation, even when

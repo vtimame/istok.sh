@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	taskapp "s26.dev/istok-cli/internal/application/task"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/task"
+	taskapp "github.com/vtimame/istok.sh/internal/application/task"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.Service, root string, actor actorIdentity) {

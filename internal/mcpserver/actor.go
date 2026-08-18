@@ -3,9 +3,9 @@ package mcpserver
 import (
 	"strings"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
-	"s26.dev/istok-cli/internal/run"
-	"s26.dev/istok-cli/internal/task"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 type actorIdentity struct {

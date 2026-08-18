@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"s26.dev/istok-cli/internal/task"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func (r *Repository) Ready(ctx context.Context, projectID string) ([]task.TaskListItem, error) {

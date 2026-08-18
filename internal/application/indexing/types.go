@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
 )
 
 const ErrorCode = "index_failed"

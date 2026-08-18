@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	contextmodel "s26.dev/istok-cli/internal/context"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
 func NewService(repository Repository) *Service {

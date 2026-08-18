@@ -18,9 +18,9 @@ import (
 
 	"github.com/google/uuid"
 
-	applicationindexing "s26.dev/istok-cli/internal/application/indexing"
-	"s26.dev/istok-cli/internal/project"
-	"s26.dev/istok-cli/internal/retrieval"
+	applicationindexing "github.com/vtimame/istok.sh/internal/application/indexing"
+	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 const ContractVersion = "istok.index-acceptance.v1"

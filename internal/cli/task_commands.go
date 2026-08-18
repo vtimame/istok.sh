@@ -1,6 +1,6 @@
 package cli
 
-import "s26.dev/istok-cli/internal/task"
+import "github.com/vtimame/istok.sh/internal/task"
 
 type TaskCommand struct {
 	Create     TaskCreateCommand     `cmd:"" help:"Create a task in the current project."`

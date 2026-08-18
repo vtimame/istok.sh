@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"s26.dev/istok-cli/internal/indexing/discovery"
+	"github.com/vtimame/istok.sh/internal/indexing/discovery"
 )
 
 func TestBuildManifestReusedHashAndDiff(t *testing.T) {

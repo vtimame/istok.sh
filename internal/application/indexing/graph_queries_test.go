@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"s26.dev/istok-cli/internal/codegraph"
-	"s26.dev/istok-cli/internal/indexing/discovery"
-	"s26.dev/istok-cli/internal/indexing/sidecar"
-	"s26.dev/istok-cli/internal/retrieval"
+	"github.com/vtimame/istok.sh/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/indexing/discovery"
+	"github.com/vtimame/istok.sh/internal/indexing/sidecar"
+	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
 func TestRebuildAlwaysPublishesNewEpochAndKeepsCurrentOnFailure(t *testing.T) {

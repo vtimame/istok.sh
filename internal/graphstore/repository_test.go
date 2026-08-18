@@ -7,7 +7,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"s26.dev/istok-cli/internal/codegraph"
+	"github.com/vtimame/istok.sh/internal/codegraph"
 )
 
 const (
