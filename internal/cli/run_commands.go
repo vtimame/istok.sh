@@ -13,6 +13,7 @@ type RunCommand struct {
 	Validate   RunValidateCommand   `cmd:"" help:"Execute a validation command and derive evidence from its result."`
 	Heartbeat  RunHeartbeatCommand  `cmd:"" help:"Extend an active run lease."`
 	Recover    RunRecoverCommand    `cmd:"" help:"Recover an expired or explicitly overridden run lease."`
+	Abandon    RunAbandonCommand    `cmd:"" help:"Abandon an active run without a lease."`
 	Artifact   RunArtifactCommand   `cmd:"" help:"List and verify managed run artifacts."`
 	Finish     RunFinishCommand     `cmd:"" help:"Finish an active run."`
 	Execution  RunExecutionCommand  `cmd:"" help:"Record process executions."`
@@ -21,7 +22,7 @@ type RunCommand struct {
 
 type RunListCommand struct {
 	Task     int64             `name:"task" help:"Only runs for this project-scoped task number."`
-	Status   []runmodel.Status `name:"status" enum:"active,succeeded,failed,blocked,cancelled" help:"Run status filter; can be repeated."`
+	Status   []runmodel.Status `name:"status" enum:"active,succeeded,failed,blocked,cancelled,abandoned" help:"Run status filter; can be repeated."`
 	Limit    int               `name:"limit" help:"Maximum number of runs to return."`
 	Database string            `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 	JSON     bool              `name:"json" help:"Write a versioned JSON response."`
@@ -84,9 +85,17 @@ type RunHeartbeatCommand struct {
 type RunRecoverCommand struct {
 	ID       string `arg:"" help:"Canonical UUIDv7 active run ID."`
 	Reason   string `name:"reason" required:"" help:"Audited recovery reason."`
-	Force    bool   `name:"force" help:"Take over a lease before it expires."`
+	Force    bool   `name:"force" help:"Rotate the current actor's lease before it expires."`
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 	JSON     bool   `name:"json" help:"Write a versioned JSON response."`
+}
+
+type RunAbandonCommand struct {
+	ID               string `arg:"" help:"Canonical UUIDv7 active run ID."`
+	ExpectedRevision int64  `name:"expected-revision" required:"" help:"Current run revision required for compare-and-swap."`
+	Reason           string `name:"reason" required:"" help:"Audited abandonment reason."`
+	Database         string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
+	JSON             bool   `name:"json" help:"Write a versioned JSON response."`
 }
 
 type RunArtifactCommand struct {

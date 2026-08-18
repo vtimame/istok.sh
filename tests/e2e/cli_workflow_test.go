@@ -70,14 +70,14 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatalf("ready tasks = %#v", readyTasks)
 	}
 
-	claimed := env.runJSON(t, "task", "claim", "1", "--json")
+	claimed := env.runJSONVersion(t, "2", "task", "claim", "1", "--json")
 	run := object(t, claimed, "result")
 	runID := stringValue(t, run, "id")
 	leaseID := stringValue(t, run, "lease_id")
 	if runID == "" || leaseID == "" || stringValue(t, run, "status") != "active" || number(t, run, "revision") != 1 {
 		t.Fatalf("claimed run = %#v", run)
 	}
-	heartbeat := env.runJSON(t, "run", "heartbeat", runID, "--lease", leaseID, "--json")
+	heartbeat := env.runJSONVersion(t, "2", "run", "heartbeat", runID, "--lease", leaseID, "--json")
 	if number(t, object(t, heartbeat, "result"), "revision") != 1 {
 		t.Fatalf("heartbeat changed semantic revision: %#v", heartbeat)
 	}
@@ -86,9 +86,9 @@ func TestCLIWorkflow(t *testing.T) {
 	if earlyRecovery.exitCode != 1 || earlyRecovery.stdout != "" {
 		t.Fatalf("early recovery = %+v", earlyRecovery)
 	}
-	assertSchemaVersion(t, decodeJSON(t, earlyRecovery.stderr))
+	assertSchemaVersionAt(t, decodeJSON(t, earlyRecovery.stderr), "2")
 
-	recovered := env.runJSON(t, "run", "recover", runID, "--force", "--reason", "E2E takeover", "--json")
+	recovered := env.runJSONVersion(t, "2", "run", "recover", runID, "--force", "--reason", "E2E takeover", "--json")
 	recoveredRun := object(t, recovered, "result")
 	leaseID = stringValue(t, recoveredRun, "lease_id")
 	if leaseID == "" || leaseID == stringValue(t, run, "lease_id") || number(t, recoveredRun, "revision") != 2 {
@@ -105,7 +105,7 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatalf("comment result = %#v", commented)
 	}
 
-	validated := env.runJSON(t,
+	validated := env.runJSONVersion(t, "2",
 		"run", "validate", runID,
 		"--lease", leaseID,
 		"--json",
@@ -133,7 +133,7 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatalf("artifact kinds = %#v, want stdout and stderr", artifactKinds)
 	}
 
-	shown := env.runJSON(t, "run", "show", runID, "--json")
+	shown := env.runJSONVersion(t, "2", "run", "show", runID, "--json")
 	showResult := object(t, shown, "result")
 	assertArrayNotNull(t, showResult, "executions")
 	assertArrayNotNull(t, showResult, "validations")
@@ -145,7 +145,7 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatalf("run show = %#v", showResult)
 	}
 
-	listed := env.runJSON(t, "run", "artifact", "list", runID, "--json")
+	listed := env.runJSONVersion(t, "2", "run", "artifact", "list", runID, "--json")
 	listedArtifacts := array(t, listed, "result")
 	if len(listedArtifacts) != 2 {
 		t.Fatalf("listed artifacts = %#v", listedArtifacts)
@@ -153,14 +153,14 @@ func TestCLIWorkflow(t *testing.T) {
 	for _, value := range listedArtifacts {
 		artifact := value.(map[string]any)
 		artifactID := stringValue(t, artifact, "id")
-		verified := env.runJSON(t, "run", "artifact", "verify", artifactID, "--run", runID, "--json")
+		verified := env.runJSONVersion(t, "2", "run", "artifact", "verify", artifactID, "--run", runID, "--json")
 		verification := object(t, verified, "result")
 		if !boolValue(t, verification, "verified") || stringValue(t, object(t, verification, "artifact"), "id") != artifactID {
 			t.Fatalf("artifact verification = %#v", verification)
 		}
 	}
 
-	finished := env.runJSON(t,
+	finished := env.runJSONVersion(t, "2",
 		"run", "finish", runID,
 		"--lease", leaseID,
 		"--expected-revision", "2",
@@ -173,7 +173,7 @@ func TestCLIWorkflow(t *testing.T) {
 		t.Fatalf("finished run = %#v", finished)
 	}
 
-	completed := env.runJSON(t,
+	completed := env.runJSONVersion(t, "2",
 		"task", "done", "1",
 		"--expected-revision", "3",
 		"--run-id", runID,
@@ -198,7 +198,7 @@ func TestDangerousCommandRequiresOverride(t *testing.T) {
 	env := newEnvironment(t, true)
 	env.runJSON(t, "init", "--json")
 	env.runJSON(t, "task", "create", "--title", "Dangerous command", "--json")
-	claimed := env.runJSON(t, "task", "claim", "1", "--json")
+	claimed := env.runJSONVersion(t, "2", "task", "claim", "1", "--json")
 	run := object(t, claimed, "result")
 	runID, leaseID := stringValue(t, run, "id"), stringValue(t, run, "lease_id")
 
@@ -207,10 +207,10 @@ func TestDangerousCommandRequiresOverride(t *testing.T) {
 		t.Fatalf("dangerous rejection = %+v", failed)
 	}
 	errorResponse := decodeJSON(t, failed.stderr)
-	assertSchemaVersion(t, errorResponse)
+	assertSchemaVersionAt(t, errorResponse, "2")
 	assertNonEmptyString(t, object(t, errorResponse, "error"), "code")
 
-	allowed := env.runJSON(t,
+	allowed := env.runJSONVersion(t, "2",
 		"run", "exec", runID,
 		"--lease", leaseID,
 		"--allow-dangerous",
@@ -304,13 +304,19 @@ func (env testEnvironment) run(t *testing.T, args ...string) commandResult {
 func (env testEnvironment) runJSON(t *testing.T, args ...string) map[string]any {
 	t.Helper()
 
+	return env.runJSONVersion(t, "1", args...)
+}
+
+func (env testEnvironment) runJSONVersion(t *testing.T, wantVersion string, args ...string) map[string]any {
+	t.Helper()
+
 	result := env.run(t, args...)
 	if result.exitCode != 0 || result.stderr != "" {
 		t.Fatalf("run %q: exit=%d stdout=%q stderr=%q", args, result.exitCode, result.stdout, result.stderr)
 	}
 
 	response := decodeJSON(t, result.stdout)
-	assertSchemaVersion(t, response)
+	assertSchemaVersionAt(t, response, wantVersion)
 
 	return response
 }
@@ -332,8 +338,14 @@ func decodeJSON(t *testing.T, value string) map[string]any {
 
 func assertSchemaVersion(t *testing.T, response map[string]any) {
 	t.Helper()
-	if stringValue(t, response, "schema_version") != "1" {
-		t.Fatalf("schema_version = %#v, want 1", response["schema_version"])
+
+	assertSchemaVersionAt(t, response, "1")
+}
+
+func assertSchemaVersionAt(t *testing.T, response map[string]any, wantVersion string) {
+	t.Helper()
+	if stringValue(t, response, "schema_version") != wantVersion {
+		t.Fatalf("schema_version = %#v, want %s", response["schema_version"], wantVersion)
 	}
 }
 

@@ -60,6 +60,48 @@ func TestPatchApplyRejectsDeletedRecordsAndBlankTitle(t *testing.T) {
 	}
 }
 
+func TestInstructionPolicyValidationAndDefaults(t *testing.T) {
+	projectID, err := NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	priority := PriorityHigh
+	scope := ScopeProject
+	valid := CreateInput{
+		ProjectID:   projectID,
+		Kind:        KindInstruction,
+		Title:       "policy",
+		Source:      SourceUser,
+		Visibility:  VisibilityShared,
+		Sensitivity: SensitivityNormal,
+		Priority:    &priority,
+		Scope:       &scope,
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	note := valid
+	note.Kind = KindNote
+	if err := note.Validate(); ErrorCode(err) != CodeInvalid {
+		t.Fatalf("note instruction policy error = %v", err)
+	}
+
+	record := ProjectContextRecord{Kind: KindInstruction, Title: "policy"}
+	disabled := false
+	if err := (Patch{Enabled: &disabled}).Apply(&record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Enabled == nil || *record.Enabled || record.Priority == nil || *record.Priority != PriorityNormal || record.Scope == nil || *record.Scope != ScopeProject {
+		t.Fatalf("defaulted instruction policy = %+v", record)
+	}
+
+	record = ProjectContextRecord{Kind: KindNote, Title: "note"}
+	if err := (Patch{Enabled: &disabled}).Apply(&record); ErrorCode(err) != CodeInvalid {
+		t.Fatalf("note enabled patch error = %v", err)
+	}
+}
+
 func stringPtr(value string) *string {
 	return &value
 }

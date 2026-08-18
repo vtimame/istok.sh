@@ -251,10 +251,12 @@ type fakeRepository struct {
 	list             func(context.Context, run.ListOptions) ([]run.Run, error)
 	show             func(context.Context, string) (run.Show, error)
 	hasActive        func(context.Context, string) (bool, error)
+	taskRunState     func(context.Context, string) (run.TaskRunState, error)
 	start            func(context.Context, run.StartExecutionInput, run.ActorSnapshot) (run.Execution, error)
 	finishExecution  func(context.Context, run.FinishExecutionInput, run.ActorSnapshot) (run.Execution, error)
 	recordValidation func(context.Context, run.RecordValidationInput, run.ActorSnapshot) (run.Validation, error)
 	finishRun        func(context.Context, run.FinishRunInput, run.ActorSnapshot) (run.Run, error)
+	abandon          func(context.Context, run.AbandonInput, run.ActorSnapshot) (run.Run, error)
 	complete         func(context.Context, run.CompletionRecord) (task.Task, run.Completion, error)
 }
 
@@ -266,6 +268,12 @@ func (f *fakeRepository) Heartbeat(context.Context, run.HeartbeatInput, run.Acto
 }
 func (f *fakeRepository) Recover(context.Context, run.RecoverInput, run.ActorSnapshot) (run.Run, error) {
 	return run.Run{}, errors.New("recover not mocked")
+}
+func (f *fakeRepository) Abandon(ctx context.Context, input run.AbandonInput, actor run.ActorSnapshot) (run.Run, error) {
+	if f.abandon == nil {
+		return run.Run{}, errors.New("abandon not mocked")
+	}
+	return f.abandon(ctx, input, actor)
 }
 func (f *fakeRepository) GetArtifact(context.Context, string) (run.Artifact, error) {
 	return run.Artifact{}, errors.New("get artifact not mocked")
@@ -304,6 +312,12 @@ func (f *fakeRepository) HasActiveRun(ctx context.Context, id string) (bool, err
 		return false, errors.New("has active run not mocked")
 	}
 	return f.hasActive(ctx, id)
+}
+func (f *fakeRepository) TaskRunState(ctx context.Context, id string) (run.TaskRunState, error) {
+	if f.taskRunState == nil {
+		return run.TaskRunState{}, errors.New("task run state not mocked")
+	}
+	return f.taskRunState(ctx, id)
 }
 func (f *fakeRepository) StartExecution(ctx context.Context, input run.StartExecutionInput, actor run.ActorSnapshot) (run.Execution, error) {
 	f.startCalls++

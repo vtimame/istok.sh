@@ -3,6 +3,7 @@ package taskapp
 import (
 	"context"
 
+	"s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
 
@@ -25,10 +26,15 @@ type Repository interface {
 
 type ActiveRunInspector interface {
 	HasActiveRun(context.Context, string) (bool, error)
+	TaskRunState(context.Context, string) (run.TaskRunState, error)
 }
 
 type NoActiveRuns struct{}
 
 func (NoActiveRuns) HasActiveRun(context.Context, string) (bool, error) {
 	return false, nil
+}
+
+func (NoActiveRuns) TaskRunState(context.Context, string) (run.TaskRunState, error) {
+	return run.TaskRunState{}, nil
 }

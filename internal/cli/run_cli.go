@@ -15,16 +15,18 @@ import (
 	"go.uber.org/fx"
 
 	"s26.dev/istok-cli/internal/application/bootstrap"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
 	taskapp "s26.dev/istok-cli/internal/application/task"
 	"s26.dev/istok-cli/internal/cli/presentation"
+	contextmodel "s26.dev/istok-cli/internal/context"
 	"s26.dev/istok-cli/internal/project"
 	runmodel "s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
 
-const runSchemaVersion = "1"
+const runSchemaVersion = "2"
 
 var cliRunActor = runmodel.ActorSnapshot{ID: "cli", Kind: "cli", Name: "CLI"}
 
@@ -194,6 +196,13 @@ func runRunCommand(ctx context.Context, command RunCommand, commandName, cwd str
 				Force:  command.Recover.Force,
 				Reason: command.Recover.Reason,
 			}, cliRunActor)
+		})
+	case strings.HasPrefix(commandName, "run abandon"):
+		return runKernelCommand(ctx, command.Abandon.Database, command.Abandon.JSON, output, func(kernel runKernel) (any, error) {
+			if _, err := scopedRun(ctx, kernel, cwd, command.Abandon.ID); err != nil {
+				return nil, err
+			}
+			return kernel.runs.Abandon(ctx, runmodel.AbandonInput{RunID: command.Abandon.ID, ExpectedRevision: command.Abandon.ExpectedRevision, Reason: command.Abandon.Reason}, cliRunActor)
 		})
 	case strings.HasPrefix(commandName, "run artifact list"):
 		return runKernelCommand(ctx, command.Artifact.List.Database, command.Artifact.List.JSON, output, func(kernel runKernel) (any, error) {
@@ -488,6 +497,11 @@ func runJSONError(err error) error {
 }
 
 func runErrorCode(err error) string {
+	var contextError *contextmodel.Error
+	if errors.As(err, &contextError) {
+		return string(contextError.Code)
+	}
+
 	var runError *runmodel.Error
 	if errors.As(err, &runError) {
 		return string(runError.Code)
@@ -501,6 +515,9 @@ func runErrorCode(err error) string {
 	var projectError *project.Error
 	if errors.As(err, &projectError) {
 		return string(projectError.Code)
+	}
+	if indexingapp.IsError(err) {
+		return indexingapp.ErrorCode
 	}
 
 	return string(runmodel.CodeInternal)

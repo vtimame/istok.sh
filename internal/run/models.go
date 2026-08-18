@@ -27,6 +27,7 @@ const (
 	StatusFailed    Status = "failed"
 	StatusBlocked   Status = "blocked"
 	StatusCancelled Status = "cancelled"
+	StatusAbandoned Status = "abandoned"
 )
 
 func (v Status) Valid() bool {
@@ -34,11 +35,12 @@ func (v Status) Valid() bool {
 		v == StatusSucceeded ||
 		v == StatusFailed ||
 		v == StatusBlocked ||
-		v == StatusCancelled
+		v == StatusCancelled ||
+		v == StatusAbandoned
 }
 
 func (v Status) Terminal() bool {
-	return v == StatusSucceeded || v == StatusFailed || v == StatusCancelled || v == StatusBlocked
+	return v == StatusSucceeded || v == StatusFailed || v == StatusCancelled || v == StatusBlocked || v == StatusAbandoned
 }
 
 type ExecutionStatus string
@@ -184,6 +186,11 @@ type Show struct {
 	Executions  []Execution     `json:"executions"`
 	Validations []Validation    `json:"validations"`
 	Artifacts   []Artifact      `json:"artifacts"`
+}
+
+type TaskRunState struct {
+	HasActiveRun  bool
+	HasExpiredRun bool
 }
 
 type ListOptions struct {

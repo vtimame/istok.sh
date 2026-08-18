@@ -80,6 +80,12 @@ func (e environment) command(ctx context.Context, args ...string) commandResult 
 
 func (e environment) runJSON(t *testing.T, args ...string) map[string]any {
 	t.Helper()
+
+	return e.runJSONVersion(t, "1", args...)
+}
+
+func (e environment) runJSONVersion(t *testing.T, wantVersion string, args ...string) map[string]any {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), hardeningTimeout)
 	defer cancel()
 	result := e.command(ctx, args...)
@@ -89,7 +95,7 @@ func (e environment) runJSON(t *testing.T, args ...string) map[string]any {
 	if result.stderr != "" {
 		t.Fatalf("istok %q wrote stderr:\n%s", args, result.stderr)
 	}
-	return decodeJSON(t, result.stdout)
+	return decodeJSONVersion(t, result.stdout, wantVersion)
 }
 
 func (e environment) runBoundedJSON(t *testing.T, maximum int, args ...string) map[string]any {
@@ -108,6 +114,12 @@ func (e environment) runBoundedJSON(t *testing.T, maximum int, args ...string) m
 
 func decodeJSON(t *testing.T, text string) map[string]any {
 	t.Helper()
+
+	return decodeJSONVersion(t, text, "1")
+}
+
+func decodeJSONVersion(t *testing.T, text, wantVersion string) map[string]any {
+	t.Helper()
 	decoder := json.NewDecoder(strings.NewReader(text))
 	var value map[string]any
 	if err := decoder.Decode(&value); err != nil {
@@ -116,8 +128,8 @@ func decodeJSON(t *testing.T, text string) map[string]any {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		t.Fatalf("JSON output is not one document %q: %v", text, err)
 	}
-	if stringValue(t, value, "schema_version") != "1" {
-		t.Fatalf("schema_version = %#v, want 1", value["schema_version"])
+	if stringValue(t, value, "schema_version") != wantVersion {
+		t.Fatalf("schema_version = %#v, want %s", value["schema_version"], wantVersion)
 	}
 	return value
 }

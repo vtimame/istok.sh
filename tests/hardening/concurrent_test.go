@@ -63,7 +63,7 @@ func TestConcurrentCLIAndMCP(t *testing.T) {
 			errs <- fmt.Errorf("encode claim response: %w", err)
 			return
 		}
-		value, err := decodeVersioned(string(encoded))
+		value, err := decodeVersioned(string(encoded), "2")
 		if err != nil {
 			errs <- fmt.Errorf("decode claim response: %w", err)
 			return
@@ -83,7 +83,7 @@ func TestConcurrentCLIAndMCP(t *testing.T) {
 				errs <- fmt.Errorf("istok %q: %w\nstderr:\n%s", args, result.err, result.stderr)
 				return
 			}
-			if _, err := decodeVersioned(result.stdout); err != nil {
+			if _, err := decodeVersioned(result.stdout, "1"); err != nil {
 				errs <- fmt.Errorf("istok %q: %w", args, err)
 			}
 		}()
@@ -97,13 +97,13 @@ func TestConcurrentCLIAndMCP(t *testing.T) {
 		return
 	}
 
-	runs := mcpValue(t, mcpCall(t, ctx, session, "run_list", map[string]any{"task_id": taskID}))
+	runs := mcpValueVersion(t, mcpCall(t, ctx, session, "run_list", map[string]any{"task_id": taskID}), "2")
 	items := array(t, runs, "runs")
 	if len(items) != 1 {
 		t.Fatalf("runs = %#v", runs)
 	}
 	runID := stringValue(t, items[0].(map[string]any), "id")
-	show := e.runJSON(t, "run", "show", runID, "--json")
+	show := e.runJSONVersion(t, "2", "run", "show", runID, "--json")
 	if len(array(t, object(t, show, "result", "snapshot"), "retrieval")) == 0 {
 		t.Fatalf("claim snapshot has no retrieval: %#v", show)
 	}
@@ -132,20 +132,26 @@ func mcpCall(t *testing.T, ctx context.Context, session *mcp.ClientSession, name
 
 func mcpValue(t *testing.T, result *mcp.CallToolResult) map[string]any {
 	t.Helper()
+
+	return mcpValueVersion(t, result, "1")
+}
+
+func mcpValueVersion(t *testing.T, result *mcp.CallToolResult, wantVersion string) map[string]any {
+	t.Helper()
 	encoded, err := json.Marshal(result.StructuredContent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return decodeJSON(t, string(encoded))
+	return decodeJSONVersion(t, string(encoded), wantVersion)
 }
 
-func decodeVersioned(text string) (map[string]any, error) {
+func decodeVersioned(text, wantVersion string) (map[string]any, error) {
 	var value map[string]any
 	if err := json.Unmarshal([]byte(text), &value); err != nil {
 		return nil, err
 	}
-	if value["schema_version"] != "1" {
-		return nil, fmt.Errorf("schema_version = %#v", value["schema_version"])
+	if value["schema_version"] != wantVersion {
+		return nil, fmt.Errorf("schema_version = %#v, want %s", value["schema_version"], wantVersion)
 	}
 	return value, nil
 }

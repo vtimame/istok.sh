@@ -121,6 +121,73 @@ func TestUpdateAndArchiveRestoreCASAndEvents(t *testing.T) {
 	}
 }
 
+func TestInstructionPolicyDefaultsAndDisabledFiltering(t *testing.T) {
+	ctx := context.Background()
+	repository, _, p := newContextRepository(t)
+	instruction := createRecord(t, ctx, repository, p.ID, contextmodel.CreateInput{
+		Kind:        contextmodel.KindInstruction,
+		Title:       "Build policy",
+		Body:        "Run tests before completion",
+		Source:      contextmodel.SourceUser,
+		Visibility:  contextmodel.VisibilityShared,
+		Sensitivity: contextmodel.SensitivityNormal,
+	}, actor)
+	if instruction.Enabled == nil || !*instruction.Enabled || instruction.Priority == nil || *instruction.Priority != contextmodel.PriorityNormal || instruction.Scope == nil || *instruction.Scope != contextmodel.ScopeProject {
+		t.Fatalf("instruction defaults = %+v", instruction)
+	}
+
+	note := createRecord(t, ctx, repository, p.ID, contextmodel.CreateInput{
+		Kind:        contextmodel.KindNote,
+		Title:       "Build note",
+		Body:        "Run tests",
+		Source:      contextmodel.SourceUser,
+		Visibility:  contextmodel.VisibilityShared,
+		Sensitivity: contextmodel.SensitivityNormal,
+	}, actor)
+	if note.Enabled != nil || note.Priority != nil || note.Scope != nil {
+		t.Fatalf("note exposes instruction policy = %+v", note)
+	}
+
+	disabled := false
+	updated, err := repository.Update(ctx, instruction.ID, instruction.Revision, contextmodel.Patch{Enabled: &disabled}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Enabled == nil || *updated.Enabled || updated.Revision != instruction.Revision+1 {
+		t.Fatalf("disabled instruction = %+v", updated)
+	}
+
+	listed, err := repository.List(ctx, p.ID, contextmodel.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != note.ID {
+		t.Fatalf("default list = %+v", listed)
+	}
+	listed, err = repository.List(ctx, p.ID, contextmodel.ListOptions{IncludeDisabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("include-disabled list = %+v", listed)
+	}
+
+	searched, err := repository.Search(ctx, p.ID, contextmodel.SearchOptions{Query: "tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searched) != 1 || searched[0].ID != note.ID {
+		t.Fatalf("default search = %+v", searched)
+	}
+	searched, err = repository.Search(ctx, p.ID, contextmodel.SearchOptions{Query: "tests", IncludeDisabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searched) != 2 {
+		t.Fatalf("include-disabled search = %+v", searched)
+	}
+}
+
 func TestConcurrentCASUpdatesAreConflictAware(t *testing.T) {
 	ctx := context.Background()
 	repository, _, p := newContextRepository(t)

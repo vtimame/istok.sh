@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
 
@@ -104,10 +105,25 @@ func (r *fakeRepository) Delete(context.Context, string, int64, task.ActorSnapsh
 type activeRuns struct{ active bool }
 
 func (r activeRuns) HasActiveRun(context.Context, string) (bool, error) { return r.active, nil }
+func (r activeRuns) TaskRunState(context.Context, string) (run.TaskRunState, error) {
+	return run.TaskRunState{HasActiveRun: r.active}, nil
+}
 
 type activeRunsByID map[string]bool
 
 func (r activeRunsByID) HasActiveRun(_ context.Context, id string) (bool, error) {
+	return r[id], nil
+}
+func (r activeRunsByID) TaskRunState(_ context.Context, id string) (run.TaskRunState, error) {
+	return run.TaskRunState{HasActiveRun: r[id]}, nil
+}
+
+type taskRunStatesByID map[string]run.TaskRunState
+
+func (r taskRunStatesByID) HasActiveRun(_ context.Context, id string) (bool, error) {
+	return r[id].HasActiveRun, nil
+}
+func (r taskRunStatesByID) TaskRunState(_ context.Context, id string) (run.TaskRunState, error) {
 	return r[id], nil
 }
 
@@ -178,6 +194,29 @@ func TestReadyExcludesTasksWithActiveRuns(t *testing.T) {
 	}
 	if len(ready) != 1 || ready[0].ID != second {
 		t.Fatalf("Ready() = %#v", ready)
+	}
+}
+
+func TestReadyIncludesExpiredActiveRunAndExposesState(t *testing.T) {
+	expired := mustTaskID(t)
+	live := mustTaskID(t)
+	plain := mustTaskID(t)
+	repository := &fakeRepository{readyValues: []task.TaskListItem{
+		{Task: task.Task{ID: expired}},
+		{Task: task.Task{ID: live}},
+		{Task: task.Task{ID: plain}},
+	}}
+	service := NewService(repository, taskRunStatesByID{
+		expired: {HasActiveRun: true, HasExpiredRun: true},
+		live:    {HasActiveRun: true},
+	})
+
+	ready, err := service.Ready(context.Background(), mustProjectID(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 2 || ready[0].ID != expired || !ready[0].HasActiveRun || !ready[0].HasExpiredRun || ready[1].ID != plain {
+		t.Fatalf("Ready() = %+v", ready)
 	}
 }
 
@@ -319,6 +358,9 @@ func TestDeleteStopsWhenRunInspectorFails(t *testing.T) {
 type runInspectorError struct{ err error }
 
 func (r runInspectorError) HasActiveRun(context.Context, string) (bool, error) { return false, r.err }
+func (r runInspectorError) TaskRunState(context.Context, string) (run.TaskRunState, error) {
+	return run.TaskRunState{}, r.err
+}
 
 func TestDependencyPolicyRejectsCrossProjectAndDeletedBeforePort(t *testing.T) {
 	firstID := mustTaskID(t)

@@ -10,6 +10,7 @@ import (
 	"go.uber.org/fx"
 
 	contextapp "s26.dev/istok-cli/internal/application/context"
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	runapp "s26.dev/istok-cli/internal/application/run"
 	runworkflow "s26.dev/istok-cli/internal/application/runworkflow"
 	taskapp "s26.dev/istok-cli/internal/application/task"
@@ -78,7 +79,7 @@ func Module(config Config) fx.Option {
 	return fx.Module("mcp", fx.Supply(config), fx.Provide(New))
 }
 
-func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
+func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
 	if config.Profile == "" {
 		config.Profile = Worker
 	}
@@ -117,6 +118,7 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 	})
 	addTaskTools(server, service, tasks, config.Root, actor)
 	addContextTools(server, service, contexts, config.Root, actor)
+	addIndexTools(server, service, indexes, config.Root)
 	addRunTools(server, service, runs, workflow, config.Root, actor, config.Profile)
 	if config.Profile == Admin {
 		addAdmin(server, service, tasks, contexts, config.Root, actor)
@@ -222,7 +224,15 @@ func tool(name, description string, readOnly, destructive, idempotent bool) *mcp
 }
 
 func errorTool(err error) *mcp.CallToolResult {
-	encoded, _ := json.Marshal(ErrorResult{SchemaVersion: "1", Error: struct {
+	return errorToolAtVersion(err, "1")
+}
+
+func runErrorTool(err error) *mcp.CallToolResult {
+	return errorToolAtVersion(err, runSchemaVersion)
+}
+
+func errorToolAtVersion(err error, schemaVersion string) *mcp.CallToolResult {
+	encoded, _ := json.Marshal(ErrorResult{SchemaVersion: schemaVersion, Error: struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}{Code: errorCode(err), Message: err.Error()}})

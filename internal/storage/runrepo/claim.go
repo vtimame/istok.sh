@@ -59,16 +59,32 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 			return runmodel.NewError(runmodel.CodeConflict, "task has active blockers")
 		}
 
-		var active int
-		err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE task_id=? AND status='active'`, input.TaskID).Scan(&active)
+		var activeRunID, expiresAt string
+		err = conn.QueryRowContext(ctx, `SELECT r.id,l.expires_at FROM runs r JOIN run_leases l ON l.run_id=r.id WHERE r.task_id=? AND r.status='active'`, input.TaskID).Scan(&activeRunID, &expiresAt)
+		if err == sql.ErrNoRows {
+			err = nil
+		}
 		if err != nil {
 			return fmt.Errorf("check active run: %w", err)
 		}
-		if active > 0 {
-			return runmodel.NewError(runmodel.CodeActiveRunExists, "task already has an active run")
-		}
 
 		now := r.now().UTC()
+		if activeRunID != "" {
+			if !runmodel.IsUUIDv7(input.AbandonEventID) {
+				return runmodel.NewError(runmodel.CodeActiveRunExists, "task already has an active run")
+			}
+			expires, parseErr := parseTime(expiresAt)
+			if parseErr != nil {
+				return fmt.Errorf("parse active run lease expiry: %w", parseErr)
+			}
+			if expires.After(now) {
+				return runmodel.NewError(runmodel.CodeActiveRunExists, "task already has an active run")
+			}
+			if err := abandonRun(ctx, conn, activeRunID, 0, input.Actor, input.AbandonEventID, fmt.Sprintf("lease expired; replacement_run_id=%s", input.RunID), now, false); err != nil {
+				return err
+			}
+		}
+
 		if err := insertSnapshot(ctx, conn, input.Snapshot, now); err != nil {
 			return err
 		}
@@ -162,8 +178,8 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 		_, err = conn.ExecContext(ctx, `
 			INSERT INTO context_snapshot_items (
 				snapshot_id,position,record_id,record_revision,content_hash,
-				kind,source,visibility,sensitivity,title,body,snippet,tags
-			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+				kind,source,visibility,sensitivity,enabled,priority,scope,title,body,snippet,tags
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		`,
 			snapshot.ID,
 			position,
@@ -174,6 +190,9 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 			item.Source,
 			item.Visibility,
 			item.Sensitivity,
+			snapshotPolicyEnabled(item),
+			snapshotPolicyPriority(item),
+			snapshotPolicyScope(item),
 			item.Title,
 			item.Body,
 			item.Snippet,
@@ -209,4 +228,23 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 	}
 
 	return nil
+}
+
+func snapshotPolicyEnabled(item runmodel.ContextSnapshotItem) int {
+	if item.Enabled != nil && !*item.Enabled {
+		return 0
+	}
+	return 1
+}
+func snapshotPolicyPriority(item runmodel.ContextSnapshotItem) string {
+	if item.Priority != nil {
+		return string(*item.Priority)
+	}
+	return "normal"
+}
+func snapshotPolicyScope(item runmodel.ContextSnapshotItem) string {
+	if item.Scope != nil {
+		return string(*item.Scope)
+	}
+	return "project"
 }

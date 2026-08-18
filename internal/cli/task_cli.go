@@ -41,17 +41,19 @@ type taskCommandResult struct {
 type taskListItemJSON struct {
 	taskValueJSON
 	HasActiveRun   bool              `json:"has_active_run"`
+	HasExpiredRun  bool              `json:"has_expired_run"`
 	ActiveBlockers []taskSummaryJSON `json:"active_blockers"`
 }
 
 type taskShowJSON struct {
-	Task         taskValueJSON        `json:"task"`
-	Events       []taskEventJSON      `json:"events"`
-	Incoming     []taskDependencyJSON `json:"incoming"`
-	Outgoing     []taskDependencyJSON `json:"outgoing"`
-	HasActiveRun bool                 `json:"has_active_run"`
-	Blockers     []taskSummaryJSON    `json:"blockers"`
-	Dependents   []taskSummaryJSON    `json:"dependents"`
+	Task          taskValueJSON        `json:"task"`
+	Events        []taskEventJSON      `json:"events"`
+	Incoming      []taskDependencyJSON `json:"incoming"`
+	Outgoing      []taskDependencyJSON `json:"outgoing"`
+	HasActiveRun  bool                 `json:"has_active_run"`
+	HasExpiredRun bool                 `json:"has_expired_run"`
+	Blockers      []taskSummaryJSON    `json:"blockers"`
+	Dependents    []taskSummaryJSON    `json:"dependents"`
 }
 
 func (r taskCommandResult) MarshalJSON() ([]byte, error) {
@@ -337,6 +339,7 @@ func taskListJSON(values []task.TaskListItem) []taskListItemJSON {
 		result = append(result, taskListItemJSON{
 			taskValueJSON:  taskJSONValue(value.Task),
 			HasActiveRun:   value.HasActiveRun,
+			HasExpiredRun:  value.HasExpiredRun,
 			ActiveBlockers: taskSummariesJSON(value.ActiveBlockers),
 		})
 	}
@@ -346,13 +349,14 @@ func taskListJSON(values []task.TaskListItem) []taskListItemJSON {
 
 func taskShowJSONValue(value task.Show) taskShowJSON {
 	return taskShowJSON{
-		Task:         taskJSONValue(value.Task),
-		Events:       taskEventsJSON(value.Events),
-		Incoming:     taskDependenciesJSON(value.Incoming),
-		Outgoing:     taskDependenciesJSON(value.Outgoing),
-		HasActiveRun: value.HasActiveRun,
-		Blockers:     taskSummariesJSON(value.Blockers),
-		Dependents:   taskSummariesJSON(value.Dependents),
+		Task:          taskJSONValue(value.Task),
+		Events:        taskEventsJSON(value.Events),
+		Incoming:      taskDependenciesJSON(value.Incoming),
+		Outgoing:      taskDependenciesJSON(value.Outgoing),
+		HasActiveRun:  value.HasActiveRun,
+		HasExpiredRun: value.HasExpiredRun,
+		Blockers:      taskSummariesJSON(value.Blockers),
+		Dependents:    taskSummariesJSON(value.Dependents),
 	}
 }
 

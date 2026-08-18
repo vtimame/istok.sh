@@ -69,6 +69,10 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 		}
 	}
 
+	abandonEventID, err := run.NewID()
+	if err != nil {
+		return run.Run{}, err
+	}
 	eventID, err := run.NewID()
 	if err != nil {
 		return run.Run{}, err
@@ -85,15 +89,16 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 	}
 
 	record := run.ClaimRecord{
-		RunID:         runID,
-		TaskID:        taskValue.ID,
-		EventID:       eventID,
-		Snapshot:      snapshot,
-		BaseBranch:    input.BaseBranch,
-		BaseCommit:    input.BaseCommit,
-		Actor:         actor,
-		LeaseID:       leaseID,
-		LeaseDuration: defaultLeaseDuration,
+		RunID:          runID,
+		TaskID:         taskValue.ID,
+		EventID:        eventID,
+		AbandonEventID: abandonEventID,
+		Snapshot:       snapshot,
+		BaseBranch:     input.BaseBranch,
+		BaseCommit:     input.BaseCommit,
+		Actor:          actor,
+		LeaseID:        leaseID,
+		LeaseDuration:  defaultLeaseDuration,
 	}
 
 	return s.repository.Claim(ctx, record)
@@ -129,6 +134,14 @@ func (s *Service) HasActiveRun(ctx context.Context, taskID string) (bool, error)
 	}
 
 	return s.repository.HasActiveRun(ctx, taskID)
+}
+
+func (s *Service) TaskRunState(ctx context.Context, taskID string) (run.TaskRunState, error) {
+	if !run.IsUUIDv7(taskID) {
+		return run.TaskRunState{}, run.NewError(run.CodeInvalid, "task id must be a canonical UUIDv7")
+	}
+
+	return s.repository.TaskRunState(ctx, taskID)
 }
 
 func (s *Service) StartExecution(ctx context.Context, input run.StartExecutionInput, actor run.ActorSnapshot) (run.Execution, error) {
@@ -232,6 +245,25 @@ func (s *Service) Recover(ctx context.Context, input run.RecoverInput, actor run
 	}
 	input.Reason = trim(input.Reason)
 	return s.repository.Recover(ctx, input, actor)
+}
+
+func (s *Service) Abandon(ctx context.Context, input run.AbandonInput, actor run.ActorSnapshot) (run.Run, error) {
+	if input.EventID == "" {
+		eventID, err := run.NewID()
+		if err != nil {
+			return run.Run{}, err
+		}
+		input.EventID = eventID
+	}
+	if err := input.Validate(); err != nil {
+		return run.Run{}, err
+	}
+	if err := actor.Validate(); err != nil {
+		return run.Run{}, err
+	}
+	input.Reason = trim(input.Reason)
+
+	return s.repository.Abandon(ctx, input, actor)
 }
 
 func (s *Service) GetArtifact(ctx context.Context, id string) (run.Artifact, error) {

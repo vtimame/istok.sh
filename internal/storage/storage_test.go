@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -85,6 +86,167 @@ func TestRunWorkflowMigrationBackfillsExistingRunLease(t *testing.T) {
 	}
 }
 
+func TestInstructionPolicyMigrationBackfillsWithoutChangingIdentityOrHistory(t *testing.T) {
+	ctx := context.Background()
+	database := filepath.Join(t.TempDir(), "instruction-policy.db")
+	db, err := sql.Open("sqlite3", sqliteDSN(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrationFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 8); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := "2026-08-17T10:00:00Z"
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO projects (id,name,revision,created_at,updated_at) VALUES ('project','Project',1,?,?)`, []any{stamp, stamp}},
+		{`INSERT INTO context_records (id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,actor_id,actor_kind,actor_name,created_at,updated_at) VALUES ('instruction','project',1,'instruction','Policy','Body','[]','user','shared','normal','actor','user','User',?,?)`, []any{stamp, stamp}},
+		{`INSERT INTO context_events (id,record_id,type,body,record_revision,actor_id,actor_kind,actor_name,created_at) VALUES ('event','instruction','created','',1,'actor','user','User',?)`, []any{stamp}},
+		{`INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES ('snapshot','2','project',?,?)`, []any{stamp, stamp}},
+		{`INSERT INTO context_snapshot_items (snapshot_id,position,record_id,record_revision,content_hash,kind,source,visibility,sensitivity,title,body,snippet,tags) VALUES ('snapshot',0,'instruction',1,'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff','instruction','user','shared','normal','Policy','Body','Body','[]')`, nil},
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement.query, statement.args...); err != nil {
+			t.Fatalf("seed v8 state: %v", err)
+		}
+	}
+
+	if _, err := provider.UpTo(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+	var enabled int
+	var priority, scope string
+	if err := db.QueryRowContext(ctx, `SELECT enabled,priority,scope FROM context_records WHERE id='instruction'`).Scan(&enabled, &priority, &scope); err != nil {
+		t.Fatal(err)
+	}
+	if enabled != 1 || priority != "normal" || scope != "project" {
+		t.Fatalf("record policy = %d, %q, %q", enabled, priority, scope)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT enabled,priority,scope FROM context_snapshot_items WHERE snapshot_id='snapshot'`).Scan(&enabled, &priority, &scope); err != nil {
+		t.Fatal(err)
+	}
+	if enabled != 1 || priority != "normal" || scope != "project" {
+		t.Fatalf("snapshot policy = %d, %q, %q", enabled, priority, scope)
+	}
+	var eventCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM context_events WHERE id='event' AND record_id='instruction'`).Scan(&eventCount); err != nil || eventCount != 1 {
+		t.Fatalf("event history count = %d, err = %v", eventCount, err)
+	}
+
+	if _, err := provider.DownTo(ctx, 8); err != nil {
+		t.Fatal(err)
+	}
+	var policyColumns int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('context_records') WHERE name IN ('enabled','priority','scope')`).Scan(&policyColumns); err != nil {
+		t.Fatal(err)
+	}
+	if policyColumns != 0 {
+		t.Fatalf("policy columns after down = %d", policyColumns)
+	}
+}
+
+func TestRunAbandonedMigrationRoundTripPreservesChildrenAndIndexes(t *testing.T) {
+	ctx := context.Background()
+	database := filepath.Join(t.TempDir(), "abandoned.db")
+	db, err := sql.Open("sqlite3", sqliteDSN(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrationFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+
+	stamp := "2026-08-17T10:00:00Z"
+	queries := []string{
+		`INSERT INTO projects (id,name,revision,created_at,updated_at) VALUES ('project','Project',1,'2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO tasks (id,project_id,number,revision,status,title,created_at,updated_at) VALUES ('task','project',1,1,'open','Task','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES ('snapshot','2','project','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO runs (id,task_id,context_snapshot_id,revision,status,actor_id,actor_kind,actor_name,started_at,updated_at) VALUES ('run','task','snapshot',1,'active','actor','agent','Agent','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO run_leases (run_id,lease_id,owner_id,owner_kind,owner_name,heartbeat_at,expires_at,updated_at) VALUES ('run','lease','actor','agent','Agent','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO executions (id,run_id,revision,status,argv,cwd,actor_id,actor_kind,actor_name,started_at,updated_at,finished_at) VALUES ('execution','run',1,'cancelled','["true"]','.', 'actor','agent','Agent','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z','2026-08-17T10:00:00Z')`,
+		`INSERT INTO validations (id,execution_id,source,status,command,summary,actor_id,actor_kind,actor_name,created_at) VALUES ('validation','execution','attested','passed','true','passed','actor','agent','Agent','2026-08-17T10:00:00Z')`,
+		`INSERT INTO artifacts (id,run_id,execution_id,kind,relative_path,sha256,original_size,stored_size,truncated,media_type,actor_id,actor_kind,actor_name,created_at) VALUES ('artifact','run','execution','stdout','stdout.log','ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',0,0,0,'text/plain','actor','agent','Agent','2026-08-17T10:00:00Z')`,
+		`INSERT INTO task_completions (id,task_id,run_id,validation_id,note,actor_id,actor_kind,actor_name,created_at) VALUES ('completion','task','run','validation','done','actor','agent','Agent','2026-08-17T10:00:00Z')`,
+	}
+	for _, query := range queries {
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatalf("seed v9 state: %v", err)
+		}
+	}
+
+	if _, err := provider.UpTo(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE runs SET status='abandoned',finished_at=?,finished_actor_id='actor',finished_actor_kind='agent',finished_actor_name='Agent' WHERE id='run'`, stamp); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"run_leases", "executions", "validations", "artifacts", "task_completions"} {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("%s count=%d err=%v", table, count, err)
+		}
+	}
+	var indexCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_index_list('runs') WHERE name IN ('runs_one_active_per_task','runs_task_started')`).Scan(&indexCount); err != nil || indexCount != 2 {
+		t.Fatalf("run indexes=%d err=%v", indexCount, err)
+	}
+	assertRunChildForeignKeys(t, db)
+	var violations int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+		t.Fatalf("foreign key violations after up=%d err=%v", violations, err)
+	}
+
+	if _, err := provider.DownTo(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM runs WHERE id='run'`).Scan(&status); err != nil || status != "cancelled" {
+		t.Fatalf("down status=%q err=%v", status, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+		t.Fatalf("foreign key violations=%d err=%v", violations, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_index_list('runs') WHERE name IN ('runs_one_active_per_task','runs_task_started')`).Scan(&indexCount); err != nil || indexCount != 2 {
+		t.Fatalf("run indexes after down=%d err=%v", indexCount, err)
+	}
+	assertRunChildForeignKeys(t, db)
+}
+
+func assertRunChildForeignKeys(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	for _, table := range []string{"run_leases", "executions", "artifacts", "task_completions"} {
+		var count int
+		query := fmt.Sprintf(`SELECT COUNT(*) FROM pragma_foreign_key_list('%s') WHERE "table"='runs'`, table)
+		if err := db.QueryRow(query).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("%s foreign keys to runs=%d err=%v", table, count, err)
+		}
+	}
+}
+
 func TestEmbeddedMigrationIsApplied(t *testing.T) {
 	var db *sql.DB
 	app := fx.New(
@@ -108,8 +270,8 @@ func TestEmbeddedMigrationIsApplied(t *testing.T) {
 		t.Fatalf("query goose version: %v", err)
 	}
 
-	if version != 8 {
-		t.Errorf("migration version = %d, want 8", version)
+	if version != 10 {
+		t.Errorf("migration version = %d, want 10", version)
 	}
 }
 

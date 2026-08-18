@@ -54,6 +54,8 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 				Source:      command.Add.Source,
 				Visibility:  command.Add.Visibility,
 				Sensitivity: command.Add.Sensitivity,
+				Priority:    command.Add.Priority,
+				Scope:       command.Add.Scope,
 			}, cliContextActor)
 			if err != nil {
 				return nil, err
@@ -69,12 +71,13 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 
 			values, err := contexts.List(ctx, current.ID, contextmodel.ListOptions{
-				Kinds:          command.List.Kind,
-				Sources:        command.List.Source,
-				Visibilities:   command.List.Visibility,
-				Sensitivities:  command.List.Sensitivity,
-				IncludeDeleted: command.List.IncludeDeleted,
-				Limit:          command.List.Limit,
+				Kinds:           command.List.Kind,
+				Sources:         command.List.Source,
+				Visibilities:    command.List.Visibility,
+				Sensitivities:   command.List.Sensitivity,
+				IncludeDeleted:  command.List.IncludeDeleted,
+				IncludeDisabled: command.List.IncludeDisabled,
+				Limit:           command.List.Limit,
 			})
 			if err != nil {
 				return nil, err
@@ -90,8 +93,9 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 			if strings.TrimSpace(command.Show.ID) == "" {
 				values, err := contexts.List(ctx, current.ID, contextmodel.ListOptions{
-					IncludeDeleted: command.Show.IncludeDeleted,
-					Limit:          0,
+					IncludeDeleted:  command.Show.IncludeDeleted,
+					IncludeDisabled: command.Show.IncludeDisabled,
+					Limit:           0,
 				})
 				if err != nil {
 					return nil, err
@@ -123,9 +127,10 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 
 			values, err := contexts.Search(ctx, current.ID, contextmodel.SearchOptions{
-				Query:          command.Search.Query,
-				IncludeDeleted: command.Search.IncludeDeleted,
-				Limit:          command.Search.Limit,
+				Query:           command.Search.Query,
+				IncludeDeleted:  command.Search.IncludeDeleted,
+				IncludeDisabled: command.Search.IncludeDisabled,
+				Limit:           command.Search.Limit,
 			})
 			if err != nil {
 				return nil, err
@@ -154,6 +159,8 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 				Source:      command.Update.Source,
 				Visibility:  command.Update.Visibility,
 				Sensitivity: command.Update.Sensitivity,
+				Priority:    command.Update.Priority,
+				Scope:       command.Update.Scope,
 			}
 			if len(command.Update.Tag) > 0 {
 				patch.Tags = &command.Update.Tag
@@ -202,6 +209,30 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 				return nil, err
 			}
 
+			return contextView{Project: current, Record: value}, nil
+		})
+	case strings.HasPrefix(commandName, "context enable"), strings.HasPrefix(commandName, "context disable"):
+		input := command.Enable
+		enabled := strings.HasPrefix(commandName, "context enable")
+		if !enabled {
+			input = command.Disable
+		}
+		return runContextApp(ctx, input.Database, input.JSON, output, func(projects *project.Service, contexts *contextapp.Service) (any, error) {
+			current, err := projects.Current(ctx, cwd)
+			if err != nil {
+				return nil, err
+			}
+			record, err := contexts.Get(ctx, input.ID, false)
+			if err != nil {
+				return nil, err
+			}
+			if record.ProjectID != current.ID {
+				return nil, contextmodel.NewError(contextmodel.CodeNotFound, "context record was not found")
+			}
+			value, err := contexts.Update(ctx, record.ID, input.ExpectedRevision, contextmodel.Patch{Enabled: &enabled}, cliContextActor)
+			if err != nil {
+				return nil, err
+			}
 			return contextView{Project: current, Record: value}, nil
 		})
 	default:

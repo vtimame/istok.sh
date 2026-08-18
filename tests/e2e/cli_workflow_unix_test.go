@@ -17,12 +17,12 @@ func TestManagedValidationTimeoutTerminatesProcessTree(t *testing.T) {
 	env := newEnvironment(t, true)
 	env.runJSON(t, "init", "--json")
 	env.runJSON(t, "task", "create", "--title", "Timeout process tree", "--json")
-	claimed := env.runJSON(t, "task", "claim", "1", "--json")
+	claimed := env.runJSONVersion(t, "2", "task", "claim", "1", "--json")
 	run := object(t, claimed, "result")
 	runID, leaseID := stringValue(t, run, "id"), stringValue(t, run, "lease_id")
 	pidFile := filepath.Join(env.root, "child.pid")
 
-	result := env.runJSON(t,
+	result := env.runJSONVersion(t, "2",
 		"run", "validate", runID,
 		"--lease", leaseID,
 		"--timeout", "150ms",

@@ -13,7 +13,7 @@ import (
 	"s26.dev/istok-cli/internal/retrieval"
 )
 
-const SchemaVersion = "2"
+const SchemaVersion = "3"
 
 type Package struct {
 	SchemaVersion string                              `json:"schema_version"`

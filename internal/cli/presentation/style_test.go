@@ -11,6 +11,8 @@ func TestStyledStatusRecognizesRunAndValidationStates(t *testing.T) {
 		"succeeded": "SUCCEEDED",
 		"passed":    "PASSED",
 		"cancelled": "CANCELLED",
+		"abandoned": "ABANDONED",
+		"disabled":  "DISABLED",
 	} {
 		t.Run(state, func(t *testing.T) {
 			if rendered := StyledStatus(state); !strings.Contains(rendered, label) || strings.Contains(rendered, "UNKNOWN") {

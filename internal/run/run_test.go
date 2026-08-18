@@ -181,6 +181,9 @@ func TestActorSnapshotValidateUsesTrimmedText(t *testing.T) {
 
 func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 	validHash := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	enabled := true
+	priority := projectcontext.PriorityHigh
+	scope := projectcontext.ScopeProject
 	contextPackage := contextpack.Package{
 		SchemaVersion: contextpack.SchemaVersion,
 		ProjectID:     mustProjectID(t),
@@ -198,6 +201,20 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 				Body:           "Body",
 				Snippet:        "Snippet",
 				Tags:           []string{"one", "two"},
+			},
+			{
+				RecordID:       mustID(t),
+				RecordRevision: 1,
+				ContentHash:    validHash,
+				Kind:           projectcontext.KindInstruction,
+				Source:         projectcontext.SourceUser,
+				Visibility:     projectcontext.VisibilityShared,
+				Sensitivity:    projectcontext.SensitivityNormal,
+				Enabled:        &enabled,
+				Priority:       &priority,
+				Scope:          &scope,
+				Title:          "Instruction",
+				Tags:           []string{},
 			},
 		},
 		Retrieval: []contextpack.Item{{
@@ -221,6 +238,8 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 
 	contextPackage.Records[0].Title = "changed"
 	contextPackage.Records[0].Tags[0] = "changed"
+	*contextPackage.Records[1].Enabled = false
+	*contextPackage.Records[1].Priority = projectcontext.PriorityLow
 	contextPackage.Retrieval[0].MatchedTerms[0] = "changed"
 	if snapshot.Records[0].Title == "changed" {
 		t.Fatal("snapshot title changed after source mutation")
@@ -228,11 +247,58 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 	if snapshot.Records[0].Tags[0] == "changed" {
 		t.Fatal("snapshot tags changed after source mutation")
 	}
+	if snapshot.Records[1].Enabled == nil || !*snapshot.Records[1].Enabled || snapshot.Records[1].Priority == nil || *snapshot.Records[1].Priority != projectcontext.PriorityHigh {
+		t.Fatal("snapshot instruction policy changed after source mutation")
+	}
 	if snapshot.Retrieval[0].MatchedTerms[0] == "changed" {
 		t.Fatal("snapshot retrieval changed after source mutation")
 	}
 	if snapshot.Retrieval[0].Provenance == nil || snapshot.Retrieval[0].Reasons == nil {
 		t.Fatal("snapshot retrieval arrays must remain non-nil")
+	}
+}
+
+func TestContextSnapshotValidationPreservesHistoricalInstructionSchemas(t *testing.T) {
+	item := ContextSnapshotItem{
+		RecordID:       mustID(t),
+		RecordRevision: 1,
+		ContentHash:    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		Kind:           projectcontext.KindInstruction,
+		Source:         projectcontext.SourceUser,
+		Visibility:     projectcontext.VisibilityShared,
+		Sensitivity:    projectcontext.SensitivityNormal,
+		Title:          "Historical instruction",
+		Tags:           []string{},
+	}
+	base := ContextSnapshot{
+		ID:          mustID(t),
+		ProjectID:   mustProjectID(t),
+		GeneratedAt: time.Now().UTC(),
+		Records:     []ContextSnapshotItem{item},
+		Retrieval:   []ContextSnapshotRetrievalItem{},
+	}
+
+	for _, version := range []string{ContextSnapshotSchemaVersionV1, ContextSnapshotSchemaVersionV2} {
+		value := base
+		value.SchemaVersion = version
+		if err := value.Validate(); err != nil {
+			t.Fatalf("historical snapshot v%s validation = %v", version, err)
+		}
+	}
+
+	current := base
+	current.SchemaVersion = ContextSnapshotSchemaVersion
+	if err := current.Validate(); err == nil {
+		t.Fatal("current instruction snapshot accepted without policy")
+	}
+	enabled := true
+	priority := projectcontext.PriorityNormal
+	scope := projectcontext.ScopeProject
+	current.Records[0].Enabled = &enabled
+	current.Records[0].Priority = &priority
+	current.Records[0].Scope = &scope
+	if err := current.Validate(); err != nil {
+		t.Fatalf("current instruction snapshot validation = %v", err)
 	}
 }
 

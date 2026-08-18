@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
 
@@ -69,11 +70,12 @@ func (s *Service) List(ctx context.Context, projectID string, options task.ListO
 	}
 
 	for i := range values {
-		active, err := s.runs.HasActiveRun(ctx, values[i].ID)
+		state, err := taskRunState(ctx, s.runs, values[i].ID)
 		if err != nil {
 			return nil, fmt.Errorf("check active run for task %q: %w", values[i].ID, err)
 		}
-		values[i].HasActiveRun = active
+		values[i].HasActiveRun = state.HasActiveRun
+		values[i].HasExpiredRun = state.HasExpiredRun
 	}
 
 	return values, nil
@@ -89,12 +91,13 @@ func (s *Service) Show(ctx context.Context, selector task.Selector, deleted bool
 		return task.Show{}, err
 	}
 
-	active, err := s.runs.HasActiveRun(ctx, value.Task.ID)
+	state, err := taskRunState(ctx, s.runs, value.Task.ID)
 	if err != nil {
 		return task.Show{}, fmt.Errorf("check active run for task %q: %w", value.Task.ID, err)
 	}
 
-	value.HasActiveRun = active
+	value.HasActiveRun = state.HasActiveRun
+	value.HasExpiredRun = state.HasExpiredRun
 	return value, nil
 }
 
@@ -110,11 +113,13 @@ func (s *Service) Ready(ctx context.Context, projectID string) ([]task.TaskListI
 
 	ready := make([]task.TaskListItem, 0, len(values))
 	for _, value := range values {
-		active, err := s.runs.HasActiveRun(ctx, value.ID)
+		state, err := taskRunState(ctx, s.runs, value.ID)
 		if err != nil {
 			return nil, fmt.Errorf("check active run for task %q: %w", value.ID, err)
 		}
-		if active {
+		value.HasActiveRun = state.HasActiveRun
+		value.HasExpiredRun = state.HasExpiredRun
+		if state.HasActiveRun && !state.HasExpiredRun {
 			continue
 		}
 
@@ -122,4 +127,8 @@ func (s *Service) Ready(ctx context.Context, projectID string) ([]task.TaskListI
 	}
 
 	return ready, nil
+}
+
+func taskRunState(ctx context.Context, inspector ActiveRunInspector, taskID string) (run.TaskRunState, error) {
+	return inspector.TaskRunState(ctx, taskID)
 }

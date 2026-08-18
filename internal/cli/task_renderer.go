@@ -112,7 +112,7 @@ func readyTaskCount(count int) string {
 }
 
 func taskListState(value task.TaskListItem) string {
-	return renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun, value.ActiveBlockers))
+	return renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.ActiveBlockers))
 }
 
 func taskListBlockedBy(value task.TaskListItem) string {
@@ -146,7 +146,7 @@ func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Sh
 
 func renderTaskShow(projectName string, value task.Show) string {
 	var output strings.Builder
-	state := renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun, value.Blockers))
+	state := renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.Blockers))
 
 	output.WriteString(presentation.Brand(projectName))
 	output.WriteString(" ")

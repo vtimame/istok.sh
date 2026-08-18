@@ -53,6 +53,25 @@ func (v Sensitivity) Valid() bool {
 	return v == SensitivityNormal || v == SensitivityPrivate
 }
 
+type Priority string
+
+const (
+	PriorityCritical Priority = "critical"
+	PriorityHigh     Priority = "high"
+	PriorityNormal   Priority = "normal"
+	PriorityLow      Priority = "low"
+)
+
+func (v Priority) Valid() bool {
+	return v == PriorityCritical || v == PriorityHigh || v == PriorityNormal || v == PriorityLow
+}
+
+type Scope string
+
+const ScopeProject Scope = "project"
+
+func (v Scope) Valid() bool { return v == ScopeProject }
+
 type ActorSnapshot struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
@@ -78,6 +97,9 @@ type ProjectContextRecord struct {
 	Source      Source        `json:"source"`
 	Visibility  Visibility    `json:"visibility"`
 	Sensitivity Sensitivity   `json:"sensitivity"`
+	Enabled     *bool         `json:"enabled,omitempty"`
+	Priority    *Priority     `json:"priority,omitempty"`
+	Scope       *Scope        `json:"scope,omitempty"`
 	Actor       ActorSnapshot `json:"actor"`
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
@@ -104,6 +126,9 @@ type CreateInput struct {
 	Source      Source      `json:"source"`
 	Visibility  Visibility  `json:"visibility"`
 	Sensitivity Sensitivity `json:"sensitivity"`
+	Enabled     *bool       `json:"enabled,omitempty"`
+	Priority    *Priority   `json:"priority,omitempty"`
+	Scope       *Scope      `json:"scope,omitempty"`
 }
 
 func (v CreateInput) Validate() error {
@@ -132,6 +157,15 @@ func (v CreateInput) Validate() error {
 	if _, err := NormalizeTags(v.Tags); err != nil {
 		return err
 	}
+	if v.Kind != KindInstruction && (v.Enabled != nil || v.Priority != nil || v.Scope != nil) {
+		return NewError(CodeInvalid, "instruction policy is only valid for instruction context")
+	}
+	if v.Priority != nil && !v.Priority.Valid() {
+		return NewError(CodeInvalid, "instruction priority is invalid")
+	}
+	if v.Scope != nil && !v.Scope.Valid() {
+		return NewError(CodeInvalid, "instruction scope is invalid")
+	}
 
 	return nil
 }
@@ -144,10 +178,13 @@ type Patch struct {
 	Source      *Source      `json:"source,omitempty"`
 	Visibility  *Visibility  `json:"visibility,omitempty"`
 	Sensitivity *Sensitivity `json:"sensitivity,omitempty"`
+	Enabled     *bool        `json:"enabled,omitempty"`
+	Priority    *Priority    `json:"priority,omitempty"`
+	Scope       *Scope       `json:"scope,omitempty"`
 }
 
 func (v Patch) Validate() error {
-	if v.Kind == nil && v.Title == nil && v.Body == nil && v.Tags == nil && v.Source == nil && v.Visibility == nil && v.Sensitivity == nil {
+	if v.Kind == nil && v.Title == nil && v.Body == nil && v.Tags == nil && v.Source == nil && v.Visibility == nil && v.Sensitivity == nil && v.Enabled == nil && v.Priority == nil && v.Scope == nil {
 		return NewError(CodeInvalid, "context patch must not be empty")
 	}
 
@@ -170,6 +207,12 @@ func (v Patch) Validate() error {
 		if _, err := NormalizeTags(*v.Tags); err != nil {
 			return err
 		}
+	}
+	if v.Priority != nil && !v.Priority.Valid() {
+		return NewError(CodeInvalid, "instruction priority is invalid")
+	}
+	if v.Scope != nil && !v.Scope.Valid() {
+		return NewError(CodeInvalid, "instruction scope is invalid")
 	}
 
 	return nil
@@ -205,17 +248,49 @@ func (v Patch) Apply(value *ProjectContextRecord) error {
 	if v.Sensitivity != nil {
 		value.Sensitivity = *v.Sensitivity
 	}
+	if value.Kind != KindInstruction && (v.Enabled != nil || v.Priority != nil || v.Scope != nil) {
+		return NewError(CodeInvalid, "instruction policy is only valid for instruction context")
+	}
+	if value.Kind == KindInstruction {
+		if value.Enabled == nil {
+			enabled := true
+			value.Enabled = &enabled
+		}
+		if value.Priority == nil {
+			priority := PriorityNormal
+			value.Priority = &priority
+		}
+		if value.Scope == nil {
+			scope := ScopeProject
+			value.Scope = &scope
+		}
+		if v.Enabled != nil {
+			enabled := *v.Enabled
+			value.Enabled = &enabled
+		}
+		if v.Priority != nil {
+			priority := *v.Priority
+			value.Priority = &priority
+		}
+		if v.Scope != nil {
+			scope := *v.Scope
+			value.Scope = &scope
+		}
+	} else {
+		value.Enabled, value.Priority, value.Scope = nil, nil, nil
+	}
 
 	return nil
 }
 
 type ListOptions struct {
-	Kinds          []Kind        `json:"kinds,omitempty"`
-	Sources        []Source      `json:"sources,omitempty"`
-	Visibilities   []Visibility  `json:"visibilities,omitempty"`
-	Sensitivities  []Sensitivity `json:"sensitivities,omitempty"`
-	IncludeDeleted bool          `json:"include_deleted"`
-	Limit          int           `json:"limit,omitempty"`
+	Kinds           []Kind        `json:"kinds,omitempty"`
+	Sources         []Source      `json:"sources,omitempty"`
+	Visibilities    []Visibility  `json:"visibilities,omitempty"`
+	Sensitivities   []Sensitivity `json:"sensitivities,omitempty"`
+	IncludeDeleted  bool          `json:"include_deleted"`
+	IncludeDisabled bool          `json:"include_disabled"`
+	Limit           int           `json:"limit,omitempty"`
 }
 
 func (v ListOptions) Validate() error {
@@ -247,9 +322,10 @@ func (v ListOptions) Validate() error {
 }
 
 type SearchOptions struct {
-	Query          string `json:"query"`
-	IncludeDeleted bool   `json:"include_deleted"`
-	Limit          int    `json:"limit,omitempty"`
+	Query           string `json:"query"`
+	IncludeDeleted  bool   `json:"include_deleted"`
+	IncludeDisabled bool   `json:"include_disabled"`
+	Limit           int    `json:"limit,omitempty"`
 }
 
 func (v SearchOptions) Validate() error {
@@ -291,6 +367,9 @@ type ContextPackageItem struct {
 	Source         Source      `json:"source"`
 	Visibility     Visibility  `json:"visibility"`
 	Sensitivity    Sensitivity `json:"sensitivity"`
+	Enabled        *bool       `json:"enabled,omitempty"`
+	Priority       *Priority   `json:"priority,omitempty"`
+	Scope          *Scope      `json:"scope,omitempty"`
 	Title          string      `json:"title"`
 	Body           string      `json:"body"`
 	Snippet        string      `json:"snippet"`

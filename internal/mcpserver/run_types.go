@@ -8,12 +8,13 @@ import (
 	"s26.dev/istok-cli/internal/task"
 )
 
-const runSchemaVersion = "1"
+const runSchemaVersion = "2"
 
 type RunResult struct {
-	SchemaVersion string     `json:"schema_version"`
-	Run           *run.Run   `json:"run,omitempty"`
-	Error         *ToolError `json:"error,omitempty"`
+	SchemaVersion string               `json:"schema_version"`
+	Run           *run.Run             `json:"run,omitempty"`
+	Snapshot      *run.ContextSnapshot `json:"snapshot,omitempty"`
+	Error         *ToolError           `json:"error,omitempty"`
 }
 
 type RunListResult struct {
@@ -81,7 +82,7 @@ type runClaimInput struct {
 
 type runListInput struct {
 	TaskID   string       `json:"task_id,omitempty" jsonschema:"Optional canonical UUIDv7 task identifier to filter runs."`
-	Statuses []run.Status `json:"statuses,omitempty" jsonschema:"Optional run statuses to include: active, succeeded, failed, blocked, cancelled."`
+	Statuses []run.Status `json:"statuses,omitempty" jsonschema:"Optional run statuses to include: active, succeeded, failed, blocked, cancelled, abandoned."`
 	Limit    int          `json:"limit,omitempty" jsonschema:"Maximum runs to return."`
 }
 
@@ -142,6 +143,12 @@ type runRecoverInput struct {
 	RunID  string `json:"run_id"`
 	Force  bool   `json:"force,omitempty"`
 	Reason string `json:"reason"`
+}
+
+type runAbandonInput struct {
+	RunID            string `json:"run_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Reason           string `json:"reason"`
 }
 
 type executionStartInput struct {

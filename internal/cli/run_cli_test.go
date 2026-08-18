@@ -3,14 +3,29 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
+	contextmodel "s26.dev/istok-cli/internal/context"
 	runmodel "s26.dev/istok-cli/internal/run"
 	"s26.dev/istok-cli/internal/task"
 )
+
+func TestRunErrorCodeMapsClaimDependencies(t *testing.T) {
+	contextErr := contextmodel.NewError(contextmodel.CodeConflict, "context conflict")
+	indexErr := &indexingapp.Error{Cause: errors.New("index failed")}
+
+	if got := runErrorCode(contextErr); got != string(contextmodel.CodeConflict) {
+		t.Fatalf("context error code = %q", got)
+	}
+	if got := runErrorCode(indexErr); got != indexingapp.ErrorCode {
+		t.Fatalf("index error code = %q", got)
+	}
+}
 
 func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	root := t.TempDir()
@@ -52,7 +67,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if claimed.err != nil {
 		t.Fatalf("task claim: %v", claimed.err)
 	}
-	claimedRun := decodeJSONResult[runmodel.Run](t, claimed.output)
+	claimedRun := decodeJSONResultAtVersion[runmodel.Run](t, claimed.output, "2")
 	if !runmodel.IsUUIDv7(claimedRun.ID) || claimedRun.TaskID != taskValue.ID || claimedRun.Status != runmodel.StatusActive {
 		t.Fatalf("claimed run = %+v", claimedRun)
 	}
@@ -79,7 +94,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if shown.err != nil {
 		t.Fatalf("run show: %v", shown.err)
 	}
-	show := decodeJSONResult[runmodel.Show](t, shown.output)
+	show := decodeJSONResultAtVersion[runmodel.Show](t, shown.output, "2")
 	if len(show.Snapshot.Records) != 1 {
 		t.Fatalf("snapshot records = %+v", show.Snapshot.Records)
 	}
@@ -98,7 +113,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if started.err != nil {
 		t.Fatalf("execution start: %v", started.err)
 	}
-	execution := decodeJSONResult[runmodel.Execution](t, started.output)
+	execution := decodeJSONResultAtVersion[runmodel.Execution](t, started.output, "2")
 	if execution.Status != runmodel.ExecutionRunning || len(execution.Argv) != 3 {
 		t.Fatalf("started execution = %+v", execution)
 	}
@@ -115,7 +130,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if finishedExecution.err != nil {
 		t.Fatalf("execution finish: %v", finishedExecution.err)
 	}
-	execution = decodeJSONResult[runmodel.Execution](t, finishedExecution.output)
+	execution = decodeJSONResultAtVersion[runmodel.Execution](t, finishedExecution.output, "2")
 	if execution.Status != runmodel.ExecutionSucceeded || execution.Revision != 2 || execution.ExitCode == nil || *execution.ExitCode != 0 {
 		t.Fatalf("finished execution = %+v", execution)
 	}
@@ -134,7 +149,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if recorded.err != nil {
 		t.Fatalf("validation record: %v", recorded.err)
 	}
-	validation := decodeJSONResult[runmodel.Validation](t, recorded.output)
+	validation := decodeJSONResultAtVersion[runmodel.Validation](t, recorded.output, "2")
 	if validation.ExecutionID != execution.ID || validation.Status != runmodel.ValidationStatusPassed {
 		t.Fatalf("validation = %+v", validation)
 	}
@@ -150,7 +165,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if finishedRun.err != nil {
 		t.Fatalf("run finish: %v", finishedRun.err)
 	}
-	claimedRun = decodeJSONResult[runmodel.Run](t, finishedRun.output)
+	claimedRun = decodeJSONResultAtVersion[runmodel.Run](t, finishedRun.output, "2")
 	if claimedRun.Status != runmodel.StatusSucceeded || claimedRun.Revision != 2 {
 		t.Fatalf("finished run = %+v", claimedRun)
 	}
@@ -166,7 +181,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	if completed.err != nil {
 		t.Fatalf("task done: %v", completed.err)
 	}
-	completion := decodeJSONResult[taskCompletionResult](t, completed.output)
+	completion := decodeJSONResultAtVersion[taskCompletionResult](t, completed.output, "2")
 	if completion.Task.Status != task.StatusDone || completion.Task.Revision != 2 || completion.Completion.ValidationID == nil {
 		t.Fatalf("completion = %+v", completion)
 	}
@@ -193,19 +208,19 @@ func TestTaskClaimAutomaticallySnapshotsLocalRetrieval(t *testing.T) {
 	if claimed.err != nil {
 		t.Fatal(claimed.err)
 	}
-	runValue := decodeJSONResult[runmodel.Run](t, claimed.output)
+	runValue := decodeJSONResultAtVersion[runmodel.Run](t, claimed.output, "2")
 	shown := executeAt(t, root, database, "run", "show", runValue.ID, "--json")
 	if shown.err != nil {
 		t.Fatal(shown.err)
 	}
-	before := decodeJSONResult[runmodel.Show](t, shown.output).Snapshot
+	before := decodeJSONResultAtVersion[runmodel.Show](t, shown.output, "2").Snapshot
 	if len(before.Retrieval) == 0 || before.Retrieval[0].Visibility != "local_only" {
 		t.Fatalf("retrieval = %#v", before.Retrieval)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	after := decodeJSONResult[runmodel.Show](t, executeAt(t, root, database, "run", "show", runValue.ID, "--json").output).Snapshot
+	after := decodeJSONResultAtVersion[runmodel.Show](t, executeAt(t, root, database, "run", "show", runValue.ID, "--json").output, "2").Snapshot
 	if after.Retrieval[0].Snippet != before.Retrieval[0].Snippet || after.Retrieval[0].ContentHash != before.Retrieval[0].ContentHash {
 		t.Fatalf("snapshot changed: before=%#v after=%#v", before.Retrieval[0], after.Retrieval[0])
 	}
@@ -230,7 +245,7 @@ func TestRunCLISuccessRequiresEvidenceAndJSONErrorsAreVersioned(t *testing.T) {
 	if claimed.err != nil {
 		t.Fatalf("task claim: %v", claimed.err)
 	}
-	runValue := decodeJSONResult[runmodel.Run](t, claimed.output)
+	runValue := decodeJSONResultAtVersion[runmodel.Run](t, claimed.output, "2")
 
 	failed := executeAt(t, root, database,
 		"run", "finish", runValue.ID,
@@ -240,7 +255,7 @@ func TestRunCLISuccessRequiresEvidenceAndJSONErrorsAreVersioned(t *testing.T) {
 		"--summary", "no evidence",
 		"--json",
 	)
-	assertVersionedBusinessError(t, failed.err, string(runmodel.CodeEvidenceRequired))
+	assertVersionedBusinessErrorAtVersion(t, failed.err, "2", string(runmodel.CodeEvidenceRequired))
 
 	overridden := executeAt(t, root, database,
 		"run", "finish", runValue.ID,
@@ -255,9 +270,50 @@ func TestRunCLISuccessRequiresEvidenceAndJSONErrorsAreVersioned(t *testing.T) {
 	if overridden.err != nil {
 		t.Fatalf("run finish override: %v", overridden.err)
 	}
-	finished := decodeJSONResult[runmodel.Run](t, overridden.output)
+	finished := decodeJSONResultAtVersion[runmodel.Run](t, overridden.output, "2")
 	if finished.ValidationOverride != "external validation unavailable" {
 		t.Fatalf("validation override = %q", finished.ValidationOverride)
+	}
+}
+
+func TestRunCLIAbandon(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+
+	initialized := executeAt(t, root, database, "init", "--json")
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized.output).Project.ID
+	tasks, _ := newTaskRepositoryForTest(t, database)
+	if _, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "abandonable"}, task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	claimed := executeAt(t, root, database, "task", "claim", "1", "--json")
+	if claimed.err != nil {
+		t.Fatal(claimed.err)
+	}
+	runValue := decodeJSONResultAtVersion[runmodel.Run](t, claimed.output, "2")
+
+	abandoned := executeAt(t, root, database,
+		"run", "abandon", runValue.ID,
+		"--expected-revision", "1",
+		"--reason", "operator handoff",
+		"--json",
+	)
+	if abandoned.err != nil {
+		t.Fatal(abandoned.err)
+	}
+	value := decodeJSONResultAtVersion[runmodel.Run](t, abandoned.output, "2")
+	if value.Status != runmodel.StatusAbandoned || value.FinishedBy == nil || value.FinishedBy.ID != "cli" {
+		t.Fatalf("abandoned run = %+v", value)
+	}
+
+	ready := executeAt(t, root, database, "task", "ready", "--json")
+	if ready.err != nil || !strings.Contains(ready.output, "abandonable") {
+		t.Fatalf("ready tasks output=%q err=%v", ready.output, ready.err)
 	}
 }
 

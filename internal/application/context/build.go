@@ -11,7 +11,7 @@ import (
 	contextmodel "s26.dev/istok-cli/internal/context"
 )
 
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 func (s *Service) BuildPackage(ctx context.Context, projectID string, options contextmodel.BuildOptions) (contextmodel.ContextPackage, error) {
 	if !contextmodel.IsUUIDv7(projectID) {
@@ -21,13 +21,38 @@ func (s *Service) BuildPackage(ctx context.Context, projectID string, options co
 		return contextmodel.ContextPackage{}, err
 	}
 
-	values, err := s.List(ctx, projectID, contextmodel.ListOptions{
-		IncludeDeleted: options.IncludeDeleted,
-		Limit:          options.Limit,
-	})
+	values, err := s.List(ctx, projectID, contextmodel.ListOptions{IncludeDeleted: options.IncludeDeleted})
 	if err != nil {
 		return contextmodel.ContextPackage{}, err
 	}
+
+	instructions := make([]contextmodel.ProjectContextRecord, 0, len(values))
+	ordinary := make([]contextmodel.ProjectContextRecord, 0, len(values))
+	for _, value := range values {
+		if value.Kind == contextmodel.KindInstruction {
+			if value.Enabled == nil || value.Priority == nil || value.Scope == nil || !value.Priority.Valid() || !value.Scope.Valid() {
+				return contextmodel.ContextPackage{}, contextmodel.NewError(contextmodel.CodeInvalid, "instruction context policy is invalid")
+			}
+			if !*value.Enabled {
+				continue
+			}
+
+			instructions = append(instructions, value)
+		} else {
+			if value.Enabled != nil || value.Priority != nil || value.Scope != nil {
+				return contextmodel.ContextPackage{}, contextmodel.NewError(contextmodel.CodeInvalid, "instruction policy is only valid for instruction context")
+			}
+
+			ordinary = append(ordinary, value)
+		}
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return priorityRank(*instructions[i].Priority) < priorityRank(*instructions[j].Priority)
+	})
+	if options.Limit > 0 && len(ordinary) > options.Limit {
+		ordinary = ordinary[:options.Limit]
+	}
+	values = append(instructions, ordinary...)
 
 	items := make([]contextmodel.ContextPackageItem, 0, len(values))
 	for _, value := range values {
@@ -44,6 +69,9 @@ func (s *Service) BuildPackage(ctx context.Context, projectID string, options co
 			Source:         value.Source,
 			Visibility:     value.Visibility,
 			Sensitivity:    value.Sensitivity,
+			Enabled:        value.Enabled,
+			Priority:       value.Priority,
+			Scope:          value.Scope,
 			Title:          value.Title,
 			Body:           value.Body,
 			Snippet:        contextSnippet(value.Body),
@@ -70,6 +98,9 @@ func contextRecordHash(value contextmodel.ProjectContextRecord) (string, error) 
 		Source      contextmodel.Source      `json:"source"`
 		Visibility  contextmodel.Visibility  `json:"visibility"`
 		Sensitivity contextmodel.Sensitivity `json:"sensitivity"`
+		Enabled     *bool                    `json:"enabled,omitempty"`
+		Priority    *contextmodel.Priority   `json:"priority,omitempty"`
+		Scope       *contextmodel.Scope      `json:"scope,omitempty"`
 	}{
 		Kind:        value.Kind,
 		Title:       value.Title,
@@ -78,6 +109,9 @@ func contextRecordHash(value contextmodel.ProjectContextRecord) (string, error) 
 		Source:      value.Source,
 		Visibility:  value.Visibility,
 		Sensitivity: value.Sensitivity,
+		Enabled:     value.Enabled,
+		Priority:    value.Priority,
+		Scope:       value.Scope,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -85,6 +119,19 @@ func contextRecordHash(value contextmodel.ProjectContextRecord) (string, error) 
 	}
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func priorityRank(value contextmodel.Priority) int {
+	switch value {
+	case contextmodel.PriorityCritical:
+		return 0
+	case contextmodel.PriorityHigh:
+		return 1
+	case contextmodel.PriorityNormal:
+		return 2
+	default:
+		return 3
+	}
 }
 
 func contextSnippet(body string) string {

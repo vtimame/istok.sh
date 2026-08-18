@@ -11,7 +11,8 @@ import (
 
 const (
 	ContextSnapshotSchemaVersionV1 = "1"
-	ContextSnapshotSchemaVersion   = "2"
+	ContextSnapshotSchemaVersionV2 = "2"
+	ContextSnapshotSchemaVersion   = "3"
 )
 
 type ContextSnapshot struct {
@@ -40,6 +41,9 @@ type ContextSnapshotItem struct {
 	Source         projectcontext.Source      `json:"source"`
 	Visibility     projectcontext.Visibility  `json:"visibility"`
 	Sensitivity    projectcontext.Sensitivity `json:"sensitivity"`
+	Enabled        *bool                      `json:"enabled,omitempty"`
+	Priority       *projectcontext.Priority   `json:"priority,omitempty"`
+	Scope          *projectcontext.Scope      `json:"scope,omitempty"`
 	Title          string                     `json:"title"`
 	Body           string                     `json:"body"`
 	Snippet        string                     `json:"snippet"`
@@ -53,14 +57,14 @@ func (v ContextSnapshot) Validate() error {
 	if !IsUUIDv7(v.ProjectID) {
 		return NewError(CodeInvalid, "project id must be a canonical UUIDv7")
 	}
-	if v.SchemaVersion != ContextSnapshotSchemaVersionV1 && v.SchemaVersion != ContextSnapshotSchemaVersion {
+	if v.SchemaVersion != ContextSnapshotSchemaVersionV1 && v.SchemaVersion != ContextSnapshotSchemaVersionV2 && v.SchemaVersion != ContextSnapshotSchemaVersion {
 		return NewError(CodeInvalid, "invalid context snapshot schema version")
 	}
 	if v.GeneratedAt.IsZero() {
 		return NewError(CodeInvalid, "generated at is required")
 	}
 	for _, value := range v.Records {
-		if err := value.Validate(); err != nil {
+		if err := value.validate(v.SchemaVersion); err != nil {
 			return err
 		}
 	}
@@ -120,6 +124,9 @@ func NewContextSnapshot(snapshotID string, value contextpack.Package, projectID 
 			Source:         record.Source,
 			Visibility:     record.Visibility,
 			Sensitivity:    record.Sensitivity,
+			Enabled:        cloneBool(record.Enabled),
+			Priority:       clonePriority(record.Priority),
+			Scope:          cloneScope(record.Scope),
 			Title:          record.Title,
 			Body:           record.Body,
 			Snippet:        record.Snippet,
@@ -154,6 +161,10 @@ func NewContextSnapshot(snapshotID string, value contextpack.Package, projectID 
 }
 
 func (v ContextSnapshotItem) Validate() error {
+	return v.validate(ContextSnapshotSchemaVersion)
+}
+
+func (v ContextSnapshotItem) validate(schemaVersion string) error {
 	if v.RecordID == "" || v.Title == "" {
 		return NewError(CodeInvalid, "context snapshot item is invalid")
 	}
@@ -181,6 +192,13 @@ func (v ContextSnapshotItem) Validate() error {
 	if !v.Sensitivity.Valid() {
 		return NewError(CodeInvalid, "context snapshot item sensitivity is invalid")
 	}
+	if schemaVersion == ContextSnapshotSchemaVersion && v.Kind == projectcontext.KindInstruction {
+		if v.Enabled == nil || v.Priority == nil || v.Scope == nil || !v.Priority.Valid() || !v.Scope.Valid() {
+			return NewError(CodeInvalid, "context snapshot instruction policy is invalid")
+		}
+	} else if v.Enabled != nil || v.Priority != nil || v.Scope != nil {
+		return NewError(CodeInvalid, "context snapshot policy is only valid for instruction")
+	}
 	if strings.TrimSpace(v.Title) == "" {
 		return NewError(CodeInvalid, "context snapshot item title is required")
 	}
@@ -192,4 +210,31 @@ func (v ContextSnapshotItem) Validate() error {
 	}
 
 	return nil
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+
+	result := *value
+	return &result
+}
+
+func clonePriority(value *projectcontext.Priority) *projectcontext.Priority {
+	if value == nil {
+		return nil
+	}
+
+	result := *value
+	return &result
+}
+
+func cloneScope(value *projectcontext.Scope) *projectcontext.Scope {
+	if value == nil {
+		return nil
+	}
+
+	result := *value
+	return &result
 }

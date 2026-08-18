@@ -36,15 +36,16 @@ func (v ClaimInput) Validate() error {
 }
 
 type ClaimRecord struct {
-	RunID         string          `json:"run_id"`
-	TaskID        string          `json:"task_id"`
-	EventID       string          `json:"event_id"`
-	Snapshot      ContextSnapshot `json:"snapshot"`
-	BaseBranch    string          `json:"base_branch"`
-	BaseCommit    string          `json:"base_commit"`
-	Actor         ActorSnapshot   `json:"actor"`
-	LeaseID       string          `json:"lease_id"`
-	LeaseDuration time.Duration   `json:"-"`
+	RunID          string          `json:"run_id"`
+	TaskID         string          `json:"task_id"`
+	EventID        string          `json:"event_id"`
+	AbandonEventID string          `json:"abandon_event_id"`
+	Snapshot       ContextSnapshot `json:"snapshot"`
+	BaseBranch     string          `json:"base_branch"`
+	BaseCommit     string          `json:"base_commit"`
+	Actor          ActorSnapshot   `json:"actor"`
+	LeaseID        string          `json:"lease_id"`
+	LeaseDuration  time.Duration   `json:"-"`
 }
 
 type HeartbeatInput struct {
@@ -67,6 +68,20 @@ type RecoverInput struct {
 	Force         bool          `json:"force"`
 	Reason        string        `json:"reason"`
 	EventID       string        `json:"-"`
+}
+
+type AbandonInput struct {
+	RunID            string `json:"run_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Reason           string `json:"reason"`
+	EventID          string `json:"-"`
+}
+
+func (v AbandonInput) Validate() error {
+	if !IsUUIDv7(v.RunID) || !IsUUIDv7(v.EventID) || v.ExpectedRevision < 1 || strings.TrimSpace(v.Reason) == "" {
+		return NewError(CodeInvalid, "run id, expected revision, event id, and reason are required")
+	}
+	return nil
 }
 
 func (v RecoverInput) Validate() error {
@@ -272,7 +287,7 @@ func (v FinishRunInput) Validate() error {
 	if v.ExpectedRevision < 1 {
 		return NewError(CodeInvalid, "expected revision is required")
 	}
-	if !v.Status.Valid() || !v.Status.Terminal() {
+	if !v.Status.Valid() || !v.Status.Terminal() || v.Status == StatusAbandoned {
 		return NewError(CodeInvalid, "finish status must be terminal")
 	}
 	if strings.TrimSpace(v.ResultSummary) == "" {

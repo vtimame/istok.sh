@@ -568,6 +568,12 @@ func executeAtWithInput(t *testing.T, cwd, database string, input *strings.Reade
 
 func decodeJSONResult[T any](t *testing.T, output string) T {
 	t.Helper()
+
+	return decodeJSONResultAtVersion[T](t, output, "1")
+}
+
+func decodeJSONResultAtVersion[T any](t *testing.T, output, wantVersion string) T {
+	t.Helper()
 	var response struct {
 		SchemaVersion string `json:"schema_version"`
 		Result        T      `json:"result"`
@@ -576,13 +582,19 @@ func decodeJSONResult[T any](t *testing.T, output string) T {
 	if err := json.Unmarshal([]byte(line), &response); err != nil {
 		t.Fatalf("decode JSON output %q: %v", output, err)
 	}
-	if response.SchemaVersion != "1" {
-		t.Fatalf("schema version = %q, want 1", response.SchemaVersion)
+	if response.SchemaVersion != wantVersion {
+		t.Fatalf("schema version = %q, want %s", response.SchemaVersion, wantVersion)
 	}
 	return response.Result
 }
 
 func assertVersionedBusinessError(t *testing.T, err error, wantCode string) {
+	t.Helper()
+
+	assertVersionedBusinessErrorAtVersion(t, err, "1", wantCode)
+}
+
+func assertVersionedBusinessErrorAtVersion(t *testing.T, err error, wantVersion, wantCode string) {
 	t.Helper()
 	var payload struct {
 		SchemaVersion string `json:"schema_version"`
@@ -590,7 +602,7 @@ func assertVersionedBusinessError(t *testing.T, err error, wantCode string) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
-	if json.Unmarshal([]byte(err.Error()), &payload) != nil || payload.SchemaVersion != "1" || payload.Error.Code != wantCode {
+	if json.Unmarshal([]byte(err.Error()), &payload) != nil || payload.SchemaVersion != wantVersion || payload.Error.Code != wantCode {
 		t.Fatalf("error = %v, want versioned JSON error with code %q", err, wantCode)
 	}
 }

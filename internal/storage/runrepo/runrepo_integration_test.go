@@ -197,6 +197,9 @@ func newSnapshot(t *testing.T, projectID string, hashes map[string]string, recor
 			Source:         record.Source,
 			Visibility:     record.Visibility,
 			Sensitivity:    record.Sensitivity,
+			Enabled:        record.Enabled,
+			Priority:       record.Priority,
+			Scope:          record.Scope,
 			Title:          record.Title,
 			Body:           record.Body,
 			Snippet:        record.Body,
@@ -323,6 +326,40 @@ func TestRunRepoReadsHistoricalV1Snapshot(t *testing.T) {
 	}
 	if show.Snapshot.SchemaVersion != run.ContextSnapshotSchemaVersionV1 || show.Snapshot.Retrieval == nil || len(show.Snapshot.Retrieval) != 0 {
 		t.Fatalf("v1 snapshot = %#v", show.Snapshot)
+	}
+}
+
+func TestRunRepoReadsHistoricalV2InstructionWithoutPolicy(t *testing.T) {
+	f := newRunFixture(t)
+	projectValue := newProject(t, f, "v2")
+	taskValue := newTask(t, f, projectValue.ID, "v2")
+	snapshotID, runID, recordID := mustRunID(t), mustRunID(t), mustRunID(t)
+	now := stamp(time.Now().UTC())
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES (?, '2', ?, ?, ?)`, []any{snapshotID, projectValue.ID, now, now}},
+		{`INSERT INTO context_snapshot_items (snapshot_id,position,record_id,record_revision,content_hash,kind,source,visibility,sensitivity,title,body,snippet,tags) VALUES (?,0,?,1,?,'instruction','user','shared','normal','Policy','Body','Body','[]')`, []any{snapshotID, recordID, strings.Repeat("f", 64)}},
+		{`INSERT INTO context_snapshot_retrieval_metadata (snapshot_id,without_retrieval,override_reason) VALUES (?,0,'')`, []any{snapshotID}},
+		{`INSERT INTO runs (id,task_id,context_snapshot_id,revision,status,actor_id,actor_kind,actor_name,base_branch,base_commit,started_at,updated_at) VALUES (?,?,?,1,'active',?,?,?,?,?,?,?)`, []any{runID, taskValue.ID, snapshotID, testRunActor.ID, testRunActor.Kind, testRunActor.Name, "", "", now, now}},
+		{`INSERT INTO run_leases (run_id,lease_id,owner_id,owner_kind,owner_name,heartbeat_at,expires_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`, []any{runID, runID, testRunActor.ID, testRunActor.Kind, testRunActor.Name, now, now, now}},
+	}
+	for _, statement := range statements {
+		if _, err := f.db.ExecContext(context.Background(), statement.query, statement.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	show, err := f.runs.ShowRun(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.Snapshot.SchemaVersion != run.ContextSnapshotSchemaVersionV2 || len(show.Snapshot.Records) != 1 || show.Snapshot.Records[0].Enabled != nil || show.Snapshot.Records[0].Priority != nil || show.Snapshot.Records[0].Scope != nil {
+		t.Fatalf("v2 snapshot = %#v", show.Snapshot)
+	}
+	if err := show.Snapshot.Validate(); err != nil {
+		t.Fatalf("validate v2 snapshot: %v", err)
 	}
 }
 
@@ -498,6 +535,9 @@ func contextRecordHash(value runmodel.ProjectContextRecord) string {
 		Source      runmodel.Source      `json:"source"`
 		Visibility  runmodel.Visibility  `json:"visibility"`
 		Sensitivity runmodel.Sensitivity `json:"sensitivity"`
+		Enabled     *bool                `json:"enabled,omitempty"`
+		Priority    *runmodel.Priority   `json:"priority,omitempty"`
+		Scope       *runmodel.Scope      `json:"scope,omitempty"`
 	}{
 		Kind:        value.Kind,
 		Title:       value.Title,
@@ -506,6 +546,9 @@ func contextRecordHash(value runmodel.ProjectContextRecord) string {
 		Source:      value.Source,
 		Visibility:  value.Visibility,
 		Sensitivity: value.Sensitivity,
+		Enabled:     value.Enabled,
+		Priority:    value.Priority,
+		Scope:       value.Scope,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -616,6 +659,9 @@ func TestRunRepoComprehensiveHappyPath(t *testing.T) {
 		}
 		if item.Body != record.Body {
 			t.Fatalf("record %q body = %q, want %q", record.ID, item.Body, record.Body)
+		}
+		if record.Kind == runmodel.KindInstruction && (item.Enabled == nil || !*item.Enabled || item.Priority == nil || *item.Priority != runmodel.PriorityNormal || item.Scope == nil || *item.Scope != runmodel.ScopeProject) {
+			t.Fatalf("record %q instruction policy = %+v", record.ID, item)
 		}
 	}
 
@@ -820,6 +866,250 @@ func TestRunRepoConcurrentClaimHasOneActiveRun(t *testing.T) {
 	}
 	if !hasActiveRun(t, left, target.ID) {
 		t.Fatal("expected active run")
+	}
+}
+
+func TestRunRepoConcurrentExpiredClaimCreatesOneReplacement(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "istok.db")
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	left := newRunFixtureAtPath(t, database, clock)
+	right := newRunFixtureAtPath(t, database, clock)
+
+	projectValue := newProject(t, left, "concurrent-expired")
+	target := newTask(t, left, projectValue.ID, "concurrent expired")
+	contextValue := newContextRecord(t, left, projectValue.ID, "snapshot", "snapshot", runmodel.KindDecision)
+	initial := claimRun(t, left, target.ID, newSnapshot(t, projectValue.ID, nil, contextValue))
+	running := startExecution(t, left, initial.ID)
+
+	now = now.Add(16 * time.Minute)
+
+	type contender struct {
+		fixture *runFixture
+		record  run.ClaimRecord
+	}
+	newContender := func(fixture *runFixture, actorID string) contender {
+		abandonEventID := mustRunID(t)
+		claimEventID := mustRunID(t)
+		actor := run.ActorSnapshot{ID: actorID, Kind: "agent", Name: actorID}
+
+		return contender{
+			fixture: fixture,
+			record: run.ClaimRecord{
+				RunID:          mustRunID(t),
+				TaskID:         target.ID,
+				EventID:        claimEventID,
+				AbandonEventID: abandonEventID,
+				Snapshot:       newSnapshot(t, projectValue.ID, nil, contextValue),
+				Actor:          actor,
+				LeaseDuration:  15 * time.Minute,
+			},
+		}
+	}
+	contenders := []contender{
+		newContender(left, "replacement-left"),
+		newContender(right, "replacement-right"),
+	}
+
+	start := make(chan struct{})
+	errCh := make(chan error, len(contenders))
+	var wg sync.WaitGroup
+	for _, value := range contenders {
+		wg.Add(1)
+
+		go func(value contender) {
+			defer wg.Done()
+			<-start
+
+			_, err := value.fixture.runs.Claim(context.Background(), value.record)
+			errCh <- err
+		}(value)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	var wins, conflicts int
+	for err := range errCh {
+		if err == nil {
+			wins++
+			continue
+		}
+
+		switch run.ErrorCode(err) {
+		case run.CodeActiveRunExists:
+			conflicts++
+		default:
+			t.Fatalf("unexpected replacement claim error: %v", err)
+		}
+	}
+	if wins != 1 || conflicts != 1 {
+		t.Fatalf("wins=%d conflicts=%d", wins, conflicts)
+	}
+
+	if got := countRows(t, left.db, "SELECT COUNT(*) FROM runs WHERE task_id=? AND status='active'", target.ID); got != 1 {
+		t.Fatalf("active runs = %d, want 1", got)
+	}
+	if got := countRows(t, left.db, "SELECT COUNT(*) FROM runs WHERE task_id=? AND status='abandoned'", target.ID); got != 1 {
+		t.Fatalf("abandoned runs = %d, want 1", got)
+	}
+	if got := countRows(t, left.db, "SELECT COUNT(*) FROM context_snapshots"); got != 2 {
+		t.Fatalf("snapshots = %d, want 2", got)
+	}
+
+	oldShow, err := left.runs.ShowRun(context.Background(), initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldShow.Run.Status != run.StatusAbandoned || len(oldShow.Executions) != 1 || oldShow.Executions[0].ID != running.ID || oldShow.Executions[0].Status != run.ExecutionCancelled || oldShow.Executions[0].Signal != "abandoned" {
+		t.Fatalf("abandoned run = %+v", oldShow)
+	}
+
+	events, err := left.tasks.Events(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var abandonedIndex, replacementClaimIndex = -1, -1
+	for index, event := range events {
+		if event.Type == "run_abandoned" {
+			abandonedIndex = index
+		}
+		if event.Type == "claimed" && strings.HasPrefix(event.Actor.ID, "replacement-") {
+			replacementClaimIndex = index
+		}
+	}
+	if len(events) != 4 || abandonedIndex < 0 || replacementClaimIndex != abandonedIndex+1 {
+		t.Fatalf("handoff events = %+v", events)
+	}
+
+	state, err := left.runs.TaskRunState(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.HasActiveRun || state.HasExpiredRun {
+		t.Fatalf("replacement state = %+v", state)
+	}
+}
+
+func TestRunRepoManualAbandonUsesCASAndLeavesTaskClaimable(t *testing.T) {
+	f := newRunFixture(t)
+	projectValue := newProject(t, f, "manual-abandon")
+	target := newTask(t, f, projectValue.ID, "manual abandon")
+	contextValue := newContextRecord(t, f, projectValue.ID, "snapshot", "snapshot", runmodel.KindDecision)
+	initial := claimRun(t, f, target.ID, newSnapshot(t, projectValue.ID, nil, contextValue))
+	running := startExecution(t, f, initial.ID)
+
+	_, err := f.runs.Claim(context.Background(), run.ClaimRecord{
+		RunID:          mustRunID(t),
+		TaskID:         target.ID,
+		EventID:        mustRunID(t),
+		AbandonEventID: mustRunID(t),
+		Snapshot:       newSnapshot(t, projectValue.ID, nil, contextValue),
+		Actor:          run.ActorSnapshot{ID: "other", Kind: "agent", Name: "Other"},
+	})
+	if run.ErrorCode(err) != run.CodeActiveRunExists {
+		t.Fatalf("healthy replacement claim error = %v", err)
+	}
+	before, err := f.runs.ShowRun(context.Background(), initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Run.Status != run.StatusActive || before.Executions[0].Status != run.ExecutionRunning || countRows(t, f.db, "SELECT COUNT(*) FROM context_snapshots") != 1 {
+		t.Fatalf("healthy run changed after rejected claim: %+v", before)
+	}
+
+	operator := run.ActorSnapshot{ID: "operator", Kind: "user", Name: "Operator"}
+	abandoned, err := f.runs.Abandon(context.Background(), run.AbandonInput{
+		RunID:            initial.ID,
+		ExpectedRevision: initial.Revision,
+		Reason:           "operator handoff",
+		EventID:          mustRunID(t),
+	}, operator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abandoned.Status != run.StatusAbandoned || abandoned.Revision != initial.Revision+1 || abandoned.FinishedBy == nil || abandoned.FinishedBy.ID != operator.ID || abandoned.ResultSummary != "operator handoff" {
+		t.Fatalf("abandoned run = %+v", abandoned)
+	}
+	show, err := f.runs.ShowRun(context.Background(), initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(show.Executions) != 1 || show.Executions[0].ID != running.ID || show.Executions[0].Status != run.ExecutionCancelled || show.Executions[0].Signal != "abandoned" {
+		t.Fatalf("abandoned execution = %+v", show.Executions)
+	}
+	listed, err := f.runs.ListRuns(context.Background(), run.ListOptions{TaskID: target.ID, Statuses: []run.Status{run.StatusAbandoned}})
+	if err != nil || len(listed) != 1 || listed[0].ID != initial.ID {
+		t.Fatalf("listed abandoned runs = %+v, err=%v", listed, err)
+	}
+	if hasActiveRun(t, f, target.ID) {
+		t.Fatal("abandoned run remains active")
+	}
+
+	_, err = f.runs.Abandon(context.Background(), run.AbandonInput{
+		RunID:            initial.ID,
+		ExpectedRevision: initial.Revision,
+		Reason:           "stale retry",
+		EventID:          mustRunID(t),
+	}, operator)
+	if run.ErrorCode(err) != run.CodeRevisionConflict {
+		t.Fatalf("stale abandonment error = %v", err)
+	}
+	_, err = f.runs.Abandon(context.Background(), run.AbandonInput{
+		RunID:            initial.ID,
+		ExpectedRevision: abandoned.Revision,
+		Reason:           "terminal retry",
+		EventID:          mustRunID(t),
+	}, operator)
+	if run.ErrorCode(err) != run.CodeInvalidTransition {
+		t.Fatalf("terminal abandonment error = %v", err)
+	}
+
+	replacement := claimRun(t, f, target.ID, newSnapshot(t, projectValue.ID, nil, contextValue))
+	if replacement.ID == initial.ID || replacement.ContextSnapshotID == initial.ContextSnapshotID || replacement.Status != run.StatusActive {
+		t.Fatalf("replacement run = %+v", replacement)
+	}
+}
+
+func TestRunRepoExpiredClaimRollbackRestoresOldRun(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+	f := newRunFixtureWithClock(t, func() time.Time { return now })
+	projectValue := newProject(t, f, "expired-rollback")
+	target := newTask(t, f, projectValue.ID, "expired rollback")
+	contextValue := newContextRecord(t, f, projectValue.ID, "snapshot", "snapshot", runmodel.KindDecision)
+	snapshot := newSnapshot(t, projectValue.ID, nil, contextValue)
+	initial := claimRun(t, f, target.ID, snapshot)
+	running := startExecution(t, f, initial.ID)
+
+	now = now.Add(16 * time.Minute)
+	_, err := f.runs.Claim(context.Background(), run.ClaimRecord{
+		RunID:          mustRunID(t),
+		TaskID:         target.ID,
+		EventID:        mustRunID(t),
+		AbandonEventID: mustRunID(t),
+		Snapshot:       snapshot,
+		Actor:          run.ActorSnapshot{ID: "replacement", Kind: "agent", Name: "Replacement"},
+	})
+	if err == nil {
+		t.Fatal("replacement claim with duplicate snapshot unexpectedly succeeded")
+	}
+
+	show, err := f.runs.ShowRun(context.Background(), initial.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.Run.Status != run.StatusActive || show.Run.Revision != initial.Revision || len(show.Executions) != 1 || show.Executions[0].ID != running.ID || show.Executions[0].Status != run.ExecutionRunning {
+		t.Fatalf("old run was not restored by rollback: %+v", show)
+	}
+	if got := countRows(t, f.db, "SELECT COUNT(*) FROM runs WHERE task_id=?", target.ID); got != 1 {
+		t.Fatalf("runs after rollback = %d", got)
+	}
+	if got := countRows(t, f.db, "SELECT COUNT(*) FROM task_events WHERE task_id=? AND type='run_abandoned'", target.ID); got != 0 {
+		t.Fatalf("abandonment events after rollback = %d", got)
+	}
+	state, err := f.runs.TaskRunState(context.Background(), target.ID)
+	if err != nil || !state.HasActiveRun || !state.HasExpiredRun {
+		t.Fatalf("run state after rollback = %+v, err=%v", state, err)
 	}
 }
 

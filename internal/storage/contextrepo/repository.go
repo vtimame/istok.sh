@@ -21,7 +21,7 @@ func New(db *sql.DB) *Repository {
 }
 
 const contextRecordQuery = `
-SELECT cr.id,cr.project_id,cr.revision,cr.kind,cr.title,cr.body,cr.tags,cr.source,cr.visibility,cr.sensitivity,cr.actor_id,cr.actor_kind,cr.actor_name,cr.created_at,cr.updated_at,cr.deleted_at
+SELECT cr.id,cr.project_id,cr.revision,cr.kind,cr.title,cr.body,cr.tags,cr.source,cr.visibility,cr.sensitivity,cr.enabled,cr.priority,cr.scope,cr.actor_id,cr.actor_kind,cr.actor_name,cr.created_at,cr.updated_at,cr.deleted_at
 FROM context_records cr `
 
 func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput, actor contextmodel.ActorSnapshot) (contextmodel.ProjectContextRecord, error) {
@@ -52,6 +52,7 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 		Sensitivity: input.Sensitivity,
 		Actor:       actor,
 	}
+	normalizePolicy(&value, input.Enabled, input.Priority, input.Scope)
 
 	tags, err := contextmodel.NormalizeTags(input.Tags)
 	if err != nil {
@@ -77,8 +78,8 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 		_, err = conn.ExecContext(
 			ctx,
 			`INSERT INTO context_records(
-				id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,actor_id,actor_kind,actor_name,created_at,updated_at
-			) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,enabled,priority,scope,actor_id,actor_kind,actor_name,created_at,updated_at
+			) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			value.ID,
 			value.ProjectID,
 			value.Revision,
@@ -89,6 +90,9 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 			value.Source,
 			value.Visibility,
 			value.Sensitivity,
+			policyEnabled(value),
+			policyPriority(value),
+			policyScope(value),
 			value.Actor.ID,
 			value.Actor.Kind,
 			value.Actor.Name,
@@ -132,6 +136,9 @@ func (r *Repository) List(ctx context.Context, projectID string, options context
 	args := []any{projectID}
 	if !options.IncludeDeleted {
 		query += " AND cr.deleted_at IS NULL"
+	}
+	if !options.IncludeDisabled {
+		query += " AND (cr.kind != 'instruction' OR cr.enabled = 1)"
 	}
 	if len(options.Kinds) > 0 {
 		query += " AND cr.kind IN ("
@@ -215,6 +222,9 @@ func (r *Repository) Search(ctx context.Context, projectID string, options conte
 	args := []any{projectID}
 	if !options.IncludeDeleted {
 		query += " AND cr.deleted_at IS NULL"
+	}
+	if !options.IncludeDisabled {
+		query += " AND (cr.kind != 'instruction' OR cr.enabled = 1)"
 	}
 	query += " AND (LOWER(cr.title) LIKE ? OR LOWER(cr.body) LIKE ? OR LOWER(cr.tags) LIKE ?)"
 	search := strings.ToLower(strings.TrimSpace(options.Query))
@@ -334,7 +344,7 @@ func (r *Repository) mutate(ctx context.Context, id string, expected int64, acto
 		now := time.Now().UTC()
 		result, err := conn.ExecContext(
 			ctx,
-			`UPDATE context_records SET kind=?,title=?,body=?,tags=?,source=?,visibility=?,sensitivity=?,actor_id=?,actor_kind=?,actor_name=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`,
+			`UPDATE context_records SET kind=?,title=?,body=?,tags=?,source=?,visibility=?,sensitivity=?,enabled=?,priority=?,scope=?,actor_id=?,actor_kind=?,actor_name=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`,
 			value.Kind,
 			value.Title,
 			value.Body,
@@ -342,6 +352,9 @@ func (r *Repository) mutate(ctx context.Context, id string, expected int64, acto
 			value.Source,
 			value.Visibility,
 			value.Sensitivity,
+			policyEnabled(value),
+			policyPriority(value),
+			policyScope(value),
 			actor.ID,
 			actor.Kind,
 			actor.Name,
@@ -444,6 +457,9 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 	var createdRaw string
 	var updatedRaw string
 	var deleted sql.NullString
+	var enabled int
+	var priority contextmodel.Priority
+	var scope contextmodel.Scope
 
 	err := row.Scan(
 		&value.ID,
@@ -456,6 +472,9 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 		&value.Source,
 		&value.Visibility,
 		&value.Sensitivity,
+		&enabled,
+		&priority,
+		&scope,
 		&value.Actor.ID,
 		&value.Actor.Kind,
 		&value.Actor.Name,
@@ -484,6 +503,11 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 	}
 	value.CreatedAt = createdAt
 	value.UpdatedAt = updatedAt
+	if value.Kind == contextmodel.KindInstruction {
+		value.Enabled = boolPtr(enabled != 0)
+		value.Priority = priorityPtr(priority)
+		value.Scope = scopePtr(scope)
+	}
 
 	if deleted.Valid {
 		parsed, err := time.Parse(time.RFC3339Nano, deleted.String)
@@ -495,6 +519,48 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 
 	return value, nil
 }
+
+func normalizePolicy(value *contextmodel.ProjectContextRecord, enabled *bool, priority *contextmodel.Priority, scope *contextmodel.Scope) {
+	if value.Kind != contextmodel.KindInstruction {
+		value.Enabled, value.Priority, value.Scope = nil, nil, nil
+		return
+	}
+	if enabled == nil {
+		enabled = boolPtr(true)
+	}
+	if priority == nil {
+		priority = priorityPtr(contextmodel.PriorityNormal)
+	}
+	if scope == nil {
+		scope = scopePtr(contextmodel.ScopeProject)
+	}
+	value.Enabled, value.Priority, value.Scope = enabled, priority, scope
+}
+
+func policyEnabled(value contextmodel.ProjectContextRecord) int {
+	if value.Kind == contextmodel.KindInstruction && value.Enabled != nil && !*value.Enabled {
+		return 0
+	}
+	return 1
+}
+
+func policyPriority(value contextmodel.ProjectContextRecord) contextmodel.Priority {
+	if value.Kind == contextmodel.KindInstruction && value.Priority != nil {
+		return *value.Priority
+	}
+	return contextmodel.PriorityNormal
+}
+
+func policyScope(value contextmodel.ProjectContextRecord) contextmodel.Scope {
+	if value.Kind == contextmodel.KindInstruction && value.Scope != nil {
+		return *value.Scope
+	}
+	return contextmodel.ScopeProject
+}
+
+func boolPtr(value bool) *bool                                       { return &value }
+func priorityPtr(value contextmodel.Priority) *contextmodel.Priority { return &value }
+func scopePtr(value contextmodel.Scope) *contextmodel.Scope          { return &value }
 
 func scanContextEvent(row interface{ Scan(...any) error }) (contextmodel.ContextEvent, error) {
 	var value contextmodel.ContextEvent

@@ -41,6 +41,9 @@ func renderContextMarkdown(value contextMarkdownView) string {
 		output.WriteString(fmt.Sprintf("- **Source:** `%s`\n", record.Source))
 		output.WriteString(fmt.Sprintf("- **Visibility:** `%s`\n", record.Visibility))
 		output.WriteString(fmt.Sprintf("- **Sensitivity:** `%s`\n", record.Sensitivity))
+		if record.Kind == contextmodel.KindInstruction {
+			output.WriteString(fmt.Sprintf("- **Enabled:** `%t`\n- **Priority:** `%s`\n- **Scope:** `%s`\n", *record.Enabled, *record.Priority, *record.Scope))
+		}
 		output.WriteString(fmt.Sprintf("- **Revision:** `r%d`\n", record.Revision))
 		output.WriteString(fmt.Sprintf("- **Record ID:** `%s`\n", record.ID))
 
@@ -81,6 +84,13 @@ func renderContextList(value contextListView) string {
 	rows := make([][]string, 0, len(value.Records))
 	for _, record := range value.Records {
 		state := "active"
+		policy := "—"
+		if record.Kind == contextmodel.KindInstruction {
+			policy = fmt.Sprintf("%s/%s", *record.Priority, *record.Scope)
+			if !*record.Enabled {
+				state = "disabled"
+			}
+		}
 		if record.DeletedAt != nil {
 			state = "archived"
 		}
@@ -88,13 +98,14 @@ func renderContextList(value contextListView) string {
 			presentation.Warning(record.ID),
 			string(record.Kind),
 			presentation.StyledStatus(state),
+			policy,
 			presentation.Metadata(fmt.Sprint(record.Revision)),
 			record.Title,
 			presentation.StyledTags(strings.Join(record.Tags, ", ")),
 		})
 	}
 
-	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderTable([]string{"ID", "KIND", "STATE", "REVISION", "TITLE", "TAGS"}, rows))
+	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderTable([]string{"ID", "KIND", "STATE", "POLICY", "REVISION", "TITLE", "TAGS"}, rows))
 }
 
 func renderContextShow(value contextView) string {
@@ -127,6 +138,10 @@ func renderContextShow(value contextView) string {
 	output.WriteString("\n")
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Sensitivity"), record.Sensitivity)))
 	output.WriteString("\n")
+	if record.Kind == contextmodel.KindInstruction {
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %t (%s, %s)", presentation.Key("Instruction"), *record.Enabled, *record.Priority, *record.Scope)))
+		output.WriteString("\n")
+	}
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Tags"), presentation.StyledTags(renderContextTags(record.Tags)))))
 	output.WriteString("\n\n")
 

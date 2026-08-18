@@ -123,7 +123,7 @@ func statusStyle(state string) lipgloss.Style {
 		return brandStyle
 	case "blocked", "warning", "attention", "cancelled", "stale", "degraded":
 		return warningStyle
-	case "open", "inactive", "never_indexed":
+	case "open", "inactive", "disabled", "never_indexed":
 		return mutedStyle
 	case "archived":
 		return metadataStyle
@@ -148,11 +148,11 @@ func statusGlyph(state string) string {
 		return "!"
 	case "in_progress", "running":
 		return "◐"
-	case "open", "inactive":
+	case "open", "inactive", "disabled":
 		return "○"
 	case "done", "success", "succeeded", "passed":
 		return "✓"
-	case "cancelled":
+	case "cancelled", "abandoned":
 		return "−"
 	case "blocked", "warning", "attention":
 		return "!"
@@ -187,6 +187,8 @@ func statusLabel(state string) string {
 		return "OPEN"
 	case "inactive":
 		return "INACTIVE"
+	case "disabled":
+		return "DISABLED"
 	case "done":
 		return "DONE"
 	case "success":
@@ -197,6 +199,8 @@ func statusLabel(state string) string {
 		return "PASSED"
 	case "cancelled":
 		return "CANCELLED"
+	case "abandoned":
+		return "ABANDONED"
 	case "blocked", "warning", "attention":
 		return "BLOCKED"
 	case "archived":

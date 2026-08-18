@@ -171,6 +171,70 @@ func TestContextCLIShowAllRecordsWithoutID(t *testing.T) {
 	}
 }
 
+func TestContextCLIInstructionPolicyLifecycle(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	executeAt(t, root, database, "init", "--json")
+
+	added := executeAt(t, root, database, "context", "add", "Validation policy", "--kind", "instruction", "--priority", "critical", "--scope", "project", "--body", "Run all tests", "--json")
+	if added.err != nil {
+		t.Fatal(added.err)
+	}
+	created := decodeJSONResult[contextView](t, added.output)
+	if created.Record.Enabled == nil || !*created.Record.Enabled || created.Record.Priority == nil || *created.Record.Priority != contextmodel.PriorityCritical || created.Record.Scope == nil || *created.Record.Scope != contextmodel.ScopeProject {
+		t.Fatalf("created instruction = %+v", created.Record)
+	}
+
+	disabled := executeAt(t, root, database, "context", "disable", created.Record.ID, "--expected-revision", "1", "--json")
+	if disabled.err != nil {
+		t.Fatal(disabled.err)
+	}
+	disabledView := decodeJSONResult[contextView](t, disabled.output)
+	if disabledView.Record.Enabled == nil || *disabledView.Record.Enabled || disabledView.Record.Revision != 2 {
+		t.Fatalf("disabled instruction = %+v", disabledView.Record)
+	}
+
+	listed := decodeJSONResult[contextListView](t, executeAt(t, root, database, "context", "list", "--json").output)
+	if len(listed.Records) != 0 {
+		t.Fatalf("default list = %+v", listed.Records)
+	}
+	withDisabledResult := executeAt(t, root, database, "context", "list", "--include-disabled", "--json")
+	if withDisabledResult.err != nil {
+		t.Fatal(withDisabledResult.err)
+	}
+	withDisabled := decodeJSONResult[contextListView](t, withDisabledResult.output)
+	if len(withDisabled.Records) != 1 || withDisabled.Records[0].ID != created.Record.ID {
+		t.Fatalf("include-disabled list = %+v", withDisabled.Records)
+	}
+	humanList := executeAt(t, root, database, "context", "list", "--include-disabled")
+	if humanList.err != nil {
+		t.Fatal(humanList.err)
+	}
+	if !strings.Contains(humanList.output, "DISABLED") || !strings.Contains(humanList.output, "critical/project") {
+		t.Fatalf("include-disabled human list = %q", humanList.output)
+	}
+
+	markdown := executeAt(t, root, database, "context", "show", "--include-disabled")
+	if markdown.err != nil {
+		t.Fatal(markdown.err)
+	}
+	if !strings.Contains(markdown.output, "- **Enabled:** `false`") || !strings.Contains(markdown.output, "- **Priority:** `critical`") || !strings.Contains(markdown.output, "- **Scope:** `project`") {
+		t.Fatalf("instruction markdown = %q", markdown.output)
+	}
+
+	enabled := executeAt(t, root, database, "context", "enable", created.Record.ID, "--expected-revision", "2", "--json")
+	if enabled.err != nil {
+		t.Fatal(enabled.err)
+	}
+	enabledView := decodeJSONResult[contextView](t, enabled.output)
+	if enabledView.Record.Enabled == nil || !*enabledView.Record.Enabled || enabledView.Record.Revision != 3 {
+		t.Fatalf("enabled instruction = %+v", enabledView.Record)
+	}
+
+	invalid := executeAt(t, root, database, "context", "add", "Note", "--kind", "note", "--priority", "high", "--json")
+	assertVersionedBusinessError(t, invalid.err, string(contextmodel.CodeInvalid))
+}
+
 func TestContextCLIHumanOutputAndHelpDoNotCreateDatabase(t *testing.T) {
 	root := t.TempDir()
 	database := filepath.Join(t.TempDir(), "istok.db")
@@ -199,6 +263,8 @@ func TestContextCLIHumanOutputAndHelpDoNotCreateDatabase(t *testing.T) {
 		{"context", "show", "--help"},
 		{"context", "search", "--help"},
 		{"context", "update", "--help"},
+		{"context", "enable", "--help"},
+		{"context", "disable", "--help"},
 		{"context", "delete", "--help"},
 	} {
 		if got := executeHelp(t, args...); !strings.Contains(got, "context") {

@@ -13,10 +13,32 @@ import (
 func addContextTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
 	addContextAddTool(server, projects, contexts, root, actor)
 	addContextUpdateTool(server, projects, contexts, root, actor)
+	addContextEnabledTools(server, projects, contexts, root, actor)
 	addContextListTool(server, projects, contexts, root)
 	addContextShowTool(server, projects, contexts, root)
 	addContextSearchTool(server, projects, contexts, root)
 	addContextPackageTool(server, projects, contexts, root)
+}
+
+func addContextEnabledTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
+	add := func(name string, enabled bool) {
+		mcp.AddTool(server, tool(name, "Change enabled state of an instruction in the current project.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			ContextID        string `json:"context_id"`
+			ExpectedRevision int64  `json:"expected_revision"`
+		}) (*mcp.CallToolResult, ContextResult, error) {
+			_, value, err := currentContextRecord(ctx, projects, contexts, root, in.ContextID, false)
+			if err != nil {
+				return errorTool(err), contextErrorResult(err), nil
+			}
+			value, err = contexts.Update(ctx, value.ID, in.ExpectedRevision, contextmodel.Patch{Enabled: &enabled}, actor.context())
+			if err != nil {
+				return errorTool(err), contextErrorResult(err), nil
+			}
+			return nil, contextResult(value), nil
+		})
+	}
+	add("context_enable", true)
+	add("context_disable", false)
 }
 
 func addContextAddTool(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
@@ -35,6 +57,8 @@ func addContextAddTool(server *mcp.Server, projects *project.Service, contexts *
 			Source:      defaultContextSource(in.Source),
 			Visibility:  defaultContextVisibility(in.Visibility),
 			Sensitivity: defaultContextSensitivity(in.Sensitivity),
+			Priority:    in.Priority,
+			Scope:       in.Scope,
 		}
 		value, err := contexts.Create(ctx, input, actor.context())
 		if err != nil {
@@ -61,6 +85,8 @@ func addContextUpdateTool(server *mcp.Server, projects *project.Service, context
 			Source:      in.Source,
 			Visibility:  in.Visibility,
 			Sensitivity: in.Sensitivity,
+			Priority:    in.Priority,
+			Scope:       in.Scope,
 		}
 		value, err = contexts.Update(ctx, value.ID, in.ExpectedRevision, patch, actor.context())
 		if err != nil {
@@ -78,12 +104,13 @@ func addContextListTool(server *mcp.Server, projects *project.Service, contexts 
 			return errorTool(err), contextListErrorResult(err), nil
 		}
 		values, err := contexts.List(ctx, current.ID, contextmodel.ListOptions{
-			Kinds:          in.Kinds,
-			Sources:        in.Sources,
-			Visibilities:   in.Visibilities,
-			Sensitivities:  in.Sensitivities,
-			IncludeDeleted: in.IncludeDeleted,
-			Limit:          in.Limit,
+			Kinds:           in.Kinds,
+			Sources:         in.Sources,
+			Visibilities:    in.Visibilities,
+			Sensitivities:   in.Sensitivities,
+			IncludeDeleted:  in.IncludeDeleted,
+			IncludeDisabled: in.IncludeDisabled,
+			Limit:           in.Limit,
 		})
 		if err != nil {
 			return errorTool(err), contextListErrorResult(err), nil
@@ -111,9 +138,10 @@ func addContextSearchTool(server *mcp.Server, projects *project.Service, context
 			return errorTool(err), contextListErrorResult(err), nil
 		}
 		values, err := contexts.Search(ctx, current.ID, contextmodel.SearchOptions{
-			Query:          in.Query,
-			IncludeDeleted: in.IncludeDeleted,
-			Limit:          in.Limit,
+			Query:           in.Query,
+			IncludeDeleted:  in.IncludeDeleted,
+			IncludeDisabled: in.IncludeDisabled,
+			Limit:           in.Limit,
 		})
 		if err != nil {
 			return errorTool(err), contextListErrorResult(err), nil

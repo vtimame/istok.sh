@@ -30,6 +30,8 @@ type contextAddInput struct {
 	Source      contextmodel.Source      `json:"source,omitempty" jsonschema:"Context source: user, agent, or import."`
 	Visibility  contextmodel.Visibility  `json:"visibility,omitempty" jsonschema:"Future sync visibility: shared or local_only."`
 	Sensitivity contextmodel.Sensitivity `json:"sensitivity,omitempty" jsonschema:"Context sensitivity: normal or private."`
+	Priority    *contextmodel.Priority   `json:"priority,omitempty" jsonschema:"Instruction priority."`
+	Scope       *contextmodel.Scope      `json:"scope,omitempty" jsonschema:"Instruction scope."`
 }
 
 type contextUpdateInput struct {
@@ -42,15 +44,18 @@ type contextUpdateInput struct {
 	Source           *contextmodel.Source      `json:"source,omitempty" jsonschema:"Optional replacement source: user, agent, or import."`
 	Visibility       *contextmodel.Visibility  `json:"visibility,omitempty" jsonschema:"Optional replacement visibility: shared or local_only."`
 	Sensitivity      *contextmodel.Sensitivity `json:"sensitivity,omitempty" jsonschema:"Optional replacement sensitivity: normal or private."`
+	Priority         *contextmodel.Priority    `json:"priority,omitempty" jsonschema:"Optional replacement instruction priority."`
+	Scope            *contextmodel.Scope       `json:"scope,omitempty" jsonschema:"Optional replacement instruction scope."`
 }
 
 type contextListInput struct {
-	Kinds          []contextmodel.Kind        `json:"kinds,omitempty" jsonschema:"Optional kind filters: note, decision, instruction, constraint."`
-	Sources        []contextmodel.Source      `json:"sources,omitempty" jsonschema:"Optional source filters: user, agent, import."`
-	Visibilities   []contextmodel.Visibility  `json:"visibilities,omitempty" jsonschema:"Optional visibility filters: shared, local_only."`
-	Sensitivities  []contextmodel.Sensitivity `json:"sensitivities,omitempty" jsonschema:"Optional sensitivity filters: normal, private."`
-	IncludeDeleted bool                       `json:"include_deleted,omitempty" jsonschema:"Include archived records."`
-	Limit          int                        `json:"limit,omitempty" jsonschema:"Maximum records to return."`
+	Kinds           []contextmodel.Kind        `json:"kinds,omitempty" jsonschema:"Optional kind filters: note, decision, instruction, constraint."`
+	Sources         []contextmodel.Source      `json:"sources,omitempty" jsonschema:"Optional source filters: user, agent, import."`
+	Visibilities    []contextmodel.Visibility  `json:"visibilities,omitempty" jsonschema:"Optional visibility filters: shared, local_only."`
+	Sensitivities   []contextmodel.Sensitivity `json:"sensitivities,omitempty" jsonschema:"Optional sensitivity filters: normal, private."`
+	IncludeDeleted  bool                       `json:"include_deleted,omitempty" jsonschema:"Include archived records."`
+	IncludeDisabled bool                       `json:"include_disabled,omitempty" jsonschema:"Include disabled instructions."`
+	Limit           int                        `json:"limit,omitempty" jsonschema:"Maximum records to return."`
 }
 
 type contextShowInput struct {
@@ -59,9 +64,10 @@ type contextShowInput struct {
 }
 
 type contextSearchInput struct {
-	Query          string `json:"query" jsonschema:"Search query."`
-	IncludeDeleted bool   `json:"include_deleted,omitempty" jsonschema:"Include archived records."`
-	Limit          int    `json:"limit,omitempty" jsonschema:"Maximum records to return."`
+	Query           string `json:"query" jsonschema:"Search query."`
+	IncludeDeleted  bool   `json:"include_deleted,omitempty" jsonschema:"Include archived records."`
+	IncludeDisabled bool   `json:"include_disabled,omitempty" jsonschema:"Include disabled instructions."`
+	Limit           int    `json:"limit,omitempty" jsonschema:"Maximum records to return."`
 }
 
 type contextPackageInput struct {

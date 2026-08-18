@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"errors"
 
+	indexingapp "s26.dev/istok-cli/internal/application/indexing"
 	contextmodel "s26.dev/istok-cli/internal/context"
 	"s26.dev/istok-cli/internal/project"
 	run "s26.dev/istok-cli/internal/run"
@@ -28,6 +29,9 @@ func errorCode(err error) string {
 	var runError *run.Error
 	if errors.As(err, &runError) {
 		return string(runError.Code)
+	}
+	if indexingapp.IsError(err) {
+		return indexingapp.ErrorCode
 	}
 
 	return string(task.CodeInternal)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	projectcontext "s26.dev/istok-cli/internal/context"
 	runmodel "s26.dev/istok-cli/internal/run"
 )
 
@@ -30,6 +31,25 @@ func (r *Repository) HasActiveRun(ctx context.Context, taskID string) (bool, err
 	}
 
 	return exists != 0, nil
+}
+
+func (r *Repository) TaskRunState(ctx context.Context, taskID string) (runmodel.TaskRunState, error) {
+	if !runmodel.IsUUIDv7(taskID) {
+		return runmodel.TaskRunState{}, runmodel.NewError(runmodel.CodeInvalid, "task id must be a canonical UUIDv7")
+	}
+	var expiresAt string
+	err := r.db.QueryRowContext(ctx, `SELECT l.expires_at FROM runs r JOIN run_leases l ON l.run_id=r.id WHERE r.task_id=? AND r.status='active'`, taskID).Scan(&expiresAt)
+	if err == sql.ErrNoRows {
+		return runmodel.TaskRunState{}, nil
+	}
+	if err != nil {
+		return runmodel.TaskRunState{}, fmt.Errorf("get task run state: %w", err)
+	}
+	expires, err := parseTime(expiresAt)
+	if err != nil {
+		return runmodel.TaskRunState{}, fmt.Errorf("parse task run expiry: %w", err)
+	}
+	return runmodel.TaskRunState{HasActiveRun: true, HasExpiredRun: !expires.After(r.now().UTC())}, nil
 }
 
 func (r *Repository) ListRuns(ctx context.Context, options runmodel.ListOptions) ([]runmodel.Run, error) {
@@ -148,7 +168,7 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT record_id,record_revision,content_hash,kind,source,visibility,sensitivity,
+		SELECT record_id,record_revision,content_hash,kind,source,visibility,sensitivity,enabled,priority,scope,
 		       title,body,snippet,tags
 		FROM context_snapshot_items
 		WHERE snapshot_id=?
@@ -162,6 +182,9 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	for rows.Next() {
 		var item runmodel.ContextSnapshotItem
 		var tags string
+		var enabled int
+		var priority string
+		var scope string
 
 		if err := rows.Scan(
 			&item.RecordID,
@@ -171,6 +194,9 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 			&item.Source,
 			&item.Visibility,
 			&item.Sensitivity,
+			&enabled,
+			&priority,
+			&scope,
 			&item.Title,
 			&item.Body,
 			&item.Snippet,
@@ -180,6 +206,11 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 		}
 		if err := json.Unmarshal([]byte(tags), &item.Tags); err != nil {
 			return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot tags: %w", err)
+		}
+		if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion && item.Kind == "instruction" {
+			item.Enabled = boolPtr(enabled != 0)
+			item.Priority = priorityPtr(priority)
+			item.Scope = scopePtr(scope)
 		}
 
 		value.Records = append(value.Records, item)
@@ -224,6 +255,16 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	}
 
 	return value, nil
+}
+
+func boolPtr(value bool) *bool { return &value }
+func priorityPtr(value string) *projectcontext.Priority {
+	result := projectcontext.Priority(value)
+	return &result
+}
+func scopePtr(value string) *projectcontext.Scope {
+	result := projectcontext.Scope(value)
+	return &result
 }
 
 func (r *Repository) listExecutions(ctx context.Context, runID string) ([]runmodel.Execution, error) {

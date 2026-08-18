@@ -9,10 +9,11 @@ import (
 )
 
 type fakeRepository struct {
-	listValues []contextmodel.ProjectContextRecord
-	getValue   contextmodel.ProjectContextRecord
-	updateErr  error
-	updateCall bool
+	listValues  []contextmodel.ProjectContextRecord
+	listOptions contextmodel.ListOptions
+	getValue    contextmodel.ProjectContextRecord
+	updateErr   error
+	updateCall  bool
 }
 
 func (r *fakeRepository) Create(context.Context, contextmodel.CreateInput, contextmodel.ActorSnapshot) (contextmodel.ProjectContextRecord, error) {
@@ -36,7 +37,8 @@ func (r *fakeRepository) Restore(context.Context, string, int64, contextmodel.Ac
 	return r.getValue, nil
 }
 
-func (r *fakeRepository) List(context.Context, string, contextmodel.ListOptions) ([]contextmodel.ProjectContextRecord, error) {
+func (r *fakeRepository) List(_ context.Context, _ string, options contextmodel.ListOptions) ([]contextmodel.ProjectContextRecord, error) {
+	r.listOptions = options
 	return r.listValues, nil
 }
 
@@ -77,7 +79,7 @@ func TestBuildPackageAssemblesSchemaAndDeterministicHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPackage() = %v", err)
 	}
-	if got.SchemaVersion != "1" || got.ProjectID != projectID {
+	if got.SchemaVersion != "2" || got.ProjectID != projectID {
 		t.Fatalf("BuildPackage() = %#v", got)
 	}
 	if len(got.Records) != 1 {
@@ -88,6 +90,78 @@ func TestBuildPackageAssemblesSchemaAndDeterministicHash(t *testing.T) {
 	}
 	if len(got.Records[0].ContentHash) != 64 {
 		t.Fatalf("content hash = %q", got.Records[0].ContentHash)
+	}
+}
+
+func TestBuildPackagePrioritizesEnabledInstructionsOutsideOrdinaryLimit(t *testing.T) {
+	projectID := mustUUID(t)
+	enabled := true
+	disabled := false
+	high := contextmodel.PriorityHigh
+	low := contextmodel.PriorityLow
+	critical := contextmodel.PriorityCritical
+	scope := contextmodel.ScopeProject
+	record := func(kind contextmodel.Kind, title string) contextmodel.ProjectContextRecord {
+		return contextmodel.ProjectContextRecord{
+			ID:          mustUUID(t),
+			ProjectID:   projectID,
+			Revision:    1,
+			Kind:        kind,
+			Title:       title,
+			Source:      contextmodel.SourceUser,
+			Visibility:  contextmodel.VisibilityShared,
+			Sensitivity: contextmodel.SensitivityNormal,
+		}
+	}
+
+	firstNote := record(contextmodel.KindNote, "first note")
+	lowInstruction := record(contextmodel.KindInstruction, "low instruction")
+	lowInstruction.Enabled, lowInstruction.Priority, lowInstruction.Scope = &enabled, &low, &scope
+	disabledInstruction := record(contextmodel.KindInstruction, "disabled instruction")
+	disabledInstruction.Enabled, disabledInstruction.Priority, disabledInstruction.Scope = &disabled, &critical, &scope
+	highInstruction := record(contextmodel.KindInstruction, "high instruction")
+	highInstruction.Enabled, highInstruction.Priority, highInstruction.Scope = &enabled, &high, &scope
+	secondNote := record(contextmodel.KindNote, "second note")
+
+	repository := &fakeRepository{listValues: []contextmodel.ProjectContextRecord{
+		firstNote,
+		lowInstruction,
+		disabledInstruction,
+		highInstruction,
+		secondNote,
+	}}
+	got, err := NewService(repository).BuildPackage(context.Background(), projectID, contextmodel.BuildOptions{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.listOptions.Limit != 0 || repository.listOptions.IncludeDisabled {
+		t.Fatalf("repository list options = %+v", repository.listOptions)
+	}
+	want := []string{highInstruction.ID, lowInstruction.ID, firstNote.ID}
+	if len(got.Records) != len(want) {
+		t.Fatalf("records = %+v", got.Records)
+	}
+	for i, id := range want {
+		if got.Records[i].RecordID != id {
+			t.Fatalf("record %d = %s, want %s", i, got.Records[i].RecordID, id)
+		}
+	}
+	if got.Records[0].Enabled == nil || !*got.Records[0].Enabled || got.Records[0].Priority == nil || *got.Records[0].Priority != high {
+		t.Fatalf("instruction policy = %+v", got.Records[0])
+	}
+
+	changed := highInstruction
+	changed.Priority = &low
+	firstHash, err := contextRecordHash(highInstruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondHash, err := contextRecordHash(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstHash == secondHash {
+		t.Fatal("instruction policy must participate in content hash")
 	}
 }
 

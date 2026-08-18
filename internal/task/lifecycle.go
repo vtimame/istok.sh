@@ -159,6 +159,7 @@ func ValidateDependency(blocker, blocked Task) error {
 type TaskListItem struct {
 	Task
 	HasActiveRun   bool             `json:"has_active_run"`
+	HasExpiredRun  bool             `json:"has_expired_run"`
 	ActiveBlockers []BlockerSummary `json:"active_blockers,omitempty"`
 }
 
@@ -196,11 +197,12 @@ func hasActiveBlocker(blockers []TaskSummary) bool {
 }
 
 type Show struct {
-	Task         Task          `json:"task"`
-	Events       []Event       `json:"events"`
-	Incoming     []Dependency  `json:"incoming"`
-	Outgoing     []Dependency  `json:"outgoing"`
-	HasActiveRun bool          `json:"has_active_run"`
-	Blockers     []TaskSummary `json:"blockers"`
-	Dependents   []TaskSummary `json:"dependents"`
+	Task          Task          `json:"task"`
+	Events        []Event       `json:"events"`
+	Incoming      []Dependency  `json:"incoming"`
+	Outgoing      []Dependency  `json:"outgoing"`
+	HasActiveRun  bool          `json:"has_active_run"`
+	HasExpiredRun bool          `json:"has_expired_run"`
+	Blockers      []TaskSummary `json:"blockers"`
+	Dependents    []TaskSummary `json:"dependents"`
 }

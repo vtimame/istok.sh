@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -76,10 +78,18 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"task_dependency_remove": {readOnly: false, destructive: true, idempotent: true},
 		"context_add":            {readOnly: false, destructive: false, idempotent: true},
 		"context_update":         {readOnly: false, destructive: true, idempotent: true},
+		"context_enable":         {readOnly: false, destructive: true, idempotent: true},
+		"context_disable":        {readOnly: false, destructive: true, idempotent: true},
 		"context_list":           {readOnly: true, destructive: false, idempotent: true},
 		"context_show":           {readOnly: true, destructive: false, idempotent: true},
 		"context_search":         {readOnly: true, destructive: false, idempotent: true},
 		"context_package":        {readOnly: true, destructive: false, idempotent: true},
+		"index_status":           {readOnly: true, destructive: false, idempotent: true},
+		"index_rebuild":          {readOnly: false, destructive: false, idempotent: true},
+		"search":                 {readOnly: true, destructive: false, idempotent: true},
+		"graph_symbol":           {readOnly: true, destructive: false, idempotent: true},
+		"graph_neighbors":        {readOnly: true, destructive: false, idempotent: true},
+		"graph_path":             {readOnly: true, destructive: false, idempotent: true},
 		"task_claim":             {readOnly: false, destructive: false, idempotent: false},
 		"run_list":               {readOnly: true, destructive: false, idempotent: true},
 		"run_show":               {readOnly: true, destructive: false, idempotent: true},
@@ -88,6 +98,7 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"run_heartbeat":          {readOnly: false, destructive: false, idempotent: false},
 		"run_artifact_list":      {readOnly: true, destructive: false, idempotent: true},
 		"run_artifact_verify":    {readOnly: true, destructive: false, idempotent: true},
+		"run_recover":            {readOnly: false, destructive: true, idempotent: false},
 		"execution_start":        {readOnly: false, destructive: false, idempotent: false},
 		"execution_finish":       {readOnly: false, destructive: false, idempotent: false},
 		"validation_record":      {readOnly: false, destructive: false, idempotent: false},
@@ -120,11 +131,19 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"task_restore":           {readOnly: false, destructive: false, idempotent: true},
 		"context_add":            {readOnly: false, destructive: false, idempotent: true},
 		"context_update":         {readOnly: false, destructive: true, idempotent: true},
+		"context_enable":         {readOnly: false, destructive: true, idempotent: true},
+		"context_disable":        {readOnly: false, destructive: true, idempotent: true},
 		"context_list":           {readOnly: true, destructive: false, idempotent: true},
 		"context_show":           {readOnly: true, destructive: false, idempotent: true},
 		"context_search":         {readOnly: true, destructive: false, idempotent: true},
 		"context_package":        {readOnly: true, destructive: false, idempotent: true},
 		"context_archive":        {readOnly: false, destructive: true, idempotent: true},
+		"index_status":           {readOnly: true, destructive: false, idempotent: true},
+		"index_rebuild":          {readOnly: false, destructive: false, idempotent: true},
+		"search":                 {readOnly: true, destructive: false, idempotent: true},
+		"graph_symbol":           {readOnly: true, destructive: false, idempotent: true},
+		"graph_neighbors":        {readOnly: true, destructive: false, idempotent: true},
+		"graph_path":             {readOnly: true, destructive: false, idempotent: true},
 		"task_claim":             {readOnly: false, destructive: false, idempotent: false},
 		"run_list":               {readOnly: true, destructive: false, idempotent: true},
 		"run_show":               {readOnly: true, destructive: false, idempotent: true},
@@ -134,6 +153,7 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"run_artifact_list":      {readOnly: true, destructive: false, idempotent: true},
 		"run_artifact_verify":    {readOnly: true, destructive: false, idempotent: true},
 		"run_recover":            {readOnly: false, destructive: true, idempotent: false},
+		"run_abandon":            {readOnly: false, destructive: true, idempotent: false},
 		"execution_start":        {readOnly: false, destructive: false, idempotent: false},
 		"execution_finish":       {readOnly: false, destructive: false, idempotent: false},
 		"validation_record":      {readOnly: false, destructive: false, idempotent: false},
@@ -153,14 +173,17 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 			}
 		}
 	}
-	foundRecover := false
+	foundRecover, foundAbandon := false, false
 	for _, item := range supervisorTools.Tools {
 		if item.Name == "run_recover" {
 			foundRecover = true
 		}
+		if item.Name == "run_abandon" {
+			foundAbandon = true
+		}
 	}
-	if !foundRecover {
-		t.Fatal("supervisor does not expose run_recover")
+	if !foundRecover || !foundAbandon {
+		t.Fatalf("supervisor handoff tools recover=%t abandon=%t", foundRecover, foundAbandon)
 	}
 }
 
@@ -420,6 +443,138 @@ func TestContextToolsAreScopedAndBuildPackage(t *testing.T) {
 	}
 }
 
+func TestContextInstructionToolsManagePolicyAndPackageFiltering(t *testing.T) {
+	_, session := newSession(t, Worker, t.TempDir())
+	initProject(t, session, "instructions")
+
+	added := callTool(t, session, "context_add", map[string]any{
+		"title":    "Validation policy",
+		"body":     "Run all tests",
+		"kind":     "instruction",
+		"priority": "high",
+		"scope":    "project",
+	})
+	var created ContextResult
+	decodeStructured(t, added, &created)
+	if created.Context == nil || created.Context.Enabled == nil || !*created.Context.Enabled || created.Context.Priority == nil || *created.Context.Priority != contextmodel.PriorityHigh {
+		t.Fatalf("created instruction = %+v", created)
+	}
+
+	disabled := callTool(t, session, "context_disable", map[string]any{
+		"context_id":        created.Context.ID,
+		"expected_revision": created.Context.Revision,
+	})
+	var disabledResult ContextResult
+	decodeStructured(t, disabled, &disabledResult)
+	if disabledResult.Context == nil || disabledResult.Context.Enabled == nil || *disabledResult.Context.Enabled {
+		t.Fatalf("disabled instruction = %+v", disabledResult)
+	}
+
+	listed := callTool(t, session, "context_list", map[string]any{})
+	var defaultList ContextListResult
+	decodeStructured(t, listed, &defaultList)
+	if len(defaultList.Contexts) != 0 || defaultList.Contexts == nil {
+		t.Fatalf("default context list = %+v", defaultList)
+	}
+	listed = callTool(t, session, "context_list", map[string]any{"include_disabled": true})
+	var managementList ContextListResult
+	decodeStructured(t, listed, &managementList)
+	if len(managementList.Contexts) != 1 || managementList.Contexts[0].ID != created.Context.ID {
+		t.Fatalf("management context list = %+v", managementList)
+	}
+
+	packaged := callTool(t, session, "context_package", map[string]any{})
+	var disabledPackage ContextPackageResult
+	decodeStructured(t, packaged, &disabledPackage)
+	if disabledPackage.Package == nil || len(disabledPackage.Package.Records) != 0 || disabledPackage.Package.Records == nil {
+		t.Fatalf("package with disabled instruction = %+v", disabledPackage)
+	}
+	taskID := newTaskID(t)
+	createdTask := createTask(t, session, taskID, "claim without disabled instruction")
+	claimed := callTool(t, session, "task_claim", map[string]any{"task_id": createdTask.Task.ID})
+	var claimedRun RunResult
+	decodeStructured(t, claimed, &claimedRun)
+	if claimedRun.Snapshot == nil || len(claimedRun.Snapshot.Records) != 0 || claimedRun.Snapshot.Records == nil {
+		t.Fatalf("claim snapshot with disabled instruction = %+v", claimedRun)
+	}
+
+	enabled := callTool(t, session, "context_enable", map[string]any{
+		"context_id":        created.Context.ID,
+		"expected_revision": disabledResult.Context.Revision,
+	})
+	var enabledResult ContextResult
+	decodeStructured(t, enabled, &enabledResult)
+	if enabledResult.Context == nil || enabledResult.Context.Enabled == nil || !*enabledResult.Context.Enabled {
+		t.Fatalf("enabled instruction = %+v", enabledResult)
+	}
+	packaged = callTool(t, session, "context_package", map[string]any{})
+	var enabledPackage ContextPackageResult
+	decodeStructured(t, packaged, &enabledPackage)
+	if enabledPackage.Package == nil || len(enabledPackage.Package.Records) != 1 || enabledPackage.Package.Records[0].RecordID != created.Context.ID {
+		t.Fatalf("package with enabled instruction = %+v", enabledPackage)
+	}
+}
+
+func TestIndexToolsUseFixedProjectAndVersionedContracts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "sample.go"), []byte("package sample\n\nfunc TargetSymbol() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, session := newSession(t, Worker, root)
+	projectValue := initProject(t, session, "indexed")
+
+	statusResult := callTool(t, session, "index_status", map[string]any{})
+	var status indexStatusResult
+	decodeStructured(t, statusResult, &status)
+	if status.SchemaVersion != "1" || status.Project == nil || status.Project.ID != projectValue.ID || status.Status == nil {
+		t.Fatalf("index status = %+v", status)
+	}
+
+	rebuildResult := callTool(t, session, "index_rebuild", map[string]any{})
+	var rebuilt indexStatusResult
+	decodeStructured(t, rebuildResult, &rebuilt)
+	if rebuilt.Status == nil || rebuilt.Project == nil || rebuilt.Project.ID != projectValue.ID {
+		t.Fatalf("index rebuild = %+v", rebuilt)
+	}
+
+	searchResult := callTool(t, session, "search", map[string]any{"query": "TargetSymbol"})
+	var searched indexSearchResult
+	decodeStructured(t, searchResult, &searched)
+	if searched.ContractVersion == "" || searched.Results == nil || len(searched.Results) == 0 || searched.Project == nil || searched.Project.ID != projectValue.ID {
+		t.Fatalf("search result = %+v", searched)
+	}
+
+	symbolResult := callTool(t, session, "graph_symbol", map[string]any{"name": "TargetSymbol"})
+	var symbols graphSymbolResult
+	decodeStructured(t, symbolResult, &symbols)
+	if symbols.ContractVersion == "" || symbols.Symbols == nil || len(symbols.Symbols) == 0 {
+		t.Fatalf("graph symbols = %+v", symbols)
+	}
+
+	neighborsResult := callTool(t, session, "graph_neighbors", map[string]any{"name": "TargetSymbol"})
+	var neighbors graphNeighborsResult
+	decodeStructured(t, neighborsResult, &neighbors)
+	if neighbors.Neighbors == nil || neighbors.ContractVersion == "" {
+		t.Fatalf("graph neighbors = %+v", neighbors)
+	}
+	pathsResult := callTool(t, session, "graph_path", map[string]any{"from": "TargetSymbol", "to": "TargetSymbol"})
+	var paths graphPathResult
+	decodeStructured(t, pathsResult, &paths)
+	if paths.Paths == nil || paths.ContractVersion == "" {
+		t.Fatalf("graph paths = %+v", paths)
+	}
+
+	failed := callTool(t, session, "search", map[string]any{"query": "TargetSymbol", "limit": -1})
+	if !failed.IsError {
+		t.Fatalf("negative search limit result = %+v", failed)
+	}
+	var failedSearch indexSearchResult
+	decodeStructured(t, failed, &failedSearch)
+	if failedSearch.Error == nil || failedSearch.Error.Code != indexingapp.ErrorCode || failedSearch.Results == nil {
+		t.Fatalf("search error = %+v", failedSearch)
+	}
+}
+
 func TestRunToolsLifecycleAndCompletion(t *testing.T) {
 	_, worker := newSession(t, Worker, t.TempDir())
 
@@ -449,7 +604,7 @@ func TestRunToolsLifecycleAndCompletion(t *testing.T) {
 	})
 	var claimedRun RunResult
 	decodeStructured(t, claimed, &claimedRun)
-	if claimedRun.SchemaVersion != "1" || claimedRun.Run == nil || claimedRun.Run.TaskID != created.Task.ID {
+	if claimedRun.SchemaVersion != "2" || claimedRun.Run == nil || claimedRun.Run.TaskID != created.Task.ID || claimedRun.Snapshot == nil || claimedRun.Snapshot.ID != claimedRun.Run.ContextSnapshotID || claimedRun.Snapshot.ProjectID != project.ID {
 		t.Fatalf("run claim = %+v", claimedRun)
 	}
 
@@ -465,6 +620,9 @@ func TestRunToolsLifecycleAndCompletion(t *testing.T) {
 	decodeStructured(t, show, &shown)
 	if shown.Show == nil || shown.Show.Snapshot.ProjectID != project.ID {
 		t.Fatalf("run show = %+v", shown)
+	}
+	if !reflect.DeepEqual(*claimedRun.Snapshot, shown.Show.Snapshot) {
+		t.Fatalf("task_claim snapshot differs from persisted snapshot: claim=%+v show=%+v", *claimedRun.Snapshot, shown.Show.Snapshot)
 	}
 	if shown.Show.Executions == nil || shown.Show.Validations == nil {
 		t.Fatalf("run show arrays must be initialized = %+v", shown)
@@ -666,20 +824,20 @@ func TestManagedRunLifecycleAndArtifacts(t *testing.T) {
 	}
 	var managed ManagedExecutionResult
 	decodeStructured(t, validated, &managed)
-	if managed.SchemaVersion != "1" || managed.Execution == nil || managed.Validation == nil || managed.Validation.Status != runmodel.ValidationStatusPassed || len(managed.Artifacts) != 2 {
+	if managed.SchemaVersion != "2" || managed.Execution == nil || managed.Validation == nil || managed.Validation.Status != runmodel.ValidationStatusPassed || len(managed.Artifacts) != 2 {
 		t.Fatalf("managed validation = %+v", managed)
 	}
 
 	listed := callTool(t, session, "run_artifact_list", map[string]any{"run_id": claimedRun.Run.ID})
 	var artifacts ArtifactListResult
 	decodeStructured(t, listed, &artifacts)
-	if artifacts.SchemaVersion != "1" || len(artifacts.Artifacts) != 4 {
+	if artifacts.SchemaVersion != "2" || len(artifacts.Artifacts) != 4 {
 		t.Fatalf("artifact list = %+v", artifacts)
 	}
 	verified := callTool(t, session, "run_artifact_verify", map[string]any{"run_id": claimedRun.Run.ID, "artifact_id": artifacts.Artifacts[0].ID})
 	var verification ArtifactVerifyResult
 	decodeStructured(t, verified, &verification)
-	if verification.SchemaVersion != "1" || !verification.Verified || verification.Artifact == nil {
+	if verification.SchemaVersion != "2" || !verification.Verified || verification.Artifact == nil {
 		t.Fatalf("artifact verification = %+v", verification)
 	}
 
@@ -719,7 +877,7 @@ func TestManagedExecutionInputRequiresPositiveBoundedOptions(t *testing.T) {
 	}
 }
 
-func TestActorOwnershipAndSupervisorRecovery(t *testing.T) {
+func TestActorOwnershipRecoveryAndSupervisorAbandonment(t *testing.T) {
 	database := filepath.Join(t.TempDir(), "actors.db")
 	root := t.TempDir()
 	_, first := newSessionAtDatabaseWithActor(t, Worker, root, database, "first-agent")
@@ -739,12 +897,88 @@ func TestActorOwnershipAndSupervisorRecovery(t *testing.T) {
 		t.Fatal("second actor unexpectedly finished owned run")
 	}
 
-	_, supervisor := newSessionAtDatabaseWithActor(t, Supervisor, root, database, "supervisor-agent")
-	recovered := callTool(t, supervisor, "run_recover", map[string]any{"run_id": owned.Run.ID, "force": true, "reason": "supervisor takeover"})
+	stolenRecover := callTool(t, second, "run_recover", map[string]any{"run_id": owned.Run.ID, "force": true, "reason": "stolen"})
+	assertRunToolCode(t, stolenRecover, runmodel.CodeConflict)
+
+	recovered := callTool(t, first, "run_recover", map[string]any{"run_id": owned.Run.ID, "force": true, "reason": "lost token"})
 	var recovery RunResult
 	decodeStructured(t, recovered, &recovery)
-	if recovery.Run == nil || recovery.Run.LeaseID == owned.Run.LeaseID {
+	if recovery.SchemaVersion != "2" || recovery.Run == nil || recovery.Run.LeaseID == owned.Run.LeaseID || recovery.Run.LeaseOwner.ID != "first-agent" {
 		t.Fatalf("recovery = %+v", recovery)
+	}
+
+	_, supervisor := newSessionAtDatabaseWithActor(t, Supervisor, root, database, "supervisor-agent")
+	abandoned := callTool(t, supervisor, "run_abandon", map[string]any{"run_id": owned.Run.ID, "expected_revision": recovery.Run.Revision, "reason": "operator handoff"})
+	var abandonedRun RunResult
+	decodeStructured(t, abandoned, &abandonedRun)
+	if abandonedRun.Run == nil || abandonedRun.Run.Status != runmodel.StatusAbandoned {
+		t.Fatalf("abandonment = %+v", abandonedRun)
+	}
+
+	listed := callTool(t, first, "task_ready", map[string]any{})
+	var ready TaskListResult
+	decodeStructured(t, listed, &ready)
+	if len(ready.Tasks) != 1 || ready.Tasks[0].ID != created.Task.ID {
+		t.Fatalf("ready tasks = %+v", ready)
+	}
+}
+
+func TestMCPExpiredClaimCreatesAuditedReplacementRun(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "expired-claim.db")
+	root := t.TempDir()
+	_, first := newSessionAtDatabaseWithActor(t, Worker, root, database, "first-agent")
+	projectValue := initProject(t, first, "expired claim")
+	created := createTask(t, first, newTaskID(t), "handoff")
+	claimed := callTool(t, first, "task_claim", map[string]any{"task_id": created.Task.ID})
+	var firstRun RunResult
+	decodeStructured(t, claimed, &firstRun)
+
+	db, err := sql.Open("sqlite3", database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE run_leases SET expires_at='2000-01-01T00:00:00Z' WHERE run_id=?`, firstRun.Run.ID); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, second := newSessionAtDatabaseWithActor(t, Worker, root, database, "second-agent")
+	replacement := callTool(t, second, "task_claim", map[string]any{"task_id": created.Task.ID})
+	var secondRun RunResult
+	decodeStructured(t, replacement, &secondRun)
+	if secondRun.SchemaVersion != "2" || secondRun.Run == nil || secondRun.Snapshot == nil || secondRun.Run.ID == firstRun.Run.ID || secondRun.Run.ContextSnapshotID == firstRun.Run.ContextSnapshotID || secondRun.Run.LeaseID == firstRun.Run.LeaseID || secondRun.Run.Actor.ID != "second-agent" {
+		t.Fatalf("replacement run = %+v", secondRun)
+	}
+
+	old := callTool(t, second, "run_show", map[string]any{"run_id": firstRun.Run.ID})
+	var oldShow RunShowResult
+	decodeStructured(t, old, &oldShow)
+	if oldShow.Show == nil || oldShow.Show.Run.Status != runmodel.StatusAbandoned || oldShow.Show.Snapshot.ID != firstRun.Snapshot.ID {
+		t.Fatalf("old run = %+v", oldShow)
+	}
+
+	shown := callTool(t, second, "task_show", map[string]any{"task_id": created.Task.ID})
+	var taskShow TaskShowResult
+	decodeStructured(t, shown, &taskShow)
+	var abandoned, claimedEvents, abandonedIndex, replacementClaimIndex int
+	abandonedIndex, replacementClaimIndex = -1, -1
+	for index, event := range taskShow.Show.Events {
+		if event.Type == "run_abandoned" {
+			abandoned++
+			abandonedIndex = index
+		}
+		if event.Type == "claimed" {
+			claimedEvents++
+			if event.Body == secondRun.Run.ID {
+				replacementClaimIndex = index
+			}
+		}
+	}
+	if taskShow.Show.Task.ProjectID != projectValue.ID || abandoned != 1 || claimedEvents != 2 || abandonedIndex < 0 || replacementClaimIndex != abandonedIndex+1 {
+		t.Fatalf("task events = %+v", taskShow.Show.Events)
 	}
 }
 
@@ -755,8 +989,22 @@ func assertRunToolCode(t *testing.T, result *mcp.CallToolResult, want runmodel.C
 	}
 	var payload ErrorResult
 	decodeStructured(t, result, &payload)
-	if payload.SchemaVersion != "1" || payload.Error.Code != string(want) {
+	if payload.SchemaVersion != "2" || payload.Error.Code != string(want) {
 		t.Fatalf("tool error = %+v, want %q", payload, want)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("tool error content = %+v", result.Content)
+	}
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("tool error content type = %T", result.Content[0])
+	}
+	var contentPayload ErrorResult
+	if err := json.Unmarshal([]byte(textContent.Text), &contentPayload); err != nil {
+		t.Fatalf("decode tool error content: %v", err)
+	}
+	if contentPayload.SchemaVersion != payload.SchemaVersion || contentPayload.Error != payload.Error {
+		t.Fatalf("tool error content=%+v structured=%+v", contentPayload, payload)
 	}
 }
 
@@ -874,18 +1122,43 @@ func assertScopedSchema(t *testing.T, tool *mcp.Tool) {
 		t.Fatalf("marshal %s input schema: %v", tool.Name, err)
 	}
 	schema := string(encoded)
+	var decoded struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal %s input schema: %v", tool.Name, err)
+	}
 	for _, forbidden := range []string{"path", "root", "actor", "actor_id", "actor_name"} {
-		if strings.Contains(strings.ToLower(schema), forbidden) {
+		if _, exists := decoded.Properties[forbidden]; exists {
 			t.Fatalf("%s exposes caller-controlled %q in input schema: %s", tool.Name, forbidden, schema)
 		}
 	}
-	if strings.HasPrefix(tool.Name, "task_") && strings.Contains(schema, "project") {
-		t.Fatalf("%s exposes caller-controlled project scope in input schema: %s", tool.Name, schema)
+	if strings.HasPrefix(tool.Name, "task_") {
+		_, exposesProject := decoded.Properties["project"]
+		if exposesProject {
+			t.Fatalf("%s exposes caller-controlled project scope in input schema: %s", tool.Name, schema)
+		}
+	}
+	if isIndexTool(tool.Name) {
+		for _, forbidden := range []string{"project", "cwd"} {
+			if _, exists := decoded.Properties[forbidden]; exists {
+				t.Fatalf("%s exposes caller-controlled %q in input schema: %s", tool.Name, forbidden, schema)
+			}
+		}
 	}
 	if tool.Name == "project_rebind" || tool.Name == "project_restore" {
-		if strings.Contains(schema, "\"name\"") {
+		if _, exists := decoded.Properties["name"]; exists {
 			t.Fatalf("%s schema unexpectedly includes name: %s", tool.Name, schema)
 		}
+	}
+}
+
+func isIndexTool(name string) bool {
+	switch name {
+	case "index_status", "index_rebuild", "search", "graph_symbol", "graph_neighbors", "graph_path":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -929,8 +1202,8 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 		}),
 		fx.Provide(runworkflow.NewService),
 		fx.Provide(func(db *sql.DB) HealthChecker { return db }),
-		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
-			return New(health, service, tasks, contexts, runs, workflow, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
+		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
+			return New(health, service, tasks, contexts, indexes, runs, workflow, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
 		}),
 		fx.Invoke(func(value *mcp.Server) { server = value }),
 	)
