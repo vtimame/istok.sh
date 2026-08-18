@@ -1,117 +1,378 @@
-# Istok CLI
+<p align="center">
+  <img src=".github/assets/istok.svg" width="88" alt="Istok">
+</p>
 
-Istok is a local-first CLI and MCP server for project context, tasks, execution
-runs, artifacts, and validation evidence. The core workflow is autonomous: it
-uses an embedded SQLite database and does not require an account or cloud
-connection.
+<h1 align="center">Istok</h1>
 
-The current release channel is a closed alpha. Linux and macOS are supported on
-`amd64` and `arm64`. Windows binaries are not published yet.
+<p align="center">
+  Durable project state for coding agents.
+</p>
 
-## Install a release
+<p align="center">
+  <a href="https://istok.sh">Documentation</a>
+  ·
+  <a href="https://github.com/s26-dev/Istok-CLI/releases">Releases</a>
+</p>
 
-Choose a stable version from [GitHub Releases][releases], then download the
-archive for your platform. For example, on Linux `amd64`:
+<p align="center">
+  <a href="https://github.com/s26-dev/Istok-CLI/releases">
+    <img src="https://img.shields.io/github/v/release/s26-dev/Istok-CLI?style=flat-square" alt="Release">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="Apache 2.0">
+  </a>
+  <a href="https://istok.sh">
+    <img src="https://img.shields.io/badge/docs-istok.sh-green?style=flat-square" alt="Documentation">
+  </a>
+</p>
+
+Istok is a local CLI and MCP server that keeps coding-agent work with your project instead of inside a conversation.
+
+Tasks, context, progress, runs, validation, and repository knowledge remain available when a session ends, when you start a new conversation, or when another coding agent takes over.
+
+```text
+Coding agent
+     │
+     │ MCP
+     ▼
+   Istok
+     │
+     ├── tasks
+     ├── context
+     ├── runs
+     ├── validation
+     └── repository retrieval
+     │
+     ▼
+  your project
+```
+
+Istok is not another backlog or issue tracker. It is a local execution layer for work that has already reached your coding agent.
+
+## Install
 
 ```sh
-VERSION=v0.1.0
-ASSET=istok_linux_amd64.tar.gz
+curl -fsSL https://get.istok.sh | sh
+```
 
-curl -fLO "https://github.com/s26-dev/Istok-CLI/releases/download/${VERSION}/${ASSET}"
-curl -fLO "https://github.com/s26-dev/Istok-CLI/releases/download/${VERSION}/SHA256SUMS"
-grep "  ${ASSET}$" SHA256SUMS | sha256sum --check
-tar -xzf "${ASSET}"
-install -m 0755 istok "$HOME/.local/bin/istok"
+The installer detects your operating system and architecture, verifies the downloaded release, and installs `istok` into:
+
+```text
+$HOME/.local/bin
+```
+
+No elevated privileges are required for the default installation.
+
+Verify the installation:
+
+```sh
 istok version
 ```
 
-Use `istok_darwin_arm64.tar.gz` on Apple silicon, `istok_darwin_amd64.tar.gz`
-on Intel macOS, and `istok_linux_arm64.tar.gz` on Linux ARM64. On macOS, replace
-the checksum command with:
+You can inspect the installation script before running it:
 
 ```sh
-grep "  ${ASSET}$" SHA256SUMS | shasum -a 256 --check
+curl -fsSL https://get.istok.sh -o install-istok.sh
+less install-istok.sh
+sh install-istok.sh
 ```
 
-Make sure the installation directory is in `PATH`. Every release also contains
-an ECDSA signature next to each archive; `istok update` verifies that signature
-against the certificate embedded in the installed binary.
+See the [installation guide](https://istok.sh/docs/en/getting-started/installation) for manual installation and custom install directories.
 
 ## Quick start
 
-Initialize the current directory and add project knowledge and a task:
+Initialize Istok in a repository:
 
 ```sh
-istok init . --name my-project
-istok context add "Build policy" \
-  --kind instruction \
-  --body "Run unit tests before completing implementation tasks."
-istok task create \
-  --title "Implement the next change" \
-  --acceptance-criteria "Implementation and validation are complete."
+cd my-project
+istok init
 ```
 
-Inspect the current work and export all active project context as Markdown:
+You only need to initialize a repository once.
+
+Istok exposes its tools to coding agents through MCP:
 
 ```sh
-istok task list
-istok task ready
-istok context show
+istok mcp
 ```
 
-Repository indexing is automatic. Search and inspect the local code graph from
-inside the project:
+Give each coding agent a stable identity:
 
 ```sh
-istok index status
-istok search "query"
-istok graph symbol SymbolName
+istok mcp \
+  --actor-id codex \
+  --actor-name "Codex"
 ```
 
-Start the MCP server for an agent from inside the project:
+For example, with Codex:
 
 ```sh
-istok mcp --profile worker
+codex mcp add istok -- \
+  istok mcp \
+  --actor-id codex \
+  --actor-name "Codex"
 ```
 
-Use `istok <command> --help` for the complete command contract. Shell completion
-is available through `istok completion bash|fish|zsh`.
+Istok can also be used with Claude Code, Cursor, Antigravity CLI, and other MCP clients.
 
-## Updates and data
+See the [quick start](https://istok.sh/docs/en/getting-started/quick-start) for agent-specific setup and recommended instructions.
 
-Stable builds can check and apply signed releases:
+Once configured, continue working with your coding agent normally.
+
+You generally do **not** need to manually create tasks, claim runs, prepare context, or record validation. An agent configured to use Istok can do that through MCP as part of its workflow.
+
+## Why Istok
+
+Coding-agent conversations are temporary. The work behind them often is not.
+
+A task may:
+
+* span several sessions;
+* require multiple attempts;
+* become blocked by another change;
+* move between different coding agents;
+* need validation before it can be considered complete.
+
+Without durable state, useful information tends to remain scattered across conversation history.
+
+Istok keeps that state with the project.
+
+```text
+Session A
+   │
+   ├── task
+   ├── progress
+   ├── context
+   ├── run
+   └── validation
+         │
+         ▼
+       Istok
+         │
+         ▼
+Session B
+```
+
+A new session can inspect what happened before without reconstructing the previous conversation.
+
+The same applies when switching agents:
+
+```text
+Codex
+   │
+   ▼
+Istok project state
+   │
+   ▼
+Claude Code
+```
+
+## Core concepts
+
+### Projects
+
+A project associates Istok state with a repository.
+
+```sh
+istok init
+```
+
+Project state stays local and can be inspected independently of any coding-agent session.
+
+### Tasks
+
+Tasks are durable units of non-trivial work.
+
+They can preserve:
+
+* goals and acceptance criteria;
+* progress;
+* dependencies and blockers;
+* decisions and comments;
+* previous attempts;
+* validation associated with the work.
+
+Small questions and lightweight consultations do not need tasks.
+
+### Context
+
+Istok keeps durable project knowledge outside the conversation.
+
+This includes project notes, decisions, constraints, reusable instructions, and repository context relevant to the work.
+
+### Runs
+
+A task describes **what needs to be done**.
+
+A run describes **one attempt to do it**.
+
+Keeping them separate means a task can survive interrupted or failed attempts without losing their history.
+
+### Validation
+
+Istok records how work was checked instead of relying only on an agent saying that it works.
+
+```text
+Task
+  ↓
+Run
+  ↓
+Implementation
+  ↓
+Validation
+  ↓
+Evidence
+```
+
+Failed validation also remains part of the work history and can inform the next attempt.
+
+### Repository retrieval
+
+Istok maintains a local repository index that coding agents can use while working.
+
+The CLI exposes the same capabilities directly:
+
+```sh
+istok search "authentication timeout"
+istok graph symbol AuthService
+istok graph neighbors AuthService
+```
+
+Index freshness is handled automatically during normal workflows.
+
+## CLI
+
+The CLI gives you direct access to the same local project state exposed to coding agents through MCP.
+
+| Command            | Purpose                                             |
+| ------------------ | --------------------------------------------------- |
+| `istok init`       | Initialize a repository as an Istok project         |
+| `istok mcp`        | Start the MCP server used by coding agents          |
+| `istok project`    | Inspect and manage projects                         |
+| `istok task`       | Inspect and manage tasks                            |
+| `istok run`        | Inspect runs, executions, artifacts, and validation |
+| `istok context`    | Inspect and manage durable project context          |
+| `istok index`      | Inspect or rebuild the repository index             |
+| `istok search`     | Search indexed repository content                   |
+| `istok graph`      | Explore symbols and code relationships              |
+| `istok update`     | Check for and install updates                       |
+| `istok completion` | Configure shell completion                          |
+| `istok version`    | Print version information                           |
+
+Start with:
+
+```sh
+istok --help
+```
+
+and inspect individual commands with:
+
+```sh
+istok task --help
+istok task show --help
+```
+
+Human-readable output is used by default. Supported commands can also return versioned JSON for scripting and integrations:
+
+```sh
+istok task list --json
+```
+
+## Local first
+
+Istok is designed to work locally.
+
+The current project state is stored in SQLite, while repository indexes and managed artifacts are kept in separate local storage.
+
+Normal use does not require:
+
+* a cloud account;
+* an external database;
+* a background server;
+* network access after installation.
+
+The local project remains the source of durable execution state used by both the CLI and MCP.
+
+## Multiple coding agents
+
+Istok state is not tied to a particular agent.
+
+Stable actor IDs let recorded work remain attributable across MCP restarts and between different agents:
+
+```text
+Task
+ ├── Run by codex
+ │    └── validation
+ │
+ └── Run by claude
+      └── validation
+```
+
+This makes it possible for one agent to start work and another to inspect or continue it later.
+
+## Supported platforms
+
+Current releases target:
+
+* Linux x86-64
+* Linux ARM64
+* macOS Intel
+* macOS Apple Silicon
+
+Windows is not part of the current supported release matrix.
+
+## Update
+
+Istok can update itself to a newer stable release:
+
+```sh
+istok update
+```
+
+Check for an update without installing it:
 
 ```sh
 istok update --check
-istok update --yes
 ```
 
-The local database is stored in the platform user data directory by default.
-Set `ISTOK_DATABASE` or pass `--database PATH` to use another database. Back up
-that file before testing alpha releases with important project data.
+Release archives are signed and verified before an update is applied.
 
-Istok currently covers the local task/context/run workflow, automatic repository
-indexing, lexical search, and a lightweight code graph. Cloud sync and a web
-interface are not part of this release.
+## Build from source
 
-## Index acceptance
+Istok is written in Go and uses CGO for its embedded SQLite integration.
 
-Contributors can run the indexing benchmark and process-level hardening suite
-with Docker Compose v2:
+Build the binary:
 
 ```sh
-make test-index-benchmark
-make test-index-heavy
-make test-index-release
+make build
 ```
 
-The container has no network access and runs with bounded CPU, memory, and PID
-resources. Reports are written to `tmp/index-acceptance`. The release target
-requires a clean Git worktree and records the exact commit, container image,
-corpus hash, quality metrics, timings, and sidecar size. These Linux container
-tests complement, but do not replace, native release-binary smoke tests on Linux
-and macOS. The release workflow builds each archive on a matching native runner,
-extracts it, and verifies version reporting, indexing, lexical search, Go and
-TypeScript graph lookup, and system-library dependencies before publication.
+The result is written to:
 
-[releases]: https://github.com/s26-dev/Istok-CLI/releases
+```text
+bin/istok
+```
+
+Run the test suite:
+
+```sh
+go test ./...
+```
+
+## Documentation
+
+Full documentation is available at:
+
+**https://istok.sh**
+
+Useful starting points:
+
+* [Introduction](https://istok.sh/docs/en/getting-started/introduction)
+* [Installation](https://istok.sh/docs/en/getting-started/installation)
+* [Quick start](https://istok.sh/docs/en/getting-started/quick-start)
+* [How Istok works](https://istok.sh/docs/en/how-istok-works/projects)
+* [CLI reference](https://istok.sh/docs/en/reference/cli-overview)
+* [MCP reference](https://istok.sh/docs/en/reference/mcp)
+* [Troubleshooting](https://istok.sh/docs/en/help/troubleshooting)
+
+Releases are published on [GitHub Releases](https://github.com/vtimame/istok.sh/releases).
