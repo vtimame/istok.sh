@@ -24,8 +24,8 @@ import (
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 )
 
-const RepositoryOwner = "istok"
-const RepositoryName = "cli"
+const UpdateNamespace = "istok"
+const UpdateProduct = "cli"
 const MaxAssetSize = 256 << 20
 
 type Update struct {
@@ -118,7 +118,7 @@ func (s *Service) Check(ctx context.Context, current string) (*Update, bool, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	release, found, err := up.DetectLatest(ctx, selfupdate.NewRepositorySlug(RepositoryOwner, RepositoryName))
+	release, found, err := up.DetectLatest(ctx, selfupdate.NewRepositorySlug(UpdateNamespace, UpdateProduct))
 	if err != nil {
 		return nil, false, fmt.Errorf("check latest release: %w", err)
 	}
