@@ -86,7 +86,7 @@ func TestContextCLIShowAllRecordsWithoutID(t *testing.T) {
 
 	first := executeAt(
 		t, root, database,
-		"context", "add", "Project\ndecision", "--kind", "decision", "--body", "# First body\n\n- one",
+		"context", "add", "Project\ndecision", "--kind", "decision", "--body", "# First body\n\n```go\nfmt.Println(\"one\")\n```\n\n- one",
 		"--tag", "security", "--tag", "api", "--json",
 	)
 	if first.err != nil {
@@ -118,21 +118,24 @@ func TestContextCLIShowAllRecordsWithoutID(t *testing.T) {
 	if !strings.Contains(output, "## Runbook") {
 		t.Fatalf("context show output = %q", output)
 	}
-	if !strings.Contains(output, "# First body\n\n- one") {
+	if !strings.Contains(output, "# First body") || !strings.Contains(output, "fmt.Println(\"one\")") || !strings.Contains(output, "• one") {
 		t.Fatalf("context show output = %q", output)
+	}
+	if strings.Contains(output, "```go") {
+		t.Fatalf("context show output should render fenced code blocks: %q", output)
 	}
 	if !strings.Contains(output, "Second body") {
 		t.Fatalf("context show output = %q", output)
 	}
-	if !strings.Contains(output, "- **Record ID:** `"+firstView.Record.ID+"`") ||
-		!strings.Contains(output, "- **Record ID:** `"+secondView.Record.ID+"`") {
+	if !strings.Contains(output, "**Record ID:** "+firstView.Record.ID) ||
+		!strings.Contains(output, "**Record ID:** "+secondView.Record.ID) {
 		t.Fatalf("context show output = %q", output)
 	}
 	if !strings.Contains(output, "## Project decision") || !strings.Contains(output, "---") {
 		t.Fatalf("context show separator/output = %q", output)
 	}
 	if strings.Contains(output, "\x1b[") {
-		t.Fatalf("context show output should be plain markdown without ANSI: %q", output)
+		t.Fatalf("context show output should be rendered markdown without ANSI: %q", output)
 	}
 
 	showJSON := executeAt(t, root, database, "context", "show", "--json")
@@ -218,7 +221,7 @@ func TestContextCLIInstructionPolicyLifecycle(t *testing.T) {
 	if markdown.err != nil {
 		t.Fatal(markdown.err)
 	}
-	if !strings.Contains(markdown.output, "- **Enabled:** `false`") || !strings.Contains(markdown.output, "- **Priority:** `critical`") || !strings.Contains(markdown.output, "- **Scope:** `project`") {
+	if !strings.Contains(markdown.output, "**Enabled:** false") || !strings.Contains(markdown.output, "**Priority:** critical") || !strings.Contains(markdown.output, "**Scope:** project") {
 		t.Fatalf("instruction markdown = %q", markdown.output)
 	}
 

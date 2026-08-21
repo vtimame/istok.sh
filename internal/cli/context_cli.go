@@ -14,6 +14,7 @@ import (
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
 	"github.com/vtimame/istok.sh/internal/project"
 )
@@ -283,7 +284,9 @@ func runContextApp(ctx context.Context, database string, jsonOutput bool, output
 		return errors.Join(err, stopErr)
 	}
 
-	_, err = fmt.Fprint(output, renderContextValue(value))
+	terminal := presentation.OutputIsTerminal(output)
+
+	_, err = fmt.Fprint(output, presentation.ForOutput(output, renderContextValue(value, terminal)))
 	return errors.Join(err, stopErr)
 }
 

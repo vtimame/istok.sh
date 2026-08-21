@@ -7,7 +7,16 @@ const allowedRowLength = 100
 
 // RenderTable renders headers and rows using the CLI's stable borderless table style.
 func RenderTable(headers []string, rows [][]string) string {
-	writer := newWriter()
+	return renderTable(headers, rows, allowedRowLength)
+}
+
+// RenderUnboundedTable renders a table without row truncation.
+func RenderUnboundedTable(headers []string, rows [][]string) string {
+	return renderTable(headers, rows, 0)
+}
+
+func renderTable(headers []string, rows [][]string, rowLength int) string {
+	writer := newWriter(rowLength)
 	styledHeaders := make([]string, len(headers))
 	for i, header := range headers {
 		styledHeaders[i] = Header(header)
@@ -21,18 +30,18 @@ func RenderTable(headers []string, rows [][]string) string {
 
 // RenderRows renders rows without a header using the CLI's stable borderless table style.
 func RenderRows(rows [][]string) string {
-	writer := newWriter()
+	writer := newWriter(allowedRowLength)
 	writer.AppendRows(stringsToRows(rows))
 
 	return writer.Render()
 }
 
-func newWriter() table.Writer {
+func newWriter(rowLength int) table.Writer {
 	writer := table.NewWriter()
 	style := table.StyleLight
 	style.Options = table.OptionsNoBordersAndSeparators
 	writer.SetStyle(style)
-	writer.SetAllowedRowLength(allowedRowLength)
+	writer.SetAllowedRowLength(rowLength)
 
 	return writer
 }

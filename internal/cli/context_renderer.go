@@ -4,14 +4,18 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/glamour/v2"
+
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
 )
 
-func renderContextValue(value any) string {
+const contextMarkdownWrapWidth = 100
+
+func renderContextValue(value any, terminal bool) string {
 	switch typed := value.(type) {
 	case contextMarkdownView:
-		return renderContextMarkdown(typed)
+		return renderContextMarkdown(typed, terminal)
 	case contextView:
 		return renderContextShow(typed)
 	case contextListView:
@@ -21,7 +25,30 @@ func renderContextValue(value any) string {
 	}
 }
 
-func renderContextMarkdown(value contextMarkdownView) string {
+func renderContextMarkdown(value contextMarkdownView, terminal bool) string {
+	source := renderContextMarkdownSource(value)
+	style := "notty"
+	if terminal {
+		style = "dark"
+	}
+
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStylePath(style),
+		glamour.WithWordWrap(contextMarkdownWrapWidth),
+	)
+	if err != nil {
+		return source
+	}
+
+	rendered, err := renderer.Render(source)
+	if err != nil {
+		return source
+	}
+
+	return rendered
+}
+
+func renderContextMarkdownSource(value contextMarkdownView) string {
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("# Project context: %s\n\n", value.Project.Name))
 	output.WriteString(fmt.Sprintf("%d context record%s.\n\n", len(value.Records), pluralizeCount(len(value.Records))))
@@ -105,7 +132,7 @@ func renderContextList(value contextListView) string {
 		})
 	}
 
-	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderTable([]string{"ID", "KIND", "STATE", "POLICY", "REVISION", "TITLE", "TAGS"}, rows))
+	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderUnboundedTable([]string{"ID", "KIND", "STATE", "POLICY", "REVISION", "TITLE", "TAGS"}, rows))
 }
 
 func renderContextShow(value contextView) string {
