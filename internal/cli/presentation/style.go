@@ -59,6 +59,14 @@ func PrimaryTitle(value string) string {
 	return primaryTitleStyle.Render(value)
 }
 
+func Strong(value string) string {
+	return primaryTitleStyle.Render(value)
+}
+
+func InlineCode(value string) string {
+	return dangerStyle.Background(lipgloss.Color("#2A2D34")).Render(" " + value + " ")
+}
+
 func Brand(value string) string {
 	return brandStyle.Render(value)
 }

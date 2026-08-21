@@ -149,8 +149,11 @@ func TestTaskShowRendererOutputsAllSectionsWithSortedRelationsAndEvents(t *testi
 	if !strings.Contains(plain, "Alice") {
 		t.Fatalf("missing actor formatting: %q", plain)
 	}
-	if !strings.Contains(plain, earlier.UTC().Format("2006-01-02 10:00Z")) {
+	if !strings.Contains(plain, formatHistoryTimestamp(earlier)) {
 		t.Fatalf("missing event timestamp: %q", plain)
+	}
+	if !strings.Contains(plain, "\n\n  │ "+formatHistoryTimestamp(earlier)) {
+		t.Fatalf("event rows are not separated by a blank line: %q", plain)
 	}
 	progressIndex := strings.Index(plain, "progress")
 	commentIndex := strings.Index(plain, "commented")
@@ -196,6 +199,57 @@ func TestTaskShowRendererUsesDashForMissingOptionalAndRelationValues(t *testing.
 
 	if strings.Count(plain, "—") == 0 {
 		t.Fatalf("missing em dash for optional values: %q", plain)
+	}
+}
+
+func TestTaskShowHistoryWrapsLongEventBodiesWithoutTruncation(t *testing.T) {
+	body := "first segment " + strings.Repeat("middle segment ", 12) + "final tail marker"
+	got := humanTaskRenderer{}.RenderTaskShow(task.Show{
+		Task: task.Task{Number: 7, Revision: 2, Status: task.StatusOpen, Title: "history"},
+		Events: []task.Event{{
+			CreatedAt:    time.Date(2024, 1, 2, 3, 4, 0, 0, time.UTC),
+			Type:         "commented",
+			Actor:        task.ActorSnapshot{ID: "1", Kind: "cli", Name: "Alice"},
+			TaskRevision: 2,
+			Body:         body,
+		}},
+	})
+	plain := stripANSI(got)
+
+	mustContain(t, plain, "commented")
+	mustContain(t, plain, "first segment")
+	mustContain(t, plain, "final tail marker")
+	if strings.Contains(plain, "≈") {
+		t.Fatalf("history body was truncated: %q", plain)
+	}
+}
+
+func TestTaskShowRendererRendersMarkdownTextSections(t *testing.T) {
+	got := humanTaskRenderer{}.RenderTaskShow(task.Show{
+		Task: task.Task{
+			Number:             8,
+			Revision:           1,
+			Status:             task.StatusOpen,
+			Title:              "markdown",
+			Description:        "Use `create_new_client` with **validated** payloads.",
+			AcceptanceCriteria: "- keeps `keyid`\n- returns success",
+		},
+		Events: []task.Event{{
+			CreatedAt:    time.Date(2024, 1, 2, 3, 4, 0, 0, time.UTC),
+			Type:         "progress",
+			Actor:        task.ActorSnapshot{ID: "1", Kind: "cli", Name: "Alice"},
+			TaskRevision: 1,
+			Body:         "Checked `PartnerRepo` and **Radius** writes.",
+		}},
+	})
+	plain := stripANSI(got)
+
+	mustContain(t, plain, "create_new_client")
+	mustContain(t, plain, "validated")
+	mustContain(t, plain, "PartnerRepo")
+	mustContain(t, plain, "Radius")
+	if strings.Contains(plain, "`create_new_client`") || strings.Contains(plain, "**Radius**") {
+		t.Fatalf("task markdown text was not rendered: %q", plain)
 	}
 }
 

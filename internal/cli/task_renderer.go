@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	prettytext "github.com/jedib0t/go-pretty/v6/text"
 
@@ -182,11 +184,72 @@ func renderTaskShow(projectName string, value task.Show) string {
 func writeTextSection(output *strings.Builder, heading, value string) {
 	output.WriteString(presentation.SectionTitle(heading))
 	output.WriteString("\n")
-	for _, line := range wrapText(showText(value), 88) {
+	for _, line := range renderTaskRichLines(value, 88) {
 		output.WriteString(presentation.RailLine(line))
 		output.WriteString("\n")
 	}
 	output.WriteString("\n")
+}
+
+func renderTaskRichLines(value string, width int) []string {
+	if strings.TrimSpace(value) == "" {
+		return []string{"—"}
+	}
+
+	lines := wrapText(value, width)
+	for index, line := range lines {
+		lines[index] = renderTaskRichLine(line)
+	}
+
+	return lines
+}
+
+func renderTaskRichLine(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	prefix := line[:len(line)-len(trimmed)]
+
+	switch {
+	case strings.HasPrefix(trimmed, "### "):
+		return prefix + presentation.SectionTitle(strings.TrimSpace(strings.TrimPrefix(trimmed, "### ")))
+	case strings.HasPrefix(trimmed, "## "):
+		return prefix + presentation.SectionTitle(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")))
+	case strings.HasPrefix(trimmed, "# "):
+		return prefix + presentation.SectionTitle(strings.TrimSpace(strings.TrimPrefix(trimmed, "# ")))
+	case strings.HasPrefix(trimmed, "- "):
+		return prefix + presentation.Neutral("•") + " " + renderTaskInlineMarkdown(strings.TrimPrefix(trimmed, "- "))
+	case strings.HasPrefix(trimmed, "* "):
+		return prefix + presentation.Neutral("•") + " " + renderTaskInlineMarkdown(strings.TrimPrefix(trimmed, "* "))
+	default:
+		return prefix + renderTaskInlineMarkdown(trimmed)
+	}
+}
+
+func renderTaskInlineMarkdown(value string) string {
+	var output strings.Builder
+	for len(value) > 0 {
+		switch {
+		case strings.HasPrefix(value, "`"):
+			end := strings.Index(value[1:], "`")
+			if end >= 0 {
+				output.WriteString(presentation.InlineCode(value[1 : end+1]))
+				value = value[end+2:]
+				continue
+			}
+		case strings.HasPrefix(value, "**"):
+			end := strings.Index(value[2:], "**")
+			if end >= 0 {
+				output.WriteString(presentation.Strong(value[2 : end+2]))
+				value = value[end+4:]
+				continue
+			}
+		}
+
+		r, size := utf8.DecodeRuneInString(value)
+		output.WriteRune(r)
+		value = value[size:]
+	}
+
+	return output.String()
 }
 
 func wrapText(value string, width int) []string {
@@ -235,24 +298,34 @@ func writeHistory(output *strings.Builder, events []task.Event) {
 		}
 	}
 
-	rows := make([][]string, 0, len(events))
-	for _, event := range events {
+	for index, event := range events {
+		if index > 0 {
+			output.WriteString("\n")
+		}
+
 		row := []string{
-			event.CreatedAt.UTC().Format("2006-01-02 15:04Z"),
+			formatHistoryTimestamp(event.CreatedAt),
 			presentation.Metadata(event.Type),
 			formatActor(event.Actor),
 			presentation.Metadata(fmt.Sprintf("r%d", event.TaskRevision)),
 		}
-		if hasDetails {
-			row = append(row, showText(event.Body))
-		}
-		rows = append(rows, row)
-	}
 
-	for _, line := range strings.Split(strings.TrimSuffix(presentation.RenderRows(rows), "\n"), "\n") {
-		output.WriteString(presentation.RailLine(strings.TrimSpace(line)))
-		output.WriteString("\n")
+		for _, line := range strings.Split(strings.TrimSuffix(presentation.RenderRows([][]string{row}), "\n"), "\n") {
+			output.WriteString(presentation.RailLine(strings.TrimSpace(line)))
+			output.WriteString("\n")
+		}
+
+		if hasDetails {
+			for _, line := range renderTaskRichLines(event.Body, 86) {
+				output.WriteString(presentation.RailLine("  " + line))
+				output.WriteString("\n")
+			}
+		}
 	}
+}
+
+func formatHistoryTimestamp(value time.Time) string {
+	return value.UTC().Format("2 Jan 2006, 15:04 UTC")
 }
 
 func renderEffectiveState(state task.EffectiveState) string {
