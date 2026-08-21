@@ -1,11 +1,9 @@
 GOEXE := $(shell go env GOEXE)
-GOBIN := $(shell go env GOBIN)
-GOPATH := $(shell go env GOPATH)
 
 COMMAND := istok$(GOEXE)
 BINARY ?= $(COMMAND)
 BUILD_OUTPUT ?= bin/$(BINARY)
-INSTALL_DIR ?= $(if $(GOBIN),$(GOBIN),$(GOPATH)/bin)
+INSTALL_DIR ?= $(HOME)/.local/bin
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || printf dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf none)
@@ -17,9 +15,6 @@ REPORT_DIR ?= tmp/index-acceptance
 ISTOK_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
 ISTOK_DIRTY ?= $(shell if test -n "$$(git status --porcelain 2>/dev/null)"; then printf true; else printf false; fi)
 ISTOK_HARDENING_FILES ?= 2500
-
-INSTALL_DIR ?= $(HOME)/.local/bin
-COMMAND ?= istok
 
 HARDENING_COMPOSE := docker compose -f compose.hardening.yml --profile hardening
 
