@@ -279,7 +279,7 @@ func (r *Repository) Events(ctx context.Context, id string) ([]contextmodel.Cont
 		return nil, err
 	}
 
-	rows, err := r.db.QueryContext(ctx, `SELECT id,record_id,type,body,record_revision,actor_id,actor_kind,actor_name,created_at FROM context_events WHERE record_id=? ORDER BY created_at,id`, id)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,record_id,type,body,record_revision,actor_id,actor_kind,actor_name,created_at FROM context_events WHERE record_id=? ORDER BY created_at,rowid`, id)
 	if err != nil {
 		return nil, fmt.Errorf("list context events: %w", err)
 	}

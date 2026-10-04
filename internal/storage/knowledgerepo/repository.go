@@ -372,7 +372,7 @@ func (r *Repository) Events(ctx context.Context, itemID string) ([]knowledge.Eve
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id,item_id,type,body,item_revision,actor_id,actor_kind,actor_name,created_at
-		FROM knowledge_events WHERE item_id=? ORDER BY created_at,id`, itemID)
+		FROM knowledge_events WHERE item_id=? ORDER BY created_at,rowid`, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("list knowledge events: %w", err)
 	}

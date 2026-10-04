@@ -19,7 +19,7 @@ func (r *Repository) Events(ctx context.Context, id string) ([]task.Event, error
 		return nil, err
 	}
 
-	rows, err := r.db.QueryContext(ctx, `SELECT id,task_id,type,body,task_revision,actor_id,actor_kind,actor_name,created_at FROM task_events WHERE task_id=? ORDER BY created_at,id`, id)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,task_id,type,body,task_revision,actor_id,actor_kind,actor_name,created_at FROM task_events WHERE task_id=? ORDER BY created_at,rowid`, id)
 	if err != nil {
 		return nil, fmt.Errorf("list task events: %w", err)
 	}
