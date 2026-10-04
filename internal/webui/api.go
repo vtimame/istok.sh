@@ -3,9 +3,9 @@ package webui
 import (
 	"context"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
@@ -14,6 +14,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
@@ -22,15 +23,15 @@ const (
 	knowledgeLimit  = 200
 )
 
-// ActivityReader reports the latest task update per project.
-type ActivityReader interface {
-	LastActivity(ctx context.Context) (map[string]time.Time, error)
+// StatsReader summarizes tasks and runs per project.
+type StatsReader interface {
+	ProjectStats(ctx context.Context) (map[string]taskrepo.ProjectStats, error)
 }
 
 // Services are the application services the read-only API reads from.
 type Services struct {
 	Build     buildinfo.Info
-	Activity  ActivityReader
+	Stats     StatsReader
 	Projects  *project.Service
 	Tasks     *taskapp.Service
 	Runs      *runapp.Service
@@ -55,17 +56,21 @@ func (a api) register(mux *http.ServeMux) {
 }
 
 func (a api) health(w http.ResponseWriter, _ *http.Request) {
+	// The home directory lets the UI shorten project paths to ~/...
+	home, _ := os.UserHomeDir()
+
 	writeResult(w, map[string]string{
 		"version": a.services.Build.Version,
 		"commit":  a.services.Build.Commit,
+		"home":    home,
 	})
 }
 
-// projectView adds the latest task activity, which project.updated_at does
-// not track: that field changes only on rename, rebind and delete.
+// projectView adds task counts and the latest activity, which
+// project.updated_at does not track: it changes only on rename, rebind and delete.
 type projectView struct {
 	project.Project
-	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	Stats taskrepo.ProjectStats `json:"stats"`
 }
 
 func (a api) projects(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +80,7 @@ func (a api) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := a.services.Activity.LastActivity(r.Context())
+	stats, err := a.services.Stats.ProjectStats(r.Context())
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -83,11 +88,7 @@ func (a api) projects(w http.ResponseWriter, r *http.Request) {
 
 	views := make([]projectView, 0, len(projects))
 	for _, value := range projects {
-		view := projectView{Project: value}
-		if at, ok := activity[value.ID]; ok {
-			view.LastActivityAt = &at
-		}
-		views = append(views, view)
+		views = append(views, projectView{Project: value, Stats: stats[value.ID]})
 	}
 
 	writeResult(w, views)

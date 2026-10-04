@@ -4,7 +4,12 @@ import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { useKnowledge, useProject } from "@/hooks/queries"
 import { formatRelative } from "@/lib/format"
 import { list } from "@/lib/types"
@@ -19,7 +24,10 @@ export function KnowledgePage() {
       <PageHeader
         crumbs={[
           { label: "Projects", to: "/" },
-          { label: project.data?.name ?? "Project", to: `/projects/${projectId}` },
+          {
+            label: project.data?.name ?? "Project",
+            to: `/projects/${projectId}`,
+          },
           { label: "Knowledge" },
         ]}
         title="Knowledge"
@@ -28,7 +36,8 @@ export function KnowledgePage() {
       <QueryState isPending={knowledge.isPending} error={knowledge.error}>
         {knowledge.data?.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No knowledge yet. Agents add drafts with <code>knowledge_distill</code>.
+            No knowledge yet. Agents add drafts with{" "}
+            <code>knowledge_distill</code>.
           </p>
         )}
 
@@ -46,10 +55,14 @@ export function KnowledgePage() {
                     </Badge>
                   ))}
                 </div>
-                <CardDescription>{item.summary || item.snippet}</CardDescription>
+                <CardDescription>
+                  {item.summary || item.snippet}
+                </CardDescription>
                 <CardDescription className="text-xs">
                   Updated {formatRelative(item.updated_at)}
-                  {item.reviewed_at ? ` · reviewed ${formatRelative(item.reviewed_at)}` : " · not reviewed"}
+                  {item.reviewed_at
+                    ? ` · reviewed ${formatRelative(item.reviewed_at)}`
+                    : " · not reviewed"}
                 </CardDescription>
               </CardHeader>
             </Card>

@@ -14,7 +14,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchInterval: 5000,
-      retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 2,
+      retry: (count, error) =>
+        !(error instanceof ApiError && error.status < 500) && count < 2,
     },
   },
 })

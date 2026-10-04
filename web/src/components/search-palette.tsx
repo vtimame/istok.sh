@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { BookOpen, FolderGit2, ListTodo, Search } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 
+import { InlineCode } from "@/components/markdown"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,8 +14,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { useKnowledgeSearch, useProjects, useTasks } from "@/hooks/queries"
+import {
+  useHealth,
+  useKnowledgeSearch,
+  useProjects,
+  useTasks,
+} from "@/hooks/queries"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
+import { shortenPath } from "@/lib/format"
 import { list } from "@/lib/types"
 
 // SearchPalette is the global Ctrl/⌘+K search over projects, the current
@@ -27,6 +34,7 @@ export function SearchPalette() {
   const debouncedQuery = useDebouncedValue(query.trim(), 250)
 
   const projects = useProjects()
+  const health = useHealth()
   const tasks = useTasks(projectId)
   const knowledge = useKnowledgeSearch(projectId, debouncedQuery)
 
@@ -52,7 +60,12 @@ export function SearchPalette() {
 
   return (
     <>
-      <Button variant="outline" size="sm" className="w-56 justify-between text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-56 justify-between text-muted-foreground"
+        onClick={() => setOpen(true)}
+      >
         <span className="flex items-center gap-2">
           <Search />
           Search…
@@ -60,10 +73,20 @@ export function SearchPalette() {
         <kbd className="font-mono text-xs">{isMac ? "⌘K" : "Ctrl K"}</kbd>
       </Button>
 
-      <CommandDialog open={open} onOpenChange={setOpen} title="Search" description="Search projects, tasks and knowledge">
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Search"
+        description="Search projects, tasks and knowledge"
+        className="sm:max-w-2xl"
+      >
         <Command>
           <CommandInput
-            placeholder={projectId ? "Search tasks, knowledge, projects…" : "Search projects…"}
+            placeholder={
+              projectId
+                ? "Search tasks, knowledge, projects…"
+                : "Search projects…"
+            }
             value={query}
             onValueChange={setQuery}
           />
@@ -76,11 +99,17 @@ export function SearchPalette() {
                   <CommandItem
                     key={task.id}
                     value={`#${task.number} ${task.title}`}
-                    onSelect={() => go(`/projects/${projectId}/tasks/${task.number}`)}
+                    onSelect={() =>
+                      go(`/projects/${projectId}/tasks/${task.number}`)
+                    }
                   >
                     <ListTodo />
-                    <span className="font-mono text-muted-foreground">#{task.number}</span>
-                    <span className="truncate">{task.title}</span>
+                    <span className="font-mono text-muted-foreground">
+                      #{task.number}
+                    </span>
+                    <span className="truncate">
+                      <InlineCode text={task.title} />
+                    </span>
                     <span className="ml-auto">
                       <StatusBadge status={task.status} />
                     </span>
@@ -107,11 +136,20 @@ export function SearchPalette() {
 
             <CommandGroup heading="Projects">
               {list(projects.data ?? null).map((project) => (
-                <CommandItem key={project.id} value={`project ${project.name}`} onSelect={() => go(`/projects/${project.id}`)}>
+                <CommandItem
+                  key={project.id}
+                  value={`project ${project.name}`}
+                  onSelect={() => go(`/projects/${project.id}`)}
+                >
                   <FolderGit2 />
                   <span>{project.name}</span>
                   <span className="ml-auto truncate font-mono text-xs text-muted-foreground">
-                    {project.root?.canonical_path}
+                    {project.root
+                      ? shortenPath(
+                          project.root.canonical_path,
+                          health.data?.home
+                        )
+                      : ""}
                   </span>
                 </CommandItem>
               ))}
