@@ -6,7 +6,7 @@ import "net/http"
 // binding a socket, so external tests can drive it with httptest.
 func NewTestHandler(port string, services Services) http.Handler {
 	mux := http.NewServeMux()
-	api{services: services}.register(mux)
+	api{services: services, broker: newChangeBroker(services.ReadModel)}.register(mux)
 	mux.Handle("/", assetsHandler())
 
 	return guard(port, mux)

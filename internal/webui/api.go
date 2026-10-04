@@ -28,6 +28,7 @@ const (
 type ReadModel interface {
 	ProjectStats(ctx context.Context) (map[string]uireadrepo.ProjectStats, error)
 	RunFeed(ctx context.Context, options uireadrepo.FeedOptions) ([]uireadrepo.FeedItem, error)
+	NewChangeWatcher(ctx context.Context) (*uireadrepo.ChangeWatcher, error)
 }
 
 // Services are the application services the read-only API reads from.
@@ -42,6 +43,7 @@ type Services struct {
 
 type api struct {
 	services Services
+	broker   *broker
 }
 
 func (a api) register(mux *http.ServeMux) {
@@ -53,6 +55,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge) // ?q= switches to full-text search
 	mux.HandleFunc("GET /api/v1/runs", a.feed)                              // ?project=...&status=...&lease=&limit=&offset=
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
+	mux.HandleFunc("GET /api/v1/events", a.events)
 	a.registerMutations(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")

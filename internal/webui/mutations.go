@@ -80,6 +80,7 @@ func (a api) abandonRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.broker.publish()
 	writeResult(w, abandoned)
 }
 
@@ -104,5 +105,6 @@ func (a api) deleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.broker.publish()
 	writeResult(w, deleted)
 }
