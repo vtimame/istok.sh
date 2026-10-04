@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -53,10 +52,11 @@ func New(config Config, lc fx.Lifecycle) (*sql.DB, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
+	defaultPath := filepath.Clean(path) == filepath.Clean(DefaultPath())
 
 	if path != ":memory:" {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return nil, fmt.Errorf("create database directory: %w", err)
+		if err := prepareDatabasePath(path, defaultPath); err != nil {
+			return nil, fmt.Errorf("prepare SQLite database path: %w", err)
 		}
 	}
 
