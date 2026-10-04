@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { ArrowUpRight } from "lucide-react"
 import { Link, useParams } from "react-router"
 
 import { AbandonRunDialog } from "@/components/abandon-run-dialog"
@@ -12,6 +13,7 @@ import { useProject, useRuns, useTask } from "@/hooks/queries"
 import { useNow } from "@/hooks/use-now"
 import { formatDateTime, formatDuration, formatRelative } from "@/lib/format"
 import { isRunStale, runDurationMs } from "@/lib/runs"
+import { parseEventBody } from "@/lib/task-events"
 import { list } from "@/lib/types"
 import type { Run, TaskEvent, TaskSummary } from "@/lib/types"
 
@@ -124,6 +126,8 @@ function RunCard({ run }: { run: Run }) {
 }
 
 function EventItem({ event }: { event: TaskEvent }) {
+  const parsed = parseEventBody(event.type, event.body)
+
   return (
     <li className="relative flex flex-col gap-1 pb-5 pl-5 last:pb-0">
       <span className="absolute top-1.5 left-0 size-2 rounded-full bg-border ring-4 ring-card" />
@@ -135,9 +139,18 @@ function EventItem({ event }: { event: TaskEvent }) {
         <span title={formatDateTime(event.created_at)}>
           {formatRelative(event.created_at)}
         </span>
+        {parsed.runId && (
+          <Link
+            to={`/runs/${parsed.runId}`}
+            className="inline-flex items-center gap-0.5 text-foreground underline-offset-4 hover:underline"
+          >
+            View run
+            <ArrowUpRight className="size-3" />
+          </Link>
+        )}
       </div>
-      {event.body && (
-        <Markdown className="text-[0.8125rem]">{event.body}</Markdown>
+      {parsed.text && (
+        <Markdown className="text-[0.8125rem]">{parsed.text}</Markdown>
       )}
     </li>
   )
