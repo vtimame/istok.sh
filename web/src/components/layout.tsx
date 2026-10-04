@@ -1,8 +1,10 @@
 import { Link, Outlet, useLocation } from "react-router"
 
+import { LiveIndicator } from "@/components/live-indicator"
 import { Logo } from "@/components/logo"
 import { SearchPalette } from "@/components/search-palette"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { useLiveUpdates } from "@/hooks/use-live-updates"
 import { cn } from "@/lib/utils"
 
 type NavItem = {
@@ -29,6 +31,7 @@ const navItems: NavItem[] = [
 
 export function Layout() {
   const { pathname } = useLocation()
+  useLiveUpdates()
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -60,6 +63,7 @@ export function Layout() {
           </div>
           <div className="flex items-center gap-2">
             <SearchPalette />
+            <LiveIndicator />
             <ThemeToggle />
           </div>
         </div>

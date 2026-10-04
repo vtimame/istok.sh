@@ -8,13 +8,15 @@ import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ApiError } from "@/lib/api"
+import { pollInterval } from "@/lib/live"
 import { router } from "@/router"
 
-// Agents change state while the page is open, so data is polled.
+// Server events trigger refetches (useLiveUpdates); polling is the fallback,
+// slow while the event stream is live and fast while it is down.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchInterval: 5000,
+      refetchInterval: pollInterval,
       retry: (count, error) =>
         !(error instanceof ApiError && error.status < 500) && count < 2,
     },

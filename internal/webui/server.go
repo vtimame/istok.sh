@@ -16,6 +16,7 @@ const shutdownTimeout = 5 * time.Second
 type Server struct {
 	listener net.Listener
 	server   *http.Server
+	broker   *broker
 }
 
 // Listen binds the UI to 127.0.0.1; port 0 lets the OS pick a free port.
@@ -25,8 +26,9 @@ func Listen(port int, services Services) (*Server, error) {
 		return nil, fmt.Errorf("listen on 127.0.0.1:%d (choose another with --port): %w", port, err)
 	}
 
+	changes := newChangeBroker(services.ReadModel)
 	mux := http.NewServeMux()
-	api{services: services}.register(mux)
+	api{services: services, broker: changes}.register(mux)
 	mux.Handle("/", assetsHandler())
 
 	actualPort := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
@@ -35,7 +37,7 @@ func Listen(port int, services Services) (*Server, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	return &Server{listener: listener, server: server}, nil
+	return &Server{listener: listener, server: server, broker: changes}, nil
 }
 
 // URL returns the address to open in a browser.
@@ -47,6 +49,7 @@ func (s *Server) URL() string {
 func (s *Server) Serve(ctx context.Context) error {
 	served := make(chan error, 1)
 	go func() { served <- s.server.Serve(s.listener) }()
+	go s.broker.run(ctx)
 
 	select {
 	case err := <-served:
