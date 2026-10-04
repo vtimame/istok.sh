@@ -102,3 +102,40 @@ func writeFileAtomic(path string, content []byte) error {
 
 	return nil
 }
+
+// RestartIfActive restarts the service after istok replaced its binary, so
+// the UI does not keep running the old process. It only acts when the unit is
+// installed, runs this exact executable and is active; anything else is not
+// an error. It reports whether it restarted the service.
+func RestartIfActive(ctx context.Context, executable string) (bool, error) {
+	if ensureSupported() != nil {
+		return false, nil
+	}
+
+	content, err := os.ReadFile(UnitPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read unit: %w", err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		resolved = executable
+	}
+	if !bytes.Contains(content, []byte("ExecStart="+quoteArgument(resolved)+" ")) {
+		return false, nil
+	}
+
+	// is-active exits non-zero for inactive or failed units; that only means
+	// there is nothing to restart.
+	if err := systemctl(ctx, "is-active", "--quiet", UnitName); err != nil {
+		return false, nil
+	}
+	if err := systemctl(ctx, "restart", UnitName); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}

@@ -30,6 +30,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
+	"github.com/vtimame/istok.sh/internal/uiservice"
 	"github.com/vtimame/istok.sh/internal/updater"
 	"github.com/vtimame/istok.sh/internal/webui"
 )
@@ -52,7 +53,13 @@ func UpdateApp(ctx context.Context, command updateapp.Command, input io.Reader, 
 		fx.Supply(buildinfo.Current()),
 		fx.Provide(func(info buildinfo.Info) (*updater.Service, error) { return updater.New(info) }),
 		fx.Invoke(func(info buildinfo.Info, service *updater.Service) {
-			*result = updateapp.Application{Service: service, Version: info.Version, Input: input, Output: output}.Run(ctx, command)
+			*result = updateapp.Application{
+				Service:        service,
+				Version:        info.Version,
+				Input:          input,
+				Output:         output,
+				RestartService: uiservice.RestartIfActive,
+			}.Run(ctx, command)
 		}),
 	)
 }
