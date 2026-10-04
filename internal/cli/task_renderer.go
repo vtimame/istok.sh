@@ -252,6 +252,13 @@ func renderTaskInlineMarkdown(value string) string {
 	return output.String()
 }
 
+// codeSpaceMarker stands in for spaces inside inline code while wrapping, so a
+// `code span` is never split across lines. It is a private-use rune: the
+// wrapper splits words on every Unicode space, including NBSP.
+const codeSpaceMarker = "\ue000"
+
+// wrapText wraps every line at word boundaries. Leading indentation is kept,
+// and continuation lines of list items are indented under the item text.
 func wrapText(value string, width int) []string {
 	var lines []string
 	for _, paragraph := range strings.Split(value, "\n") {
@@ -260,10 +267,34 @@ func wrapText(value string, width int) []string {
 			continue
 		}
 
-		lines = append(lines, strings.Split(prettytext.WrapText(paragraph, width), "\n")...)
+		trimmed := strings.TrimLeft(paragraph, " \t")
+		indent := paragraph[:len(paragraph)-len(trimmed)]
+		hanging := indent
+		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+			hanging += "  "
+		}
+
+		wrapped := prettytext.WrapSoft(protectInlineCode(trimmed), max(width-len(hanging), 20))
+		for index, line := range strings.Split(wrapped, "\n") {
+			line = strings.ReplaceAll(strings.TrimRight(line, " "), codeSpaceMarker, " ")
+			if index == 0 {
+				lines = append(lines, indent+line)
+			} else {
+				lines = append(lines, hanging+line)
+			}
+		}
 	}
 
 	return lines
+}
+
+func protectInlineCode(value string) string {
+	parts := strings.Split(value, "`")
+	for index := 1; index < len(parts)-1; index += 2 {
+		parts[index] = strings.ReplaceAll(parts[index], " ", codeSpaceMarker)
+	}
+
+	return strings.Join(parts, "`")
 }
 
 func writeRelations(output *strings.Builder, label string, values []task.TaskSummary) {
@@ -290,12 +321,9 @@ func writeHistory(output *strings.Builder, events []task.Event) {
 		return
 	}
 
-	hasDetails := false
-	for _, event := range events {
-		if strings.TrimSpace(event.Body) != "" {
-			hasDetails = true
-			break
-		}
+	bodies := make([]historyBody, len(events))
+	for index, event := range events {
+		bodies[index] = parseHistoryBody(event.Type, event.Body)
 	}
 
 	for index, event := range events {
@@ -315,8 +343,14 @@ func writeHistory(output *strings.Builder, events []task.Event) {
 			output.WriteString("\n")
 		}
 
-		if hasDetails {
-			for _, line := range renderTaskRichLines(event.Body, 86) {
+		body := bodies[index]
+		if body.RunID != "" {
+			output.WriteString(presentation.RailLine("  " + presentation.Metadata("run "+body.RunID)))
+			output.WriteString("\n")
+		}
+
+		if strings.TrimSpace(body.Text) != "" {
+			for _, line := range renderTaskRichLines(body.Text, 86) {
 				output.WriteString(presentation.RailLine("  " + line))
 				output.WriteString("\n")
 			}
