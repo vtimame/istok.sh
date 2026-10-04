@@ -1,32 +1,21 @@
 package webui
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 	"net"
 	"net/http"
 	"strings"
 )
 
-// NewToken returns a random per-process access token for the API.
-func NewToken() (string, error) {
-	buffer := make([]byte, 32)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(buffer), nil
-}
-
-// guard rejects requests whose Host is not the loopback listener, which blocks
-// DNS rebinding, and requires the bearer token on every API request.
-func guard(port, token string, next http.Handler) http.Handler {
+// guard protects the loopback-only UI without an access token, so it can run
+// as a long-lived service. It cannot stop other local processes, but it stops
+// browsers: the Host check blocks DNS rebinding, and API requests carrying a
+// foreign Origin are rejected, which also covers cross-site request forgery
+// once the API gains mutations. No CORS headers are sent.
+func guard(port string, next http.Handler) http.Handler {
 	allowedHosts := map[string]bool{
 		net.JoinHostPort("127.0.0.1", port): true,
 		net.JoinHostPort("localhost", port): true,
 	}
-	expected := []byte("Bearer " + token)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedHosts[r.Host] {
@@ -38,14 +27,22 @@ func guard(port, token string, next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			provided := []byte(r.Header.Get("Authorization"))
-			if subtle.ConstantTimeCompare(provided, expected) != 1 {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid access token")
-				return
-			}
+		if strings.HasPrefix(r.URL.Path, "/api/") && !sameOrigin(r.Header.Get("Origin"), allowedHosts) {
+			writeError(w, http.StatusForbidden, "forbidden_origin", "cross-origin API requests are not allowed")
+			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sameOrigin accepts requests without an Origin header, which browsers omit
+// for same-origin GET navigations and fetches, and Origins of the UI itself.
+func sameOrigin(origin string, allowedHosts map[string]bool) bool {
+	if origin == "" {
+		return true
+	}
+
+	host, found := strings.CutPrefix(origin, "http://")
+	return found && allowedHosts[host]
 }

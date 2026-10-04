@@ -52,8 +52,10 @@ type UpdateCommand struct {
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 }
 
+// UICommand defaults to a fixed port so the address stays stable when the UI
+// runs as a long-lived service.
 type UICommand struct {
-	Port     int    `name:"port" default:"0" help:"Loopback port; 0 picks a free port."`
+	Port     int    `name:"port" default:"7700" help:"Loopback port; 0 picks a free port." env:"ISTOK_UI_PORT"`
 	NoOpen   bool   `name:"no-open" help:"Print the URL without opening a browser."`
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 }
