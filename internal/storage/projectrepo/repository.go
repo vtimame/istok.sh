@@ -19,13 +19,10 @@ func New(db *sql.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) Init(ctx context.Context, value project.Project, root project.Root) (result project.InitResult, err error) {
 	projectValue, err := r.write(ctx, func(conn *sql.Conn) (project.Project, error) {
-		if current, found, err := currentAt(ctx, conn, root.PathKey); err != nil {
+		if current, found, err := activeAtExactRoot(ctx, conn, root.PathKey); err != nil {
 			return project.Project{}, err
 		} else if found {
 			return current, nil
-		}
-		if err := rejectOverlap(ctx, conn, root.PathKey, ""); err != nil {
-			return project.Project{}, err
 		}
 		if _, err := conn.ExecContext(ctx, `INSERT INTO projects(id,name,revision,created_at,updated_at) VALUES(?,?,?,?,?)`, value.ID, value.Name, 1, stamp(value.CreatedAt), stamp(value.UpdatedAt)); err != nil {
 			return project.Project{}, mapSQLError(err)
@@ -137,9 +134,6 @@ func (r *Repository) Rebind(ctx context.Context, id string, root project.Root, e
 		if err = cas(p, expected); err != nil {
 			return project.Project{}, err
 		}
-		if err = rejectOverlap(ctx, c, root.PathKey, id); err != nil {
-			return project.Project{}, err
-		}
 		now := time.Now().UTC()
 		if _, err = c.ExecContext(ctx, `UPDATE project_roots SET detached_at=? WHERE project_id=? AND detached_at IS NULL`, stamp(now), id); err != nil {
 			return project.Project{}, err
@@ -211,9 +205,6 @@ func (r *Repository) Restore(ctx context.Context, id string, requested *project.
 			}
 
 		}
-		if err = rejectOverlap(ctx, c, root.PathKey, id); err != nil {
-			return project.Project{}, err
-		}
 		now := time.Now().UTC()
 		if requested == nil {
 			if _, err = c.ExecContext(ctx, `UPDATE project_roots SET detached_at=NULL,active_at=?,canonical_path=?,path_key=? WHERE project_id=? AND id=(SELECT id FROM project_roots WHERE project_id=? ORDER BY id DESC LIMIT 1)`, stamp(now), root.CanonicalPath, root.PathKey, id, id); err != nil {
@@ -255,8 +246,8 @@ func (r *Repository) write(ctx context.Context, fn func(*sql.Conn) (project.Proj
 	return value, nil
 }
 
-func currentAt(ctx context.Context, c *sql.Conn, key string) (project.Project, bool, error) {
-	rows, err := c.QueryContext(ctx, projectQuery+` WHERE p.deleted_at IS NULL AND pr.detached_at IS NULL`)
+func activeAtExactRoot(ctx context.Context, c *sql.Conn, key string) (project.Project, bool, error) {
+	rows, err := c.QueryContext(ctx, projectQuery+` WHERE p.deleted_at IS NULL AND pr.path_key=?`, key)
 	if err != nil {
 		return project.Project{}, false, err
 	}
@@ -265,16 +256,11 @@ func currentAt(ctx context.Context, c *sql.Conn, key string) (project.Project, b
 	if err != nil {
 		return project.Project{}, false, err
 	}
-	var selected *project.Project
-	for i := range items {
-		if contains(items[i].Root.PathKey, key) && (selected == nil || len(items[i].Root.PathKey) > len(selected.Root.PathKey)) {
-			selected = &items[i]
-		}
-	}
-	if selected == nil {
+	if len(items) == 0 {
 		return project.Project{}, false, nil
 	}
-	return *selected, true, nil
+
+	return items[0], true, nil
 }
 
 const projectQuery = `SELECT p.id,p.name,p.revision,p.created_at,p.updated_at,p.deleted_at,pr.canonical_path,pr.path_key,pr.active_at,pr.detached_at FROM projects p LEFT JOIN project_roots pr ON pr.project_id=p.id AND pr.detached_at IS NULL`
@@ -293,24 +279,6 @@ func getProject(ctx context.Context, c *sql.Conn, id string) (project.Project, e
 		return project.Project{}, notFound()
 	}
 	return items[0], nil
-}
-
-func rejectOverlap(ctx context.Context, c *sql.Conn, key, except string) error {
-	rows, err := c.QueryContext(ctx, `SELECT project_id,path_key FROM project_roots WHERE detached_at IS NULL`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, existing string
-		if err := rows.Scan(&id, &existing); err != nil {
-			return err
-		}
-		if id != except && (contains(existing, key) || contains(key, existing)) {
-			return projectError(project.CodeConflict, "project root overlaps an active project")
-		}
-	}
-	return rows.Err()
 }
 
 func contains(root, path string) bool {

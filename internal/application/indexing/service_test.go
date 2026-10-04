@@ -75,6 +75,60 @@ func readyToken() string { return "hello-index" }
 	}
 }
 
+func TestNestedProjectsKeepSeparateIndexesWithOverlappingCoverage(t *testing.T) {
+	ctx := context.Background()
+	indexRoot := t.TempDir()
+	service := NewService(Config{IndexRoot: indexRoot})
+	parentRoot := t.TempDir()
+	childRoot := filepath.Join(parentRoot, "packages", "api")
+	writeFile(t, parentRoot, "root.go", "package root\n\nconst rootonlysentinel8f3a6c2b = true\n")
+	writeFile(t, parentRoot, "packages/api/api.go", "package api\n\nfunc nestedPackageToken() {}\n")
+
+	parentCanonical, err := project.Canonicalize(parentRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCanonical, err := project.Canonicalize(childRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentProject := project.Project{ID: uuid.NewString(), Root: &parentCanonical}
+	childProject := project.Project{ID: uuid.NewString(), Root: &childCanonical}
+
+	for _, value := range []project.Project{parentProject, childProject} {
+		status, err := service.EnsureFresh(ctx, value)
+		if err != nil || status.State != sidecar.StateReady {
+			t.Fatalf("EnsureFresh(%q) = %+v, %v", value.Root.CanonicalPath, status, err)
+		}
+		if _, err := os.Stat(filepath.Join(indexRoot, value.ID)); err != nil {
+			t.Fatalf("project-scoped index %q: %v", value.ID, err)
+		}
+	}
+
+	parentResults, _, err := service.Search(ctx, parentProject, retrieval.SearchRequest{Query: "nestedPackageToken"})
+	if err != nil || !hasSearchPath(parentResults, "packages/api/api.go") {
+		t.Fatalf("parent search = %+v, %v; want nested package result", parentResults, err)
+	}
+	childResults, _, err := service.Search(ctx, childProject, retrieval.SearchRequest{Query: "nestedPackageToken"})
+	if err != nil || !hasSearchPath(childResults, "api.go") {
+		t.Fatalf("child search = %+v, %v; want package-relative result", childResults, err)
+	}
+	outsideResults, _, err := service.Search(ctx, childProject, retrieval.SearchRequest{Query: "rootonlysentinel8f3a6c2b"})
+	if err != nil || len(outsideResults) != 0 {
+		t.Fatalf("child search outside its root = %+v, %v; want no results", outsideResults, err)
+	}
+}
+
+func hasSearchPath(results []retrieval.SearchResult, path string) bool {
+	for _, result := range results {
+		if result.Path == path {
+			return true
+		}
+	}
+
+	return false
+}
+
 func TestEnsureFreshUnchangedBuildDoesNotReadSource(t *testing.T) {
 	ctx := context.Background()
 	service := NewService(Config{IndexRoot: t.TempDir()})

@@ -73,37 +73,110 @@ func TestRepositoryInitConvergesAcrossIndependentDatabaseHandles(t *testing.T) {
 	}
 }
 
-func TestRepositoryInitNestedResolutionAndOverlap(t *testing.T) {
+func TestRepositoryAllowsNestedProjectsInEitherInitializationOrder(t *testing.T) {
+	for _, childFirst := range []bool{false, true} {
+		name := "parent first"
+		if childFirst {
+			name = "child first"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			service := newService(t, filepath.Join(t.TempDir(), "istok.db"))
+			parent := makeDirectory(t, t.TempDir(), "parent")
+			child := makeDirectory(t, parent, "child")
+			grandchild := makeDirectory(t, child, "grandchild")
+
+			paths := []string{parent, child}
+			names := []string{"parent", "child"}
+			if childFirst {
+				paths[0], paths[1] = paths[1], paths[0]
+				names[0], names[1] = names[1], names[0]
+			}
+
+			projects := make(map[string]project.Project, 2)
+			for i, path := range paths {
+				result, err := service.Init(ctx, path, names[i])
+				if err != nil {
+					t.Fatalf("Init(%q) error = %v", path, err)
+				}
+				if !result.Created {
+					t.Fatalf("Init(%q) created = false, want a distinct nested project", path)
+				}
+				projects[path] = result.Project
+			}
+			if projects[parent].ID == projects[child].ID {
+				t.Fatalf("parent and child IDs = %q, want distinct projects", projects[parent].ID)
+			}
+
+			for _, path := range []string{parent, child} {
+				repeated, err := service.Init(ctx, path, "ignored")
+				if err != nil {
+					t.Fatalf("repeat Init(%q) error = %v", path, err)
+				}
+				if repeated.Created || repeated.Project.ID != projects[path].ID {
+					t.Fatalf("repeat Init(%q) = %#v, want existing project %q", path, repeated, projects[path].ID)
+				}
+			}
+
+			for path, expected := range map[string]string{
+				parent:     projects[parent].ID,
+				child:      projects[child].ID,
+				grandchild: projects[child].ID,
+			} {
+				current, err := service.Current(ctx, path)
+				if err != nil || current.ID != expected {
+					t.Fatalf("Current(%q) = %#v, %v; want %q", path, current, err, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestRepositoryRebindAndRestoreAllowNestedRoots(t *testing.T) {
 	ctx := context.Background()
 	service := newService(t, filepath.Join(t.TempDir(), "istok.db"))
 	parent := makeDirectory(t, t.TempDir(), "parent")
 	child := makeDirectory(t, parent, "child")
-	elsewhere := makeDirectory(t, t.TempDir(), "elsewhere")
+	other := makeDirectory(t, t.TempDir(), "other")
 
-	created, err := service.Init(ctx, parent, "parent")
+	parentProject, err := service.Init(ctx, parent, "parent")
 	if err != nil {
-		t.Fatalf("initial Init() error = %v", err)
+		t.Fatal(err)
 	}
-	for _, path := range []string{parent, child} {
-		result, err := service.Init(ctx, path, "ignored")
-		if err != nil {
-			t.Fatalf("Init(%q) error = %v", path, err)
-		}
-		if result.Created || result.Project.ID != created.Project.ID {
-			t.Fatalf("Init(%q) = %#v, want existing parent %#v", path, result, created.Project)
-		}
+	childProject, err := service.Init(ctx, other, "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rebound, err := service.Rebind(ctx, childProject.Project.ID, child, &childProject.Project.Revision)
+	if err != nil || rebound.Root == nil || rebound.Root.CanonicalPath != child {
+		t.Fatalf("Rebind(child) = %#v, %v", rebound, err)
 	}
 	current, err := service.Current(ctx, child)
-	if err != nil || current.ID != created.Project.ID {
-		t.Fatalf("Current(child) = %#v, %v; want parent %q", current, err, created.Project.ID)
+	if err != nil || current.ID != rebound.ID {
+		t.Fatalf("Current(child) = %#v, %v; want %q", current, err, rebound.ID)
 	}
 
-	other, err := service.Init(ctx, elsewhere, "other")
+	deleted, err := service.Delete(ctx, rebound.ID, &rebound.Revision)
 	if err != nil {
-		t.Fatalf("Init(other) error = %v", err)
+		t.Fatal(err)
 	}
-	_, err = service.Rebind(ctx, other.Project.ID, child, nil)
+	restored, err := service.Restore(ctx, deleted.ID, child, &deleted.Revision)
+	if err != nil || restored.Root == nil || restored.Root.CanonicalPath != child {
+		t.Fatalf("Restore(child) = %#v, %v", restored, err)
+	}
+
+	_, err = service.Rebind(ctx, restored.ID, parent, &restored.Revision)
 	assertCode(t, err, project.CodeConflict)
+	parentCurrent, err := service.Current(ctx, parent)
+	if err != nil || parentCurrent.ID != parentProject.Project.ID {
+		t.Fatalf("Current(parent) after exact conflict = %#v, %v; want %q", parentCurrent, err, parentProject.Project.ID)
+	}
+	childCurrent, err := service.Current(ctx, child)
+	if err != nil || childCurrent.ID != restored.ID {
+		t.Fatalf("Current(child) after exact conflict = %#v, %v; want %q", childCurrent, err, restored.ID)
+	}
 }
 
 func TestRepositoryCanonicalizesSymlinkUnicodeAndSpacesWithoutChangingWorkingDirectory(t *testing.T) {
