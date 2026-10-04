@@ -18,6 +18,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -183,9 +185,40 @@ func verify(path string) (err error) {
 	if err := db.QueryRow("SELECT version_id FROM goose_db_version ORDER BY id DESC LIMIT 1").Scan(&version); err != nil {
 		return fmt.Errorf("read goose version: %w", err)
 	}
-	if version != 10 {
-		return fmt.Errorf("goose version = %d, want 10", version)
+	want, err := latestMigrationVersion()
+	if err != nil {
+		return err
+	}
+	if version != want {
+		return fmt.Errorf("goose version = %d, want %d", version, want)
 	}
 	fmt.Println(version)
 	return nil
+}
+
+// latestMigrationVersion reads the newest embedded migration from the source
+// tree, so the check follows new migrations instead of a hard-coded number.
+func latestMigrationVersion() (int, error) {
+	files, err := filepath.Glob(filepath.Join("internal", "storage", "migrations", "*.sql"))
+	if err != nil {
+		return 0, fmt.Errorf("list migrations: %w", err)
+	}
+
+	latest := 0
+	for _, file := range files {
+		prefix, _, found := strings.Cut(filepath.Base(file), "_")
+		if !found {
+			continue
+		}
+		version, err := strconv.Atoi(prefix)
+		if err != nil {
+			continue
+		}
+		latest = max(latest, version)
+	}
+	if latest == 0 {
+		return 0, fmt.Errorf("no migrations found under internal/storage/migrations")
+	}
+
+	return latest, nil
 }
