@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiGet } from "@/lib/api"
 import { list } from "@/lib/types"
 import type {
+  Health,
   KnowledgeItem,
   List,
   Project,
@@ -15,7 +16,7 @@ import type {
 export function useHealth() {
   return useQuery({
     queryKey: ["health"],
-    queryFn: () => apiGet<{ version: string; commit: string }>("/health"),
+    queryFn: () => apiGet<Health>("/health"),
     staleTime: Infinity,
   })
 }
@@ -39,7 +40,8 @@ export function useProject(projectId: string) {
 export function useTasks(projectId: string) {
   return useQuery({
     queryKey: ["projects", projectId, "tasks"],
-    queryFn: () => apiGet<List<TaskListItem>>(`/projects/${projectId}/tasks`).then(list),
+    queryFn: () =>
+      apiGet<List<TaskListItem>>(`/projects/${projectId}/tasks`).then(list),
     enabled: projectId !== "",
   })
 }
@@ -56,7 +58,8 @@ export function useRuns(projectId: string, taskId?: string) {
 
   return useQuery({
     queryKey: ["projects", projectId, "runs", taskId ?? "all"],
-    queryFn: () => apiGet<List<Run>>(`/projects/${projectId}/runs${query}`).then(list),
+    queryFn: () =>
+      apiGet<List<Run>>(`/projects/${projectId}/runs${query}`).then(list),
     enabled: taskId !== "",
   })
 }
@@ -72,7 +75,9 @@ export function useKnowledgeSearch(projectId: string, query: string) {
   return useQuery({
     queryKey: ["projects", projectId, "knowledge", "search", query],
     queryFn: () =>
-      apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge?q=${encodeURIComponent(query)}`).then(list),
+      apiGet<List<KnowledgeItem>>(
+        `/projects/${projectId}/knowledge?q=${encodeURIComponent(query)}`
+      ).then(list),
     enabled: projectId !== "" && query.length >= 2,
     refetchInterval: false,
     placeholderData: (previous) => previous,
@@ -82,6 +87,9 @@ export function useKnowledgeSearch(projectId: string, query: string) {
 export function useKnowledge(projectId: string) {
   return useQuery({
     queryKey: ["projects", projectId, "knowledge"],
-    queryFn: () => apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge`).then(list),
+    queryFn: () =>
+      apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge`).then(
+        list
+      ),
   })
 }

@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams } from "react-router"
 
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
-import { StatusBadge } from "@/components/status-badge"
-import { Badge } from "@/components/ui/badge"
+import { InlineCode } from "@/components/markdown"
+import { RunStateBadge, StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -21,6 +21,16 @@ import { formatRelative } from "@/lib/format"
 import type { TaskListItem } from "@/lib/types"
 
 type Filter = "active" | "open" | "blocked" | "done" | "all"
+
+const filters: Filter[] = ["active", "open", "blocked", "done", "all"]
+
+const filterLabels: Record<Filter, string> = {
+  active: "Not done",
+  open: "Open",
+  blocked: "Blocked",
+  done: "Done",
+  all: "All",
+}
 
 function matches(task: TaskListItem, filter: Filter): boolean {
   switch (filter) {
@@ -42,15 +52,27 @@ export function TasksPage() {
   const [text, setText] = useState("")
   const needle = text.trim().toLowerCase()
 
-  const visible = (tasks.data ?? [])
+  const all = tasks.data ?? []
+  const counts = Object.fromEntries(
+    filters.map((key) => [key, all.filter((task) => matches(task, key)).length])
+  ) as Record<Filter, number>
+
+  const visible = all
     .filter((task) => matches(task, filter))
-    .filter((task) => !needle || `#${task.number} ${task.title}`.toLowerCase().includes(needle))
+    .filter(
+      (task) =>
+        !needle ||
+        `#${task.number} ${task.title}`.toLowerCase().includes(needle)
+    )
     .sort((left, right) => right.number - left.number)
 
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Projects", to: "/" }, { label: project.data?.name ?? "Project" }]}
+        crumbs={[
+          { label: "Projects", to: "/" },
+          { label: project.data?.name ?? "Project" },
+        ]}
         title={project.data?.name ?? "Tasks"}
         actions={
           <Button variant="outline" asChild>
@@ -60,13 +82,19 @@ export function TasksPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
+        <Tabs
+          value={filter}
+          onValueChange={(value) => setFilter(value as Filter)}
+        >
           <TabsList>
-          <TabsTrigger value="active">Not done</TabsTrigger>
-          <TabsTrigger value="open">Open</TabsTrigger>
-          <TabsTrigger value="blocked">Blocked</TabsTrigger>
-          <TabsTrigger value="done">Done</TabsTrigger>
-          <TabsTrigger value="all">All</TabsTrigger>
+            {filters.map((key) => (
+              <TabsTrigger key={key} value={key}>
+                {filterLabels[key]}
+                <span className="ml-1 text-xs text-muted-foreground tabular-nums">
+                  {counts[key]}
+                </span>
+              </TabsTrigger>
+            ))}
           </TabsList>
         </Tabs>
         <Input
@@ -92,25 +120,38 @@ export function TasksPage() {
               <TableRow
                 key={task.id}
                 className="cursor-pointer"
-                onClick={() => navigate(`/projects/${projectId}/tasks/${task.number}`)}
+                onClick={() =>
+                  navigate(`/projects/${projectId}/tasks/${task.number}`)
+                }
               >
-                <TableCell className="font-mono text-muted-foreground">{task.number}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">
+                  {task.number}
+                </TableCell>
                 <TableCell className="whitespace-normal">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span>{task.title}</span>
-                    {task.has_active_run && <Badge>agent working</Badge>}
-                    {task.has_expired_run && <Badge variant="destructive">run expired</Badge>}
+                    <span>
+                      <InlineCode text={task.title} />
+                    </span>
+                    <RunStateBadge
+                      active={task.has_active_run}
+                      expired={task.has_expired_run}
+                    />
                   </div>
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={task.status} />
                 </TableCell>
-                <TableCell className="text-muted-foreground">{formatRelative(task.updated_at)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatRelative(task.updated_at)}
+                </TableCell>
               </TableRow>
             ))}
             {visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={4}
+                  className="text-center text-muted-foreground"
+                >
                   No tasks.
                 </TableCell>
               </TableRow>

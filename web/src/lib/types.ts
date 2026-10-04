@@ -21,8 +21,24 @@ export type Project = {
   updated_at: string
   deleted_at?: string
   root?: { canonical_path: string; active_at: string; detached_at?: string }
-  // Latest task update in the project; absent when it has no tasks.
+  stats: ProjectStats
+}
+
+export type ProjectStats = {
+  open: number
+  blocked: number
+  done: number
+  active_runs: number
+  // Active runs whose lease expired: the agent stopped heartbeating.
+  stale_runs: number
+  // Latest task or run update; absent when the project has no tasks.
   last_activity_at?: string
+}
+
+export type Health = {
+  version: string
+  commit: string
+  home: string
 }
 
 export type TaskStatus = "open" | "blocked" | "done"
@@ -76,12 +92,7 @@ export type TaskShow = {
 }
 
 export type RunStatus =
-  | "active"
-  | "succeeded"
-  | "failed"
-  | "blocked"
-  | "cancelled"
-  | "abandoned"
+  "active" | "succeeded" | "failed" | "blocked" | "cancelled" | "abandoned"
 
 export type Run = {
   id: string
@@ -167,7 +178,11 @@ export type ContextSnapshot = {
   metadata: {
     assembly?: {
       total_budget_bytes?: number
-      usage?: { total_bytes?: number; durable_bytes?: number; retrieval_bytes?: number }
+      usage?: {
+        total_bytes?: number
+        durable_bytes?: number
+        retrieval_bytes?: number
+      }
       warnings?: List<string>
     }
     without_retrieval?: boolean
