@@ -53,6 +53,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge) // ?q= switches to full-text search
 	mux.HandleFunc("GET /api/v1/runs", a.feed)                              // ?project=&status=&lease=&limit=&offset=
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
+	a.registerMutations(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
 	})

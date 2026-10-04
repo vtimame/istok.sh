@@ -29,6 +29,7 @@ type FeedOptions struct {
 
 type FeedRun struct {
 	ID            string     `json:"id"`
+	Revision      int64      `json:"revision"`
 	Status        string     `json:"status"`
 	ActorName     string     `json:"actor_name"`
 	ActorKind     string     `json:"actor_kind"`
@@ -66,7 +67,7 @@ type FeedItem struct {
 }
 
 const feedQuery = `
-SELECT r.id, r.status, r.actor_name, r.actor_kind, r.started_at, r.finished_at, r.result_summary,
+SELECT r.id, r.revision, r.status, r.actor_name, r.actor_kind, r.started_at, r.finished_at, r.result_summary,
        l.heartbeat_at, l.expires_at,
        t.id, t.number, t.title, t.status,
        p.id, p.name,
@@ -136,7 +137,7 @@ func scanFeedItem(rows *sql.Rows) (FeedItem, error) {
 	)
 
 	err := rows.Scan(
-		&item.Run.ID, &item.Run.Status, &item.Run.ActorName, &item.Run.ActorKind, &started, &finished, &item.Run.ResultSummary,
+		&item.Run.ID, &item.Run.Revision, &item.Run.Status, &item.Run.ActorName, &item.Run.ActorKind, &started, &finished, &item.Run.ResultSummary,
 		&heartbeat, &expires,
 		&item.Task.ID, &item.Task.Number, &item.Task.Title, &item.Task.Status,
 		&item.Project.ID, &item.Project.Name,

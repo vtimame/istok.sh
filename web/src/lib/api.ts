@@ -15,8 +15,8 @@ type Envelope<T> = {
   error?: { code: string; message: string }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/v1${path}`)
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, init)
 
   const body = (await response.json().catch(() => null)) as Envelope<T> | null
   if (!response.ok || !body || body.error) {
@@ -28,4 +28,22 @@ export async function apiGet<T>(path: string): Promise<T> {
   }
 
   return body.result as T
+}
+
+export function apiGet<T>(path: string): Promise<T> {
+  return request<T>(path)
+}
+
+// apiSend sends a JSON body; the server only accepts mutations as
+// application/json, which a cross-site form cannot produce.
+export function apiSend<T>(
+  method: "POST" | "DELETE",
+  path: string,
+  body: unknown
+): Promise<T> {
+  return request<T>(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
 }

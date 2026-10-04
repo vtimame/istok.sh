@@ -214,6 +214,7 @@ export type KnowledgeItem = {
 export type FeedItem = {
   run: {
     id: string
+    revision: number
     status: RunStatus
     actor_name: string
     actor_kind: string

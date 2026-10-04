@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { ChevronRight } from "lucide-react"
 import { Link, useParams } from "react-router"
 
+import { AbandonRunDialog } from "@/components/abandon-run-dialog"
 import { InlineCode, Markdown } from "@/components/markdown"
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
@@ -305,9 +306,18 @@ function LeaseAlert({ run }: { run: Run }) {
   return (
     <Alert className="border-amber-500/40 text-amber-800 dark:text-amber-300">
       <AlertTitle>Lease expired {formatRelative(run.expires_at)}</AlertTitle>
-      <AlertDescription>
-        The agent stopped sending heartbeats {formatRelative(run.heartbeat_at)}.
-        The run can be recovered or abandoned.
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          The agent stopped sending heartbeats{" "}
+          {formatRelative(run.heartbeat_at)}. It can recover the run, or you can
+          abandon it to release the task.
+        </span>
+        <AbandonRunDialog
+          runId={run.id}
+          revision={run.revision}
+          actorName={run.actor.name}
+          heartbeatAt={run.heartbeat_at}
+        />
       </AlertDescription>
     </Alert>
   )

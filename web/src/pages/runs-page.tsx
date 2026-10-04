@@ -1,5 +1,6 @@
 import { Link, useNavigate, useSearchParams } from "react-router"
 
+import { AbandonRunDialog } from "@/components/abandon-run-dialog"
 import { InlineCode } from "@/components/markdown"
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
@@ -158,6 +159,14 @@ function FeedRow({
             ? `last heartbeat ${formatRelative(item.run.heartbeat_at)}`
             : formatDuration(runDurationMs(item.run, now))}
         </span>
+        {stale && (
+          <AbandonRunDialog
+            runId={item.run.id}
+            revision={item.run.revision}
+            actorName={item.run.actor_name}
+            heartbeatAt={item.run.heartbeat_at}
+          />
+        )}
       </div>
 
       <Link

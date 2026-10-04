@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Link, useParams } from "react-router"
 
+import { AbandonRunDialog } from "@/components/abandon-run-dialog"
 import { InlineCode, Markdown } from "@/components/markdown"
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
@@ -85,31 +86,40 @@ function RunCard({ run }: { run: Run }) {
   const now = useNow()
   const expired = isRunStale(run, now)
 
+  // The abandon button sits outside the link: interactive elements must not
+  // be nested inside an anchor.
   return (
-    <Link
-      to={`/runs/${run.id}`}
-      className="flex flex-col gap-1.5 rounded-md border p-3 text-sm transition-colors hover:bg-muted/50"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">{run.actor.name}</span>
-        {expired ? (
-          <RunStateBadge active expired />
-        ) : (
-          <StatusBadge status={run.status} />
+    <div className="flex flex-col gap-2 rounded-md border p-3 text-sm transition-colors hover:bg-muted/50">
+      <Link to={`/runs/${run.id}`} className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium">{run.actor.name}</span>
+          {expired ? (
+            <RunStateBadge active expired />
+          ) : (
+            <StatusBadge status={run.status} />
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {formatRelative(run.started_at)} ·{" "}
+          {expired
+            ? `last heartbeat ${formatRelative(run.heartbeat_at)}`
+            : formatDuration(runDurationMs(run, now))}
+        </span>
+        {run.result_summary && (
+          <p className="line-clamp-3 text-xs text-muted-foreground">
+            <InlineCode text={run.result_summary} />
+          </p>
         )}
-      </div>
-      <span className="text-xs text-muted-foreground">
-        {formatRelative(run.started_at)} ·{" "}
-        {expired
-          ? `last heartbeat ${formatRelative(run.heartbeat_at)}`
-          : formatDuration(runDurationMs(run, now))}
-      </span>
-      {run.result_summary && (
-        <p className="line-clamp-3 text-xs text-muted-foreground">
-          {run.result_summary}
-        </p>
+      </Link>
+      {expired && (
+        <AbandonRunDialog
+          runId={run.id}
+          revision={run.revision}
+          actorName={run.actor.name}
+          heartbeatAt={run.heartbeat_at}
+        />
       )}
-    </Link>
+    </div>
   )
 }
 
