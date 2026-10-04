@@ -36,12 +36,17 @@ type Service interface {
 
 type Runner func(context.Context, string, string) error
 
+// ServiceRestarter restarts long-running services that execute the updated
+// binary, such as the web UI systemd unit, and reports whether it did.
+type ServiceRestarter func(ctx context.Context, executable string) (bool, error)
+
 type Application struct {
-	Service    Service
-	Version    string
-	Input      io.Reader
-	Output     io.Writer
-	RunMigrate Runner
+	Service        Service
+	Version        string
+	Input          io.Reader
+	Output         io.Writer
+	RunMigrate     Runner
+	RestartService ServiceRestarter
 }
 
 func (a Application) Run(ctx context.Context, command Command) error {
@@ -107,8 +112,28 @@ func (a Application) Run(ctx context.Context, command Command) error {
 	if err := cleanupSuccessfulUpdate(target, old, backup); err != nil {
 		return fmt.Errorf("updated successfully, but cleanup failed: %w", err)
 	}
-	_, err = fmt.Fprintf(a.Output, "Updated successfully to %s.\n", update.Target)
-	return err
+	if _, err := fmt.Fprintf(a.Output, "Updated successfully to %s.\n", update.Target); err != nil {
+		return err
+	}
+
+	a.restartServices(ctx, target)
+	return nil
+}
+
+// restartServices is best effort: the update already succeeded, so a failed
+// restart becomes a warning with the manual command instead of an error.
+func (a Application) restartServices(ctx context.Context, target string) {
+	if a.RestartService == nil {
+		return
+	}
+
+	restarted, err := a.RestartService(ctx, target)
+	switch {
+	case err != nil:
+		_, _ = fmt.Fprintf(a.Output, "Warning: could not restart the web UI service: %v\nRestart it with: istok ui service restart\n", err)
+	case restarted:
+		_, _ = fmt.Fprintln(a.Output, "Restarted the web UI service on the new binary.")
+	}
 }
 
 func cleanupBackupError(original error, backup string) error {
