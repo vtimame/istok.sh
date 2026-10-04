@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react"
+import { Search, X } from "lucide-react"
 import { Link, useNavigate, useSearchParams } from "react-router"
 
 import { AbandonRunDialog } from "@/components/abandon-run-dialog"
@@ -6,15 +8,10 @@ import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
 import { RunStateBadge, StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useProjects, useRunFeed } from "@/hooks/queries"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { useNow } from "@/hooks/use-now"
 import { formatDuration, formatRelative } from "@/lib/format"
 import { isRunStale, runDurationMs } from "@/lib/runs"
@@ -44,8 +41,6 @@ const filterLabels: Record<Filter, string> = {
   succeeded: "Succeeded",
   failed: "Failed & stopped",
 }
-
-const ALL_PROJECTS = "all"
 
 function isFilter(value: string | null): value is Filter {
   return value !== null && value in filterLabels
@@ -198,6 +193,12 @@ function FeedRow({
   )
 }
 
+// projectMatches is computed here rather than in SQL: JavaScript lowercases
+// Unicode names correctly, while SQLite lower() only handles ASCII.
+function projectMatches(name: string, query: string): boolean {
+  return name.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+}
+
 export function RunsPage() {
   const now = useNow()
   const projects = useProjects()
@@ -205,12 +206,9 @@ export function RunsPage() {
 
   const rawFilter = params.get("status")
   const filter: Filter = isFilter(rawFilter) ? rawFilter : "all"
-  const projectId = params.get("project") ?? ""
-  const feed = useRunFeed(
-    projectId,
-    filterQueries[filter].statuses,
-    filterQueries[filter].lease
-  )
+  const projectQuery = (params.get("project_q") ?? "").trim()
+  const [text, setText] = useState(projectQuery)
+  const debouncedText = useDebouncedValue(text.trim(), 250)
 
   const update = (key: string, value: string, fallback: string) => {
     const next = new URLSearchParams(params)
@@ -222,10 +220,31 @@ export function RunsPage() {
     setParams(next, { replace: true })
   }
 
-  const items = feed.data?.pages.flat() ?? []
-  const sortedProjects = [...(projects.data ?? [])].sort((left, right) =>
-    left.name.localeCompare(right.name)
+  // The URL follows the debounced input, so filters survive reloads and links.
+  useEffect(() => {
+    if (debouncedText !== projectQuery) {
+      update("project_q", debouncedText, "")
+    }
+    // update reads the latest params; only the debounced text drives this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedText])
+
+  const matchingProjects = projectQuery
+    ? (projects.data ?? []).filter((project) =>
+        projectMatches(project.name, projectQuery)
+      )
+    : []
+  const noMatches =
+    projectQuery !== "" && projects.isSuccess && matchingProjects.length === 0
+
+  const feed = useRunFeed(
+    matchingProjects.map((project) => project.id),
+    filterQueries[filter].statuses,
+    filterQueries[filter].lease,
+    projectQuery === "" || (projects.isSuccess && !noMatches)
   )
+
+  const items = feed.data?.pages.flat() ?? []
 
   return (
     <>
@@ -245,63 +264,83 @@ export function RunsPage() {
           </TabsList>
         </Tabs>
 
-        <Select
-          value={projectId || ALL_PROJECTS}
-          onValueChange={(value) => update("project", value, ALL_PROJECTS)}
-        >
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="All projects" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
-            {sortedProjects.map((project) => (
-              <SelectItem key={project.id} value={project.id}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="relative w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => event.key === "Escape" && setText("")}
+            placeholder="Filter by project"
+            aria-label="Filter runs by project name"
+            className="pr-8 pl-8"
+          />
+          {text && (
+            <button
+              type="button"
+              onClick={() => setText("")}
+              aria-label="Clear project filter"
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <QueryState isPending={feed.isPending} error={feed.error}>
-        {items.length === 0 && (
-          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No runs match these filters.
-          </p>
-        )}
+      {projectQuery && matchingProjects.length > 0 && (
+        <p className="mb-4 text-xs text-muted-foreground">
+          {matchingProjects.length === 1
+            ? "1 project matches"
+            : `${matchingProjects.length} projects match`}
+          : {matchingProjects.map((project) => project.name).join(", ")}
+        </p>
+      )}
 
-        <div className="flex flex-col gap-6">
-          {groupByDay(items, now).map(([label, group]) => (
-            <section key={label} className="flex flex-col gap-2">
-              <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                {label}
-              </h2>
-              <div className="rounded-lg border">
-                {group.map((item) => (
-                  <FeedRow
-                    key={item.run.id}
-                    item={item}
-                    now={now}
-                    showProject={!projectId}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+      {noMatches ? (
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No project name contains “{projectQuery}”.
+        </p>
+      ) : (
+        <QueryState isPending={feed.isPending} error={feed.error}>
+          {items.length === 0 && (
+            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No runs match these filters.
+            </p>
+          )}
 
-        {feed.hasNextPage && (
-          <div className="mt-6 flex justify-center">
-            <Button
-              variant="outline"
-              onClick={() => feed.fetchNextPage()}
-              disabled={feed.isFetchingNextPage}
-            >
-              {feed.isFetchingNextPage ? "Loading…" : "Load more"}
-            </Button>
+          <div className="flex flex-col gap-6">
+            {groupByDay(items, now).map(([label, group]) => (
+              <section key={label} className="flex flex-col gap-2">
+                <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  {label}
+                </h2>
+                <div className="rounded-lg border">
+                  {group.map((item) => (
+                    <FeedRow
+                      key={item.run.id}
+                      item={item}
+                      now={now}
+                      showProject={matchingProjects.length !== 1}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
-        )}
-      </QueryState>
+
+          {feed.hasNextPage && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => feed.fetchNextPage()}
+                disabled={feed.isFetchingNextPage}
+              >
+                {feed.isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            </div>
+          )}
+        </QueryState>
+      )}
     </>
   )
 }

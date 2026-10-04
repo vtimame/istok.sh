@@ -17,14 +17,14 @@ const (
 	LeaseExpired Lease = "expired"
 )
 
-// FeedOptions filters the run feed; an empty ProjectID covers all projects.
+// FeedOptions filters the run feed; no ProjectIDs covers all projects.
 // A Lease other than LeaseAny restricts the feed to active runs.
 type FeedOptions struct {
-	ProjectID string
-	Statuses  []string
-	Lease     Lease
-	Limit     int
-	Offset    int
+	ProjectIDs []string
+	Statuses   []string
+	Lease      Lease
+	Limit      int
+	Offset     int
 }
 
 type FeedRun struct {
@@ -86,12 +86,14 @@ func (r *Repository) RunFeed(ctx context.Context, options FeedOptions) ([]FeedIt
 	query := feedQuery
 	args := make([]any, 0, len(options.Statuses)+3)
 
-	if options.ProjectID != "" {
-		query += " AND t.project_id = ?"
-		args = append(args, options.ProjectID)
+	if len(options.ProjectIDs) > 0 {
+		query += " AND t.project_id IN (" + placeholders(len(options.ProjectIDs)) + ")"
+		for _, projectID := range options.ProjectIDs {
+			args = append(args, projectID)
+		}
 	}
 	if len(options.Statuses) > 0 {
-		query += " AND r.status IN (" + strings.TrimSuffix(strings.Repeat("?,", len(options.Statuses)), ",") + ")"
+		query += " AND r.status IN (" + placeholders(len(options.Statuses)) + ")"
 		for _, status := range options.Statuses {
 			args = append(args, status)
 		}
@@ -161,4 +163,8 @@ func scanFeedItem(rows *sql.Rows) (FeedItem, error) {
 	}
 
 	return item, nil
+}
+
+func placeholders(count int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", count), ",")
 }

@@ -97,21 +97,22 @@ export function useKnowledge(projectId: string) {
 
 export const FEED_PAGE_SIZE = 50
 
+// useRunFeed loads the cross-project feed; no projectIds means all projects.
 export function useRunFeed(
-  projectId: string,
+  projectIds: string[],
   statuses: string[],
-  lease: "" | "live" | "expired"
+  lease: "" | "live" | "expired",
+  enabled = true
 ) {
   return useInfiniteQuery({
-    queryKey: ["runs", "feed", projectId, statuses, lease],
+    queryKey: ["runs", "feed", projectIds, statuses, lease],
+    enabled,
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({
         limit: String(FEED_PAGE_SIZE),
         offset: String(pageParam),
       })
-      if (projectId) {
-        params.set("project", projectId)
-      }
+      projectIds.forEach((projectId) => params.append("project", projectId))
       if (lease) {
         params.set("lease", lease)
       }
