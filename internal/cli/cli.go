@@ -24,14 +24,13 @@ import (
 	"github.com/vtimame/istok.sh/internal/mcpserver"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/updater"
-	"github.com/vtimame/istok.sh/internal/webui"
 )
 
 type CLI struct {
 	Version    VersionCommand         `cmd:"" help:"Print version information."`
 	MCP        MCPCommand             `cmd:"" help:"Run the MCP server over standard input/output."`
 	Update     UpdateCommand          `cmd:"" help:"Check for and securely install a new CLI release."`
-	UI         UICommand              `cmd:"" name:"ui" help:"Open the local web UI in a browser."`
+	UI         UICommand              `cmd:"" name:"ui" help:"Open the local web UI or manage it as a service."`
 	Init       InitCommand            `cmd:"" help:"Initialize the current directory or PATH as a local project."`
 	Project    ProjectCommand         `cmd:"" help:"Show and manage local projects."`
 	Task       TaskCommand            `cmd:"" help:"Inspect tasks in the current project."`
@@ -49,14 +48,6 @@ type CLI struct {
 type UpdateCommand struct {
 	Check    bool   `help:"Only check for an update; do not change files."`
 	Yes      bool   `help:"Install without an interactive confirmation."`
-	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
-}
-
-// UICommand defaults to a fixed port so the address stays stable when the UI
-// runs as a long-lived service.
-type UICommand struct {
-	Port     int    `name:"port" default:"7700" help:"Loopback port; 0 picks a free port." env:"ISTOK_UI_PORT"`
-	NoOpen   bool   `name:"no-open" help:"Print the URL without opening a browser."`
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 }
 
@@ -195,8 +186,8 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runVersion(ctx, output)
 	case strings.HasPrefix(commandName, "completion"):
 		return command.Completion.Run(parsed)
-	case commandName == "ui":
-		return runUI(ctx, command.UI, output)
+	case commandName == "ui" || strings.HasPrefix(commandName, "ui "):
+		return runUICommand(ctx, command.UI, commandName, output)
 	case commandName == "mcp":
 		root, err := project.Canonicalize(cwd)
 		if err != nil {
@@ -574,34 +565,6 @@ func runWithShutdown(ctx context.Context, run func(context.Context) error, stop 
 	}
 
 	return nil
-}
-
-func runUI(ctx context.Context, command UICommand, output io.Writer) error {
-	var services webui.Services
-	app := bootstrap.UIApp(command.Database, &services)
-
-	if err := app.Start(ctx); err != nil {
-		return fmt.Errorf("start web UI application: %w", err)
-	}
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = app.Stop(stopCtx)
-	}()
-
-	server, err := webui.Listen(command.Port, services)
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(output, "Istok UI: %s\nPress Ctrl+C to stop.\n", server.URL())
-	if !command.NoOpen {
-		if err := webui.OpenBrowser(server.URL()); err != nil {
-			fmt.Fprintf(output, "Could not open a browser (%v); open the URL above manually.\n", err)
-		}
-	}
-
-	return server.Serve(ctx)
 }
 
 func ValidateMCPGraph(path string) error {
