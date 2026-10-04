@@ -47,7 +47,12 @@ esac
 [ -n "$commit" ] || fail 'commit must not be empty'
 
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/istok-release-smoke.XXXXXX")
-trap 'rm -rf "$workdir"' EXIT HUP INT TERM
+ui_pid=
+cleanup() {
+  [ -z "$ui_pid" ] || kill "$ui_pid" 2>/dev/null || true
+  rm -rf "$workdir"
+}
+trap cleanup EXIT HUP INT TERM
 
 archive_entries=$(tar -tzf "$archive")
 [ "$archive_entries" = istok ] || fail 'archive must contain exactly one istok executable'
@@ -204,5 +209,30 @@ require_match "$ts_graph_json" '"schema_version":"1"' 'TypeScript graph schema v
 require_match "$ts_graph_json" '"contract_version":"istok.graph.v1"' 'TypeScript graph contract version'
 require_match "$ts_graph_json" '"path":"smoke.ts"' 'TypeScript graph path'
 require_match "$ts_graph_json" '"name":"releaseTypeScriptSymbol"' 'TypeScript graph symbol'
+
+# The release must embed the built web UI, not the placeholder that a plain
+# go build without the frontend produces.
+ui_log="$workdir/ui.log"
+"$binary" ui --port 0 --no-open >"$ui_log" 2>&1 &
+ui_pid=$!
+
+ui_url=
+for _ in $(seq 1 100); do
+  ui_url=$(sed -n 's/^Istok UI: //p' "$ui_log")
+  [ -n "$ui_url" ] && break
+  sleep 0.1
+done
+[ -n "$ui_url" ] || fail "istok ui did not start: $(cat "$ui_log")"
+
+ui_index=$(curl -fsS "$ui_url")
+ui_health=$(curl -fsS "${ui_url}api/v1/health")
+kill "$ui_pid" 2>/dev/null || true
+wait "$ui_pid" 2>/dev/null || true
+ui_pid=
+
+printf 'web UI: %s\n' "$ui_url"
+require_match "$ui_index" '<div id="root">' 'embedded web UI'
+printf '%s\n' "$ui_index" | grep -F 'web UI is not built' >/dev/null && fail 'release embeds the web UI placeholder'
+require_match "$ui_health" "\"version\":\"$version\"" 'web UI health version'
 
 printf 'release smoke passed\n'

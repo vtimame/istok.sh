@@ -68,8 +68,30 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The web UI is built once and embedded into every platform binary, so all
+  # archives ship the same frontend and build runners need no Node.js.
+  frontend:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-frontend
+      - name: Build web UI
+        run: make ui
+      - name: Verify the built UI is not the placeholder
+        run: grep -F '<div id="root">' internal/webui/dist/index.html
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: webui-dist
+          path: internal/webui/dist
+          if-no-files-found: error
+          retention-days: 1
+
   build:
-    needs: [quality, prepare]
+    needs: [quality, prepare, frontend]
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +124,10 @@ jobs:
         with:
           name: update-certificate
           path: ${{ runner.temp }}/release-certificate
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: webui-dist
+          path: internal/webui/dist
       - name: Build archive
         env:
           GOOS: ${{ matrix.goos }}
@@ -113,7 +139,7 @@ jobs:
           BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
           BUILD_OUTPUT="$RUNNER_TEMP/istok"
           UPDATE_CERTIFICATE_B64="$(tr -d '\n' < "$RUNNER_TEMP/release-certificate/update-certificate.b64")" \
-            make build VERSION="$GITHUB_REF_NAME" COMMIT="$GITHUB_SHA" BUILD_DATE="$BUILD_DATE" \
+            make build UI_BUILD=0 VERSION="$GITHUB_REF_NAME" COMMIT="$GITHUB_SHA" BUILD_DATE="$BUILD_DATE" \
               RELEASE_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/release-feed/" BUILD_OUTPUT="$BUILD_OUTPUT"
           chmod 0755 "$BUILD_OUTPUT"
           tar -C "$RUNNER_TEMP" -czf "$GITHUB_WORKSPACE/dist/istok_${GOOS}_${GOARCH}.tar.gz" istok
