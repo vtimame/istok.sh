@@ -26,6 +26,11 @@ import { list } from "@/lib/types"
 
 // SearchPalette is the global Ctrl/⌘+K search over projects, the current
 // project's tasks and its knowledge (full-text on the server).
+// The shadcn CommandItem appends an invisible check icon with ml-auto for
+// selectable items; next to our own ml-auto column it split the free space
+// and pulled paths and badges to the middle. Search results never show it.
+const paletteItem = "[&>svg:last-child]:hidden"
+
 export function SearchPalette() {
   const navigate = useNavigate()
   const { projectId = "" } = useParams()
@@ -97,6 +102,7 @@ export function SearchPalette() {
               <CommandGroup heading="Tasks">
                 {list(tasks.data ?? null).map((task) => (
                   <CommandItem
+                    className={paletteItem}
                     key={task.id}
                     value={`#${task.number} ${task.title}`}
                     onSelect={() =>
@@ -122,6 +128,7 @@ export function SearchPalette() {
               <CommandGroup heading="Knowledge">
                 {list(knowledge.data ?? null).map((item) => (
                   <CommandItem
+                    className={paletteItem}
                     key={item.id}
                     value={`knowledge ${item.id} ${item.title}`}
                     keywords={[debouncedQuery]}
@@ -137,6 +144,7 @@ export function SearchPalette() {
             <CommandGroup heading="Projects">
               {list(projects.data ?? null).map((project) => (
                 <CommandItem
+                  className={paletteItem}
                   key={project.id}
                   value={`project ${project.name}`}
                   onSelect={() => go(`/projects/${project.id}`)}
