@@ -28,6 +28,22 @@ const UpdateNamespace = "istok"
 const UpdateProduct = "cli"
 const MaxAssetSize = 256 << 20
 
+// UnavailableError reports a build that cannot update itself, such as a local
+// build without the release certificate or with a non-stable version.
+type UnavailableError struct {
+	Reason error
+}
+
+func (e *UnavailableError) Error() string {
+	return "automatic updates are unavailable for this build: " + e.Reason.Error()
+}
+
+func (e *UnavailableError) Unwrap() error { return e.Reason }
+
+func unstableVersionError(current string) error {
+	return &UnavailableError{Reason: fmt.Errorf("version %q is not a stable release", current)}
+}
+
 type Update struct {
 	Current string
 	Target  string
@@ -45,7 +61,7 @@ type Service struct {
 
 func New(info buildinfo.Info) (*Service, error) {
 	if info.CertificateBase64 == "" {
-		return nil, fmt.Errorf("automatic updates are disabled: %w", buildinfo.ErrCertificateMissing)
+		return nil, &UnavailableError{Reason: buildinfo.ErrCertificateMissing}
 	}
 	certificate, err := base64.StdEncoding.DecodeString(info.CertificateBase64)
 	if err != nil {
@@ -58,7 +74,7 @@ func New(info buildinfo.Info) (*Service, error) {
 func NewWith(current, baseURL string, certificate []byte) (*Service, error) {
 	version, err := semver.NewVersion(current)
 	if err != nil || version.Prerelease() != "" {
-		return nil, fmt.Errorf("automatic updates require a stable semver build; current version %q is not updateable", current)
+		return nil, unstableVersionError(current)
 	}
 	if err := validateBaseURL(baseURL); err != nil {
 		return nil, err
@@ -110,7 +126,7 @@ func ecdsaPublicKey(data []byte) (*ecdsa.PublicKey, error) {
 func (s *Service) Check(ctx context.Context, current string) (*Update, bool, error) {
 	version, err := semver.NewVersion(current)
 	if err != nil || version.Prerelease() != "" {
-		return nil, false, fmt.Errorf("automatic updates require a stable semver build; current version %q is not updateable", current)
+		return nil, false, unstableVersionError(current)
 	}
 	up, err := s.makeUpdater("")
 	if err != nil {

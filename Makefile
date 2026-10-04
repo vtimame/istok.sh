@@ -40,6 +40,9 @@ install:
 		-o "$(INSTALL_DIR)/$(COMMAND)" \
 		./cmd/istok
 	@echo "Installed $(INSTALL_DIR)/$(COMMAND)"
+ifeq ($(strip $(UPDATE_CERTIFICATE_B64)),)
+	@echo "Warning: UPDATE_CERTIFICATE_B64 is empty, so 'istok update' is disabled for this build."
+endif
 
 update-dev:
 	go run ./tools/updatefixture serve

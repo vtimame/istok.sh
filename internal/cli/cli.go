@@ -23,6 +23,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	"github.com/vtimame/istok.sh/internal/mcpserver"
 	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/updater"
 )
 
 type CLI struct {
@@ -267,6 +268,11 @@ func runUpdate(ctx context.Context, command UpdateCommand, input io.Reader, outp
 	var result error
 	app := bootstrap.UpdateApp(ctx, updateapp.Command{Check: command.Check, Yes: command.Yes, Database: command.Database}, input, output, &result)
 	if err := app.Start(ctx); err != nil {
+		var unavailable *updater.UnavailableError
+		if errors.As(err, &unavailable) {
+			return fmt.Errorf("%w\nReinstall an official release to enable updates: curl -fsSL https://get.istok.sh | sh", unavailable)
+		}
+
 		return fmt.Errorf("start update application: %w", err)
 	}
 	if err := app.Stop(ctx); err != nil {
