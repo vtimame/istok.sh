@@ -57,8 +57,10 @@ func LanguageForPath(path string) string {
 		return "makefile"
 	case "dockerfile":
 		return "dockerfile"
-	case "go.mod", "go.sum", "go.work":
-		return "go"
+	case "go.mod", "go.work":
+		return "gomod"
+	case "go.sum":
+		return "gosum"
 	case ".gitignore", ".istokignore":
 		return "gitignore"
 	}
