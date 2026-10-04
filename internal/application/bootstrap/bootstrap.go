@@ -30,6 +30,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/updater"
+	"github.com/vtimame/istok.sh/internal/webui"
 )
 
 func VersionApp(output io.Writer) *fx.App {
@@ -172,6 +173,18 @@ func MCPApp(path, root string, profile mcpserver.Profile, actorID, actorName str
 		MCPOptions(path),
 		mcpserver.Module(mcpserver.Config{Profile: profile, Root: root, ActorID: actorID, ActorName: actorName}),
 		fx.Invoke(func(value *mcp.Server) { *server = value }),
+	)
+}
+
+// UIApp wires the read-only services behind the embedded web UI.
+func UIApp(path string, services *webui.Services) *fx.App {
+	return fx.New(
+		fx.NopLogger,
+		fx.Supply(buildinfo.Current()),
+		kernelOptions(path),
+		fx.Invoke(func(info buildinfo.Info, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
+			*services = webui.Services{Build: info, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
+		}),
 	)
 }
 
