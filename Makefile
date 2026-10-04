@@ -25,20 +25,28 @@ LDFLAGS := -s -w \
 	-X github.com/vtimame/istok.sh/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
 	-X github.com/vtimame/istok.sh/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
 
-.PHONY: ui build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
+.PHONY: ui ui-check build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
 
 # The web UI is embedded into the binary, so build and install compile it first.
+# UI_BUILD=0 embeds an already built internal/webui/dist instead: the release
+# workflow builds it once for every platform and only checks it here.
+UI_BUILD ?= 1
+UI_PREREQ := $(if $(filter 0,$(UI_BUILD)),ui-check,ui)
+
 ui:
 	pnpm --dir web install --frozen-lockfile
 	pnpm --dir web build
 	@touch internal/webui/dist/.gitkeep
 
-build: ui
+ui-check:
+	@test -f internal/webui/dist/index.html || { echo "internal/webui/dist/index.html is missing; run make ui" >&2; exit 1; }
+
+build: $(UI_PREREQ)
 	@mkdir -p "$(dir $(BUILD_OUTPUT))"
 	CGO_ENABLED=1 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BUILD_OUTPUT)" ./cmd/istok
 	@echo "Built $(BUILD_OUTPUT)"
 
-install: ui
+install: $(UI_PREREQ)
 	@mkdir -p "$(INSTALL_DIR)"
 	CGO_ENABLED=1 go build \
 		-trimpath \

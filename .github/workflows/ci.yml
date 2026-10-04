@@ -42,6 +42,22 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  frontend:
+    name: Web UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-frontend
+      - name: Typecheck and build
+        run: pnpm --dir web build
+      - name: Lint
+        run: pnpm --dir web lint
+      - name: Check formatting
+        run: pnpm --dir web exec prettier --check "src/**/*.{ts,tsx}"
+
   native-contracts:
     name: Native contracts (${{ matrix.name }})
     strategy:
