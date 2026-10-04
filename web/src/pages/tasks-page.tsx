@@ -1,11 +1,20 @@
 import { useState } from "react"
+import { MoreHorizontal, Trash2 } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router"
 
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
+import { DeleteProjectDialog } from "@/components/delete-project-dialog"
+import { ProjectMissing } from "@/components/project-missing"
 import { InlineCode } from "@/components/markdown"
 import { RunStateBadge, StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -50,6 +59,7 @@ export function TasksPage() {
   const tasks = useTasks(projectId)
   const [filter, setFilter] = useState<Filter>("active")
   const [text, setText] = useState("")
+  const [deleting, setDeleting] = useState(false)
   const needle = text.trim().toLowerCase()
 
   const all = tasks.data ?? []
@@ -66,6 +76,10 @@ export function TasksPage() {
     )
     .sort((left, right) => right.number - left.number)
 
+  if (project.isSuccess && !project.data) {
+    return <ProjectMissing />
+  }
+
   return (
     <>
       <PageHeader
@@ -75,9 +89,33 @@ export function TasksPage() {
         ]}
         title={project.data?.name ?? "Tasks"}
         actions={
-          <Button variant="outline" asChild>
-            <Link to={`/projects/${projectId}/knowledge`}>Knowledge</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link to={`/projects/${projectId}/knowledge`}>Knowledge</Link>
+            </Button>
+            {project.data && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Project actions"
+                  >
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => setDeleting(true)}
+                  >
+                    <Trash2 />
+                    Delete project…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         }
       />
 
@@ -159,6 +197,13 @@ export function TasksPage() {
           </TableBody>
         </Table>
       </QueryState>
+      {project.data && (
+        <DeleteProjectDialog
+          project={project.data}
+          open={deleting}
+          onOpenChange={setDeleting}
+        />
+      )}
     </>
   )
 }
