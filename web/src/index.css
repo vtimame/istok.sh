@@ -180,3 +180,45 @@
     );
   }
 }
+
+/* Code snippets: shiki emits both themes as CSS variables (defaultColor:
+   false); the .dark class on <html> selects one. Line numbers come from a
+   counter that CodeBlock starts at the snippet's first line. */
+@layer components {
+  .code-block .shiki,
+  .code-block .shiki span {
+    color: var(--shiki-light);
+    background-color: transparent !important;
+  }
+
+  .dark .code-block .shiki,
+  .dark .code-block .shiki span {
+    color: var(--shiki-dark);
+  }
+
+  /* Numbers sit in the left padding, outside the text flow: as inline
+     content they would shift tab stops and break indentation. */
+  .code-block pre {
+    width: max-content;
+    min-width: 100%;
+    padding-left: 4.5em;
+    padding-right: 1em;
+    tab-size: 4;
+  }
+
+  .code-block .line {
+    position: relative;
+    counter-increment: line;
+  }
+
+  .code-block .line::before {
+    content: counter(line);
+    position: absolute;
+    left: -4.5em;
+    width: 3.5em;
+    text-align: right;
+    color: var(--muted-foreground);
+    opacity: 0.6;
+    user-select: none;
+  }
+}
