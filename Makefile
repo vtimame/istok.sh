@@ -25,14 +25,20 @@ LDFLAGS := -s -w \
 	-X github.com/vtimame/istok.sh/internal/buildinfo.ReleaseBaseURL=$(RELEASE_BASE_URL) \
 	-X github.com/vtimame/istok.sh/internal/buildinfo.CertificateBase64=$(UPDATE_CERTIFICATE_B64)
 
-.PHONY: build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
+.PHONY: ui build install update-dev update-dev-down test-update test-index-heavy test-index-benchmark test-index-release mcp-inspect release-secret
 
-build:
+# The web UI is embedded into the binary, so build and install compile it first.
+ui:
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web build
+	@touch internal/webui/dist/.gitkeep
+
+build: ui
 	@mkdir -p "$(dir $(BUILD_OUTPUT))"
 	CGO_ENABLED=1 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BUILD_OUTPUT)" ./cmd/istok
 	@echo "Built $(BUILD_OUTPUT)"
 
-install:
+install: ui
 	@mkdir -p "$(INSTALL_DIR)"
 	CGO_ENABLED=1 go build \
 		-trimpath \
