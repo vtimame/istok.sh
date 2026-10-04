@@ -3,86 +3,33 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
-const (
-	prompt    = "Reject orders with a zero or negative amount."
-	taskTitle = "Reject orders with a non-positive amount"
-)
-
 var validationArgv = []string{"go", "test", "./..."}
 
-// Only the fields the transcript shows are decoded from the tool results.
-
-type taskResult struct {
-	Task struct {
-		ID       string `json:"id"`
-		Number   int64  `json:"number"`
-		Revision int64  `json:"revision"`
-		Status   string `json:"status"`
-	} `json:"task"`
-}
-
-type claimResult struct {
-	Run struct {
-		ID       string `json:"id"`
-		LeaseID  string `json:"lease_id"`
-		Revision int64  `json:"revision"`
-	} `json:"run"`
-	Snapshot struct {
-		Records   []struct{} `json:"records"`
-		Retrieval []struct {
-			Path string `json:"path"`
-		} `json:"retrieval"`
-		Knowledge []struct{} `json:"knowledge_catalog"`
-	} `json:"snapshot"`
-}
-
-type executionResult struct {
-	Execution struct {
-		ExitCode   *int   `json:"exit_code"`
-		DurationMS *int64 `json:"duration_ms"`
-	} `json:"execution"`
-	Artifacts []struct {
-		Kind         string `json:"kind"`
-		RelativePath string `json:"relative_path"`
-	} `json:"artifacts"`
-	Validation *struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	} `json:"validation"`
-}
-
-type runResult struct {
-	Run struct {
-		Status string `json:"status"`
-	} `json:"run"`
-}
-
-func playSession(ctx context.Context, agent *mcpAgent, demo paths) (transcript, error) {
-	session := transcript{CWD: "~/work/acme-api", Prompt: prompt}
+// playWork is the main session: the agent turns a request into a task, changes
+// the code, proves it with go test through Istok and completes the task.
+func playWork(ctx context.Context, agent *mcpAgent, demo paths, text copyText) (part, error) {
+	session := part{Agent: "claude", CWD: "~/work/acme-api", Prompt: text.workPrompt}
 
 	// The agent records the request as a task before touching code.
 	var created taskResult
 	err := agent.call(ctx, "task_create", map[string]any{
 		"task_id":             uuid.Must(uuid.NewV7()).String(),
-		"title":               taskTitle,
-		"acceptance_criteria": "CreateOrder rejects zero and negative amounts without charging the customer.",
+		"title":               text.workTitle,
+		"acceptance_criteria": text.workAcceptance,
 	}, &created)
 	if err != nil {
 		return session, err
 	}
-	session.TaskNumber = created.Task.Number
 
 	session.Steps = append(session.Steps, step{
 		Kind:    stepIstok,
 		Name:    "task_create",
-		Summary: fmt.Sprintf("%q", taskTitle),
+		Summary: fmt.Sprintf("%q", text.workTitle),
 		Output:  []line{{Text: fmt.Sprintf("task #%d · %s", created.Task.Number, created.Task.Status)}},
 	})
 
@@ -164,15 +111,13 @@ func playSession(ctx context.Context, agent *mcpAgent, demo paths) (transcript, 
 	})
 
 	// Finishing the run and completing the task ties the result to the evidence.
-	summary := "CreateOrder rejects zero and negative amounts with ErrInvalidAmount before charging; covered by a test."
-
 	var finished runResult
 	err = agent.call(ctx, "run_finish", map[string]any{
 		"run_id":            runID,
 		"lease_id":          leaseID,
 		"expected_revision": claimed.Run.Revision,
 		"status":            "succeeded",
-		"result_summary":    summary,
+		"result_summary":    text.workSummary,
 	}, &finished)
 	if err != nil {
 		return session, err
@@ -184,7 +129,7 @@ func playSession(ctx context.Context, agent *mcpAgent, demo paths) (transcript, 
 		"expected_task_revision": created.Task.Revision,
 		"run_id":                 runID,
 		"validation_id":          validated.Validation.ID,
-		"note":                   "Non-positive amounts are rejected before any charge.",
+		"note":                   text.workNote,
 	}, &completed)
 	if err != nil {
 		return session, err
@@ -203,76 +148,8 @@ func playSession(ctx context.Context, agent *mcpAgent, demo paths) (transcript, 
 			Summary: fmt.Sprintf("#%d", completed.Task.Number),
 			Output:  []line{{Text: fmt.Sprintf("task #%d · %s", completed.Task.Number, completed.Task.Status), Tone: toneSuccess}},
 		},
-		step{
-			Kind: stepMessage,
-			Text: fmt.Sprintf(
-				"Done. Orders with a zero or negative amount are now rejected before any charge, and go test passes. "+
-					"Everything is recorded in Istok as task #%d: open istok ui or run istok task show %d.",
-				completed.Task.Number, completed.Task.Number,
-			),
-		},
+		step{Kind: stepMessage, Text: text.workReply(completed.Task.Number)},
 	)
 
 	return session, nil
-}
-
-func contextSummary(claimed claimResult) string {
-	files := map[string]bool{}
-	for _, item := range claimed.Snapshot.Retrieval {
-		files[item.Path] = true
-	}
-
-	return fmt.Sprintf(
-		"context: %s, %s from %s, %s",
-		count(len(claimed.Snapshot.Records), "project rule"),
-		count(len(claimed.Snapshot.Retrieval), "code snippet"),
-		count(len(files), "file"),
-		count(len(claimed.Snapshot.Knowledge), "knowledge note"),
-	)
-}
-
-// stdoutLines reads the command output Istok stored as the run's artifact.
-func stdoutLines(demo paths, result executionResult) ([]line, error) {
-	for _, artifact := range result.Artifacts {
-		if artifact.Kind != "stdout" {
-			continue
-		}
-
-		content, err := os.ReadFile(filepath.Join(demo.artifacts, artifact.RelativePath))
-		if err != nil {
-			return nil, fmt.Errorf("read validation output: %w", err)
-		}
-
-		var lines []line
-		for _, text := range strings.Split(strings.TrimRight(string(content), "\n"), "\n") {
-			lines = append(lines, line{Text: strings.ReplaceAll(text, "\t", "  ")})
-		}
-		return lines, nil
-	}
-
-	return nil, fmt.Errorf("validation stored no stdout artifact")
-}
-
-func diffLines(added []string) []line {
-	var lines []line
-	for _, text := range added {
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		lines = append(lines, line{Text: "+ " + strings.ReplaceAll(text, "\t", "  "), Tone: toneAdded})
-	}
-
-	return lines
-}
-
-func count(n int, noun string) string {
-	if n == 1 {
-		return fmt.Sprintf("1 %s", noun)
-	}
-
-	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-func seconds(milliseconds int64) string {
-	return fmt.Sprintf("%.1fs", float64(milliseconds)/1000)
 }

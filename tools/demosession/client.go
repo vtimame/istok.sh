@@ -19,10 +19,20 @@ type mcpAgent struct {
 	stderr  strings.Builder
 }
 
-func connect(ctx context.Context, binary string, demo paths) (*mcpAgent, error) {
+type actor struct {
+	id   string
+	name string
+}
+
+var (
+	claude = actor{id: "claude", name: "Claude Code"}
+	codex  = actor{id: "codex", name: "Codex"}
+)
+
+func connect(ctx context.Context, binary string, demo paths, identity actor) (*mcpAgent, error) {
 	agent := &mcpAgent{}
 
-	command := exec.Command(binary, "mcp", "--actor-id", "claude", "--actor-name", "Claude Code")
+	command := exec.Command(binary, "mcp", "--actor-id", identity.id, "--actor-name", identity.name)
 	command.Dir = demo.repository
 	command.Stderr = &agent.stderr
 

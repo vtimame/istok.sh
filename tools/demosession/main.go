@@ -1,16 +1,20 @@
-// demosession records one agent session against a demo database for the
-// website's terminal animation.
+// demosession records agent sessions against a demo database for the
+// website's terminal animations.
 //
-// It plays the agent's side by hand but talks to the real `istok mcp` server:
-// it creates and claims a task, edits code in the demo repository, validates
-// the change with a real `go test` through Istok and completes the task. Every
-// number and line of output in the transcript comes from those calls; only the
-// user's prompt and the agent's closing message are written here.
+// It plays the agents' side by hand but talks to the real `istok mcp` server.
+// The work session creates and claims a task, edits code in the demo
+// repository, validates the change with a real `go test` through Istok and
+// completes the task. The memory session saves a project rule as Claude Code
+// and shows it arriving in a later Codex claim. Task numbers, context and
+// command output come from those calls; only what people and agents say is
+// written here, in copy.go.
 //
-// Run it on a fresh root made by tools/demoseed:
+// Run it on a fresh root made by tools/demoseed, once per language:
 //
 //	go run ./tools/demoseed -root DIR
-//	go run ./tools/demosession -root DIR -out session.json
+//	go run ./tools/demosession -root DIR -lang en -out-dir OUT
+//
+// It writes OUT/work.<lang>.json and OUT/memory.<lang>.json.
 package main
 
 import (
@@ -24,12 +28,19 @@ import (
 
 func main() {
 	root := flag.String("root", "", "demo root created by tools/demoseed")
-	out := flag.String("out", "", "file to write the session transcript to")
+	outDir := flag.String("out-dir", "", "directory to write the transcripts to")
+	lang := flag.String("lang", "en", "language of the prompts and replies: en or ru")
 	binary := flag.String("istok", "istok", "istok binary that serves MCP")
 	flag.Parse()
 
-	if *root == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "demosession: -root and -out are required")
+	if *root == "" || *outDir == "" {
+		fmt.Fprintln(os.Stderr, "demosession: -root and -out-dir are required")
+		os.Exit(2)
+	}
+
+	text, found := copies[*lang]
+	if !found {
+		fmt.Fprintf(os.Stderr, "demosession: unknown language %q\n", *lang)
 		os.Exit(2)
 	}
 
@@ -43,18 +54,26 @@ func main() {
 
 	ctx := context.Background()
 
-	agent, err := connect(ctx, *binary, demo)
+	// The work session runs first, so its context shows the project as seeded.
+	agent, err := connect(ctx, *binary, demo, claude)
 	check(err)
-	defer agent.close()
-
-	transcript, err := playSession(ctx, agent, demo)
+	work, err := playWork(ctx, agent, demo, text)
+	agent.close()
 	check(err)
 
-	encoded, err := json.MarshalIndent(transcript, "", "  ")
+	memory, err := playMemory(ctx, *binary, demo, text)
 	check(err)
-	check(os.WriteFile(*out, append(encoded, '\n'), 0o644))
 
-	fmt.Printf("Session written to %s (task #%d)\n", *out, transcript.TaskNumber)
+	write(filepath.Join(*outDir, fmt.Sprintf("work.%s.json", *lang)), transcript{Parts: []part{work}})
+	write(filepath.Join(*outDir, fmt.Sprintf("memory.%s.json", *lang)), memory)
+}
+
+func write(path string, value transcript) {
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	check(err)
+	check(os.WriteFile(path, append(encoded, '\n'), 0o644))
+
+	fmt.Printf("Wrote %s\n", path)
 }
 
 type paths struct {

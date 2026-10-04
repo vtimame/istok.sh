@@ -1,12 +1,17 @@
 package main
 
-// transcript is what the website animates: the user's prompt, then the
-// agent's steps in order, each with the output it produced.
+// transcript is what the website animates: one or more agent sessions in the
+// same terminal, each with the user's prompt and the agent's steps in order.
 type transcript struct {
-	CWD        string `json:"cwd"`
-	Prompt     string `json:"prompt"`
-	TaskNumber int64  `json:"task_number"`
-	Steps      []step `json:"steps"`
+	Parts []part `json:"parts"`
+}
+
+type part struct {
+	// Agent is the command the user starts in the shell, such as claude.
+	Agent  string `json:"agent"`
+	CWD    string `json:"cwd"`
+	Prompt string `json:"prompt"`
+	Steps  []step `json:"steps"`
 }
 
 type stepKind string
@@ -16,7 +21,7 @@ const (
 	stepIstok stepKind = "istok"
 	// stepTool is one of the agent's own tools, such as reading or editing a file.
 	stepTool stepKind = "tool"
-	// stepMessage is the agent's closing reply to the user.
+	// stepMessage is the agent's reply to the user.
 	stepMessage stepKind = "message"
 )
 
