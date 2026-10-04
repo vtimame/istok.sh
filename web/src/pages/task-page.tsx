@@ -100,7 +100,9 @@ function RunCard({ run }: { run: Run }) {
       </div>
       <span className="text-xs text-muted-foreground">
         {formatRelative(run.started_at)} ·{" "}
-        {formatDuration(runDurationMs(run, now))}
+        {expired
+          ? `last heartbeat ${formatRelative(run.heartbeat_at)}`
+          : formatDuration(runDurationMs(run, now))}
       </span>
       {run.result_summary && (
         <p className="line-clamp-3 text-xs text-muted-foreground">

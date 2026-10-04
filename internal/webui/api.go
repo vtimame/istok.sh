@@ -14,24 +14,26 @@ import (
 	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/run"
-	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
+	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
 const (
 	defaultRunLimit = 100
+	maxFeedLimit    = 200
 	knowledgeLimit  = 200
 )
 
-// StatsReader summarizes tasks and runs per project.
-type StatsReader interface {
-	ProjectStats(ctx context.Context) (map[string]taskrepo.ProjectStats, error)
+// ReadModel serves UI-only summaries joined across tasks, runs and projects.
+type ReadModel interface {
+	ProjectStats(ctx context.Context) (map[string]uireadrepo.ProjectStats, error)
+	RunFeed(ctx context.Context, options uireadrepo.FeedOptions) ([]uireadrepo.FeedItem, error)
 }
 
 // Services are the application services the read-only API reads from.
 type Services struct {
 	Build     buildinfo.Info
-	Stats     StatsReader
+	ReadModel ReadModel
 	Projects  *project.Service
 	Tasks     *taskapp.Service
 	Runs      *runapp.Service
@@ -49,6 +51,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/{project}/tasks/{number}", a.task)
 	mux.HandleFunc("GET /api/v1/projects/{project}/runs", a.runs)
 	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge) // ?q= switches to full-text search
+	mux.HandleFunc("GET /api/v1/runs", a.feed)                              // ?project=&status=&lease=&limit=&offset=
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
@@ -70,7 +73,7 @@ func (a api) health(w http.ResponseWriter, _ *http.Request) {
 // project.updated_at does not track: it changes only on rename, rebind and delete.
 type projectView struct {
 	project.Project
-	Stats taskrepo.ProjectStats `json:"stats"`
+	Stats uireadrepo.ProjectStats `json:"stats"`
 }
 
 func (a api) projects(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +83,7 @@ func (a api) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := a.services.Stats.ProjectStats(r.Context())
+	stats, err := a.services.ReadModel.ProjectStats(r.Context())
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -178,6 +181,53 @@ func (a api) knowledge(w http.ResponseWriter, r *http.Request) {
 	} else {
 		items, err = a.services.Knowledge.Search(r.Context(), projectID, knowledge.SearchOptions{Query: query, Limit: knowledgeLimit})
 	}
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	writeResult(w, items)
+}
+
+func (a api) feed(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	options := uireadrepo.FeedOptions{
+		ProjectID: query.Get("project"),
+		Statuses:  query["status"],
+		Limit:     50,
+	}
+
+	if raw := query.Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit <= 0 || limit > maxFeedLimit {
+			writeError(w, http.StatusBadRequest, "invalid_argument", "limit must be between 1 and 200")
+			return
+		}
+		options.Limit = limit
+	}
+	if raw := query.Get("offset"); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_argument", "offset must be a non-negative integer")
+			return
+		}
+		options.Offset = offset
+	}
+	switch lease := uireadrepo.Lease(query.Get("lease")); lease {
+	case uireadrepo.LeaseAny, uireadrepo.LeaseLive, uireadrepo.LeaseExpired:
+		options.Lease = lease
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_argument", "lease must be live or expired")
+		return
+	}
+	for _, status := range options.Statuses {
+		if !run.Status(status).Valid() {
+			writeError(w, http.StatusBadRequest, "invalid_argument", "invalid run status filter")
+			return
+		}
+	}
+
+	items, err := a.services.ReadModel.RunFeed(r.Context(), options)
 	if err != nil {
 		writeDomainError(w, err)
 		return
