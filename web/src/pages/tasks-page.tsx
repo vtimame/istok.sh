@@ -104,7 +104,8 @@ export function TasksPage() {
                     <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                {/* The shadcn default matches the trigger width, too narrow for an icon button. */}
+                <DropdownMenuContent align="end" className="w-auto min-w-44">
                   <DropdownMenuItem
                     variant="destructive"
                     onSelect={() => setDeleting(true)}
