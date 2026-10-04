@@ -43,6 +43,8 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 		{"run", "heartbeat", "--help"},
 		{"run", "recover", "--help"},
 		{"run", "artifact", "--help"},
+		{"knowledge", "--help"},
+		{"knowledge", "list", "--help"},
 		{"index", "--help"},
 		{"index", "status", "--help"},
 		{"index", "rebuild", "--help"},
@@ -71,7 +73,7 @@ func TestHelpDoesNotCreateDatabase(t *testing.T) {
 func TestRootHelpShowsOnlyTopLevelCommands(t *testing.T) {
 	result := executeHelp(t, "--help")
 
-	for _, command := range []string{"version", "mcp", "update", "init", "project", "task", "run", "context", "index", "search", "graph"} {
+	for _, command := range []string{"version", "mcp", "update", "init", "project", "task", "run", "context", "knowledge", "index", "search", "graph"} {
 		if !strings.Contains(result, command) {
 			t.Errorf("root help does not contain %q:\n%s", command, result)
 		}
@@ -317,6 +319,73 @@ func TestProjectCLIJSONLifecycleAndNoMarkerFiles(t *testing.T) {
 		if len(entries) != 0 {
 			t.Fatalf("project root %q has unexpected files: %+v", directory, entries)
 		}
+	}
+}
+
+func TestProjectCLIInitializesNestedProjectsInEitherOrder(t *testing.T) {
+	for _, childFirst := range []bool{false, true} {
+		name := "parent first"
+		if childFirst {
+			name = "child first"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			child := filepath.Join(parent, "packages", "api")
+			if err := os.MkdirAll(child, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			database := filepath.Join(t.TempDir(), "istok.db")
+
+			paths := []string{parent, child}
+			if childFirst {
+				paths[0], paths[1] = paths[1], paths[0]
+			}
+
+			projectIDs := make(map[string]string, 2)
+			for _, path := range paths {
+				initialized := executeAt(t, path, database, "init", "--json")
+				if initialized.err != nil {
+					t.Fatalf("init at %q: %v", path, initialized.err)
+				}
+				result := decodeJSONResult[struct {
+					Project struct {
+						ID string `json:"id"`
+					} `json:"project"`
+					Created bool `json:"created"`
+				}](t, initialized.output)
+				if !result.Created {
+					t.Fatalf("init at %q did not create an exact-root project", path)
+				}
+				projectIDs[path] = result.Project.ID
+			}
+			if projectIDs[parent] == projectIDs[child] {
+				t.Fatalf("nested project IDs = %q, want distinct IDs", projectIDs[parent])
+			}
+
+			for _, path := range []string{parent, child} {
+				shown := executeAt(t, path, database, "project", "show", "--json")
+				if shown.err != nil {
+					t.Fatalf("show current at %q: %v", path, shown.err)
+				}
+				result := decodeJSONResult[struct {
+					ID string `json:"id"`
+				}](t, shown.output)
+				if result.ID != projectIDs[path] {
+					t.Fatalf("current project at %q = %q, want %q", path, result.ID, projectIDs[path])
+				}
+
+				repeated := executeAt(t, path, database, "init", "--json")
+				if repeated.err != nil {
+					t.Fatalf("repeat init at %q: %v", path, repeated.err)
+				}
+				if result := decodeJSONResult[struct {
+					Created bool `json:"created"`
+				}](t, repeated.output); result.Created {
+					t.Fatalf("repeat init at %q unexpectedly created a project", path)
+				}
+			}
+		})
 	}
 }
 

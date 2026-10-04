@@ -179,6 +179,21 @@ istok init
 
 Project state stays local and can be inspected independently of any coding-agent session.
 
+Projects may be nested. This is useful in monorepositories where one agent coordinates
+the whole repository while other agents work within individual packages:
+
+```text
+my-monorepo/             # monorepo project
+└── packages/
+    ├── api/             # independent API project
+    └── web/             # independent web project
+```
+
+Run `istok init` at each exact root that needs independent tasks, context, runs, and
+validation. Commands select the project with the deepest root containing the current
+working directory. The monorepo index covers the complete repository, while a package
+index is limited to that package.
+
 ### Tasks
 
 Tasks are durable units of non-trivial work.
@@ -199,6 +214,89 @@ Small questions and lightweight consultations do not need tasks.
 Istok keeps durable project knowledge outside the conversation.
 
 This includes project notes, decisions, constraints, reusable instructions, and repository context relevant to the work.
+
+Task runs assemble context through three explicit delivery modes:
+
+* `always` for small project-wide instructions and constraints;
+* `ranked` for records selected by task relevance;
+* `manual` for records included only through an explicit context ID.
+
+The default run snapshot starts with a 12-record durable item budget and is bounded to
+16 KiB of durable context, 32 KiB of repository retrieval, and a 48 KiB combined
+ceiling. When more than 12 active `always` records are required, Istok automatically
+expands only the item budget up to the 64-record absolute limit; byte and per-record
+limits remain enforced. An explicit `--context-limit` is never expanded and fails with
+a suggested minimum when it cannot contain all required `always` records. Selection
+metadata in snapshot schema v5 records the effective item limit and its reason together
+with lanes, scores, matched terms, candidate hashes, byte budgets, usage, warnings, and
+a separately bounded knowledge briefing. Existing snapshot schemas v1-v4 remain readable.
+
+Context records can also carry `review_after`, `expires_at`, and `superseded_by`
+lifecycle metadata. Expired and superseded records are excluded from automatic
+assembly; records due for review remain usable but produce warnings.
+
+Preview and diagnose the result before claiming a task:
+
+```sh
+istok context preview 42
+istok context doctor
+```
+
+Use repeated `--context-id` flags for required manual context. The legacy all-context
+path is intentionally explicit and audited:
+
+```sh
+istok task claim 42 \
+  --all-context \
+  --context-override-reason "one-time migration audit"
+```
+
+### Pull-first knowledge
+
+Knowledge is durable project documentation managed by Istok, but it is not pushed into
+every agent run. Catalog and search operations return bounded metadata and short snippets;
+the full body is loaded only through `show` or `read`:
+
+```sh
+istok knowledge add "Authentication" \
+  --kind architecture \
+  --summary "Current authentication contract" \
+  --body-file ./auth-notes.md
+
+istok knowledge list --status current
+istok knowledge search "JWKS cache"
+istok knowledge read <knowledge-id>
+```
+
+New and distilled items start as drafts. Review is explicit, as are promotion and
+supersession:
+
+```sh
+istok knowledge distill "Authentication v2" \
+  --summary "Replacement contract" \
+  --source run:<run-id>
+istok knowledge review <knowledge-id> --expected-revision 1 --note "Verified against code"
+istok knowledge promote <knowledge-id> --expected-revision 2
+istok knowledge supersede <old-id> <replacement-id> --expected-revision 3
+```
+
+Editing a reviewed draft clears its review evidence; it must be reviewed again before
+promotion. A draft replacement must also be reviewed before it can supersede current
+knowledge. Current and superseded items are immutable; changes go through a new draft so
+agents never observe an unreviewed edit as current truth.
+
+Istok-managed bodies live in the same XDG-backed SQLite storage as other local Istok
+state, never in the project root. Repository documents remain developer-owned and may be
+referenced through provenance without being modified. Markdown is an explicit export
+format, not the canonical store:
+
+```sh
+istok knowledge export <knowledge-id> --output /explicit/path/authentication.md
+```
+
+Exports require a caller-supplied destination, are published atomically, and refuse to
+overwrite an existing file. Run snapshots contain at most 20 current knowledge summaries
+within a separate 4 KiB budget; they never contain knowledge bodies or provenance.
 
 ### Runs
 
@@ -252,6 +350,7 @@ The CLI gives you direct access to the same local project state exposed to codin
 | `istok task`       | Inspect and manage tasks                            |
 | `istok run`        | Inspect runs, executions, artifacts, and validation |
 | `istok context`    | Inspect and manage durable project context          |
+| `istok knowledge`  | Pull, review, and export durable project knowledge  |
 | `istok index`      | Inspect or rebuild the repository index             |
 | `istok search`     | Search indexed repository content                   |
 | `istok graph`      | Explore symbols and code relationships              |
@@ -283,6 +382,15 @@ istok task list --json
 Istok is designed to work locally.
 
 The current project state is stored in SQLite, while repository indexes and managed artifacts are kept in separate local storage.
+
+By default, the database is stored at
+`${XDG_DATA_HOME:-$HOME/.local/share}/istok/istok.db` on Linux and
+`$HOME/Library/Application Support/istok/istok.db` on macOS. Istok keeps its
+default data directory at POSIX mode `0700` and creates or repairs the database
+as a regular file at mode `0600`. A custom `--database` path is supported, but
+Istok does not change the permissions of an already existing parent directory,
+rejects one writable by group or others, and refuses a final path that is a
+symbolic link. Existing platform-specific extended ACL entries are not rewritten.
 
 Normal use does not require:
 

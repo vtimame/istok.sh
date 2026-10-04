@@ -3,6 +3,7 @@ package contextpack
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"math"
 	"strings"
 	"time"
@@ -10,10 +11,11 @@ import (
 	"github.com/google/uuid"
 
 	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/retrieval"
 )
 
-const SchemaVersion = "3"
+const SchemaVersion = "5"
 
 type Package struct {
 	SchemaVersion string                              `json:"schema_version"`
@@ -21,18 +23,25 @@ type Package struct {
 	GeneratedAt   time.Time                           `json:"generated_at"`
 	Records       []projectcontext.ContextPackageItem `json:"records"`
 	Retrieval     []Item                              `json:"retrieval"`
+	Knowledge     []knowledge.BriefingItem            `json:"knowledge_catalog"`
 	Metadata      Metadata                            `json:"metadata"`
 }
 
 type BuildOptions struct {
 	ContextLimit            int
+	ExplicitContextIDs      []string
+	LegacyAllContext        bool
+	ContextOverrideReason   string
 	WithoutRetrieval        bool
 	RetrievalOverrideReason string
 }
 
 type Metadata struct {
-	WithoutRetrieval bool   `json:"without_retrieval"`
-	OverrideReason   string `json:"override_reason,omitempty"`
+	WithoutRetrieval      bool                            `json:"without_retrieval"`
+	OverrideReason        string                          `json:"override_reason,omitempty"`
+	ContextOverrideReason string                          `json:"context_override_reason,omitempty"`
+	Assembly              projectcontext.AssemblyMetadata `json:"assembly"`
+	Knowledge             knowledge.BriefingMetadata      `json:"knowledge"`
 }
 
 type Item struct {
@@ -64,6 +73,13 @@ func (v Metadata) Validate() error {
 	}
 	if v.OverrideReason != normalizedReason {
 		return projectcontext.NewError(projectcontext.CodeInvalid, "override_reason must be normalized")
+	}
+	contextReason := strings.TrimSpace(v.ContextOverrideReason)
+	if v.ContextOverrideReason != contextReason {
+		return projectcontext.NewError(projectcontext.CodeInvalid, "context_override_reason must be normalized")
+	}
+	if err := v.Assembly.Validate(contextReason != ""); err != nil {
+		return err
 	}
 
 	return nil
@@ -113,6 +129,48 @@ func (v Package) Validate() error {
 	}
 	if err := v.Metadata.Validate(); err != nil {
 		return err
+	}
+	if v.Metadata.Assembly.SelectedCount != len(v.Records) {
+		return projectcontext.NewError(projectcontext.CodeInvalid, "context assembly selected count does not match records")
+	}
+	emptyKnowledgeMetadata := len(v.Knowledge) == 0 && v.Metadata.Knowledge == (knowledge.BriefingMetadata{})
+	usedKnowledgeBytes := 0
+	seenKnowledge := make(map[string]bool, len(v.Knowledge))
+	for _, item := range v.Knowledge {
+		if !projectcontext.IsUUIDv7(item.ID) || seenKnowledge[item.ID] || item.Revision < 1 || !item.Kind.Valid() || strings.TrimSpace(item.Title) == "" || strings.TrimSpace(item.Summary) == "" || len(item.Title) > knowledge.MaxTitleBytes || len(item.Summary) > knowledge.MaxSummaryBytes || len(item.ContentHash) != 64 {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "knowledge briefing item is invalid")
+		}
+		seenKnowledge[item.ID] = true
+		if _, err := hex.DecodeString(item.ContentHash); err != nil {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "knowledge briefing hash is invalid")
+		}
+		encoded, _ := json.Marshal(item)
+		usedKnowledgeBytes += len(encoded)
+	}
+	knowledgeMetadata := v.Metadata.Knowledge
+	if !emptyKnowledgeMetadata && (knowledgeMetadata.SelectedCount != len(v.Knowledge) || knowledgeMetadata.CandidateCount < knowledgeMetadata.SelectedCount || knowledgeMetadata.SelectedCount > knowledge.BriefingLimit || knowledgeMetadata.BudgetBytes != knowledge.BriefingBudgetBytes || knowledgeMetadata.UsedBytes != usedKnowledgeBytes || knowledgeMetadata.UsedBytes > knowledgeMetadata.BudgetBytes || knowledgeMetadata.Truncated != (knowledgeMetadata.CandidateCount > knowledgeMetadata.SelectedCount)) {
+		return projectcontext.NewError(projectcontext.CodeInvalid, "knowledge briefing metadata is invalid")
+	}
+	for _, record := range v.Records {
+		if !record.Delivery.Valid() || math.IsNaN(record.Score) || math.IsInf(record.Score, 0) {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "context record selection metadata is invalid")
+		}
+		if record.Lane != projectcontext.LaneAlways && record.Lane != projectcontext.LaneExplicit && record.Lane != projectcontext.LaneRanked {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "context record inclusion lane is invalid")
+		}
+		if (record.Lane == projectcontext.LaneAlways && record.Delivery != projectcontext.DeliveryAlways) || (record.Lane == projectcontext.LaneRanked && record.Delivery != projectcontext.DeliveryRanked) {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "context record delivery does not match its inclusion lane")
+		}
+		if record.MatchedTerms == nil || record.Reasons == nil {
+			return projectcontext.NewError(projectcontext.CodeInvalid, "context record selection metadata must be arrays")
+		}
+		for _, values := range [][]string{record.MatchedTerms, record.Reasons} {
+			for _, value := range values {
+				if strings.TrimSpace(value) == "" {
+					return projectcontext.NewError(projectcontext.CodeInvalid, "context record selection metadata must not contain blank values")
+				}
+			}
+		}
 	}
 	if v.Metadata.WithoutRetrieval && len(v.Retrieval) != 0 {
 		return projectcontext.NewError(projectcontext.CodeInvalid, "without_retrieval package must not contain retrieval items")

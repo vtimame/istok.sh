@@ -8,6 +8,7 @@ import (
 
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/contextpack"
 )
 
 const contextMarkdownWrapWidth = 100
@@ -20,6 +21,10 @@ func renderContextValue(value any, terminal bool) string {
 		return renderContextShow(typed)
 	case contextListView:
 		return renderContextList(typed)
+	case contextmodel.DiagnosticReport:
+		return renderContextDoctor(typed)
+	case contextpack.Package:
+		return renderContextPreview(typed)
 	default:
 		return fmt.Sprintln(value)
 	}
@@ -68,6 +73,7 @@ func renderContextMarkdownSource(value contextMarkdownView) string {
 		output.WriteString(fmt.Sprintf("- **Source:** `%s`\n", record.Source))
 		output.WriteString(fmt.Sprintf("- **Visibility:** `%s`\n", record.Visibility))
 		output.WriteString(fmt.Sprintf("- **Sensitivity:** `%s`\n", record.Sensitivity))
+		output.WriteString(fmt.Sprintf("- **Delivery:** `%s`\n", record.Delivery))
 		if record.Kind == contextmodel.KindInstruction {
 			output.WriteString(fmt.Sprintf("- **Enabled:** `%t`\n- **Priority:** `%s`\n- **Scope:** `%s`\n", *record.Enabled, *record.Priority, *record.Scope))
 		}
@@ -124,6 +130,7 @@ func renderContextList(value contextListView) string {
 		rows = append(rows, []string{
 			presentation.Warning(record.ID),
 			string(record.Kind),
+			string(record.Delivery),
 			presentation.StyledStatus(state),
 			policy,
 			presentation.Metadata(fmt.Sprint(record.Revision)),
@@ -132,7 +139,7 @@ func renderContextList(value contextListView) string {
 		})
 	}
 
-	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderUnboundedTable([]string{"ID", "KIND", "STATE", "POLICY", "REVISION", "TITLE", "TAGS"}, rows))
+	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(value.Project.Name), presentation.Divider(), presentation.Warning(fmt.Sprintf("%d context records", len(value.Records))), presentation.RenderUnboundedTable([]string{"ID", "KIND", "DELIVERY", "STATE", "POLICY", "REVISION", "TITLE", "TAGS"}, rows))
 }
 
 func renderContextShow(value contextView) string {
@@ -165,6 +172,8 @@ func renderContextShow(value contextView) string {
 	output.WriteString("\n")
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Sensitivity"), record.Sensitivity)))
 	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s", presentation.Key("Delivery"), record.Delivery)))
+	output.WriteString("\n")
 	if record.Kind == contextmodel.KindInstruction {
 		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %t (%s, %s)", presentation.Key("Instruction"), *record.Enabled, *record.Priority, *record.Scope)))
 		output.WriteString("\n")
@@ -184,6 +193,65 @@ func renderContextShow(value contextView) string {
 	} else {
 		output.WriteString(presentation.RailLine("—"))
 		output.WriteString("\n")
+	}
+
+	return output.String()
+}
+
+func renderContextDoctor(value contextmodel.DiagnosticReport) string {
+	var output strings.Builder
+	output.WriteString(presentation.SectionTitle("Context doctor"))
+	output.WriteString("\n\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%d active records · %d bytes", value.ActiveRecords, value.ActiveBytes)))
+	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%d always (%d bytes) · %d ranked · %d manual", value.AlwaysRecords, value.AlwaysBytes, value.RankedRecords, value.ManualRecords)))
+	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%d expired · %d superseded · %d due for review", value.ExpiredRecords, value.SupersededRecords, value.ReviewDueRecords)))
+	if len(value.Issues) == 0 {
+		output.WriteString("\n\n")
+		output.WriteString(presentation.Metadata("No context hygiene issues found."))
+		return output.String()
+	}
+
+	output.WriteString("\n\n")
+	output.WriteString(presentation.SectionTitle("Issues"))
+	for _, issue := range value.Issues {
+		output.WriteString("\n")
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s: %s", presentation.StyledStatus(issue.Severity), issue.Code, issue.Message)))
+		if len(issue.RecordIDs) > 0 {
+			output.WriteString("\n")
+			output.WriteString(presentation.RailLine(presentation.Metadata(strings.Join(issue.RecordIDs, ", "))))
+		}
+		if issue.Action != "" {
+			output.WriteString("\n")
+			output.WriteString(presentation.RailLine(presentation.Metadata("action: " + issue.Action)))
+		}
+	}
+
+	return output.String()
+}
+
+func renderContextPreview(value contextpack.Package) string {
+	var output strings.Builder
+	output.WriteString(presentation.SectionTitle("Context preview"))
+	output.WriteString("\n\n")
+	metadata := value.Metadata.Assembly
+	if metadata.DurableBudgetItems > 0 {
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%d/%d durable records (%s) · %d candidates · %d/%d bytes", len(value.Records), metadata.DurableBudgetItems, metadata.ItemBudgetReason, metadata.CandidateCount, metadata.Usage.DurableBytes, metadata.DurableBudgetBytes)))
+	} else {
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%d durable records · %d candidates · %d/%d bytes", len(value.Records), metadata.CandidateCount, metadata.Usage.DurableBytes, metadata.DurableBudgetBytes)))
+	}
+	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%d retrieval items · %d/%d bytes · %d/%d total", len(value.Retrieval), metadata.Usage.RetrievalBytes, metadata.RetrievalBudgetBytes, metadata.Usage.TotalBytes, metadata.TotalBudgetBytes)))
+	output.WriteString("\n")
+	output.WriteString(presentation.RailLine(fmt.Sprintf("%d/%d knowledge entries · %d/%d bytes", len(value.Knowledge), value.Metadata.Knowledge.CandidateCount, value.Metadata.Knowledge.UsedBytes, value.Metadata.Knowledge.BudgetBytes)))
+	for _, record := range value.Records {
+		output.WriteString("\n")
+		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %.2f %s", presentation.Metadata(record.Lane), record.Score, record.Title)))
+	}
+	for _, warning := range metadata.Warnings {
+		output.WriteString("\n")
+		output.WriteString(presentation.RailLine(presentation.Warning("warning: " + warning)))
 	}
 
 	return output.String()

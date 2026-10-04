@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -27,6 +29,39 @@ func TestRunErrorCodeMapsClaimDependencies(t *testing.T) {
 	}
 }
 
+func TestCLIJSONErrorsIncludeStructuredContextBudgetDetails(t *testing.T) {
+	contextErr := contextmodel.NewBudgetError("too many required records", contextmodel.BudgetFailure{
+		Reason:                contextmodel.BudgetReasonDurableItems,
+		Lane:                  contextmodel.LaneAlways,
+		Action:                "retry with context_limit=15 or omit the explicit limit",
+		RequiredItems:         15,
+		MaxItems:              12,
+		RequiredBytes:         12548,
+		MaxBytes:              contextmodel.DefaultDurableBudgetBytes,
+		RecordIDs:             []string{"record-a", "record-b"},
+		SuggestedContextLimit: 15,
+	})
+
+	for name, err := range map[string]error{
+		"context": jsonContextError(contextErr),
+		"run":     runJSONError(contextErr),
+	} {
+		t.Run(name, func(t *testing.T) {
+			var payload struct {
+				Error struct {
+					Details *contextmodel.BudgetFailure `json:"details"`
+				} `json:"error"`
+			}
+			if unmarshalErr := json.Unmarshal([]byte(err.Error()), &payload); unmarshalErr != nil {
+				t.Fatal(unmarshalErr)
+			}
+			if payload.Error.Details == nil || !reflect.DeepEqual(payload.Error.Details, contextmodel.ErrorBudget(contextErr)) {
+				t.Fatalf("structured error = %s", err)
+			}
+		})
+	}
+}
+
 func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	root := t.TempDir()
 	database := filepath.Join(t.TempDir(), "istok.db")
@@ -41,6 +76,7 @@ func TestRunCLIJSONKernelWorkflowAndImmutableSnapshot(t *testing.T) {
 	contextAdded := executeAt(t, root, database,
 		"context", "add", "Architecture",
 		"--kind", "decision",
+		"--delivery", "always",
 		"--body", "original snapshot body",
 		"--json",
 	)

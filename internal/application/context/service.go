@@ -56,6 +56,15 @@ func (s *Service) Search(ctx context.Context, projectID string, options contextm
 	return s.repository.Search(ctx, projectID, options)
 }
 
+func (s *Service) Doctor(ctx context.Context, projectID string) (contextmodel.DiagnosticReport, error) {
+	values, err := s.List(ctx, projectID, contextmodel.ListOptions{IncludeDisabled: true})
+	if err != nil {
+		return contextmodel.DiagnosticReport{}, err
+	}
+
+	return contextmodel.Diagnose(values, s.now().UTC()), nil
+}
+
 func (s *Service) Events(ctx context.Context, recordID string) ([]contextmodel.ContextEvent, error) {
 	if !contextmodel.IsUUIDv7(recordID) {
 		return nil, contextmodel.NewError(contextmodel.CodeInvalid, "context record id must be a canonical UUIDv7")

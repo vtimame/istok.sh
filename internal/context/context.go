@@ -72,6 +72,26 @@ const ScopeProject Scope = "project"
 
 func (v Scope) Valid() bool { return v == ScopeProject }
 
+type Delivery string
+
+const (
+	DeliveryAlways Delivery = "always"
+	DeliveryRanked Delivery = "ranked"
+	DeliveryManual Delivery = "manual"
+)
+
+func (v Delivery) Valid() bool {
+	return v == DeliveryAlways || v == DeliveryRanked || v == DeliveryManual
+}
+
+func DefaultDelivery(kind Kind) Delivery {
+	if kind == KindInstruction {
+		return DeliveryAlways
+	}
+
+	return DeliveryRanked
+}
+
 type ActorSnapshot struct {
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
@@ -87,23 +107,27 @@ func (a ActorSnapshot) Validate() error {
 }
 
 type ProjectContextRecord struct {
-	ID          string        `json:"id"`
-	ProjectID   string        `json:"project_id"`
-	Revision    int64         `json:"revision"`
-	Kind        Kind          `json:"kind"`
-	Title       string        `json:"title"`
-	Body        string        `json:"body"`
-	Tags        []string      `json:"tags"`
-	Source      Source        `json:"source"`
-	Visibility  Visibility    `json:"visibility"`
-	Sensitivity Sensitivity   `json:"sensitivity"`
-	Enabled     *bool         `json:"enabled,omitempty"`
-	Priority    *Priority     `json:"priority,omitempty"`
-	Scope       *Scope        `json:"scope,omitempty"`
-	Actor       ActorSnapshot `json:"actor"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
-	DeletedAt   *time.Time    `json:"deleted_at,omitempty"`
+	ID           string        `json:"id"`
+	ProjectID    string        `json:"project_id"`
+	Revision     int64         `json:"revision"`
+	Kind         Kind          `json:"kind"`
+	Title        string        `json:"title"`
+	Body         string        `json:"body"`
+	Tags         []string      `json:"tags"`
+	Source       Source        `json:"source"`
+	Visibility   Visibility    `json:"visibility"`
+	Sensitivity  Sensitivity   `json:"sensitivity"`
+	Delivery     Delivery      `json:"delivery"`
+	Enabled      *bool         `json:"enabled,omitempty"`
+	Priority     *Priority     `json:"priority,omitempty"`
+	Scope        *Scope        `json:"scope,omitempty"`
+	Actor        ActorSnapshot `json:"actor"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	ReviewAfter  *time.Time    `json:"review_after,omitempty"`
+	ExpiresAt    *time.Time    `json:"expires_at,omitempty"`
+	SupersededBy *string       `json:"superseded_by,omitempty"`
+	DeletedAt    *time.Time    `json:"deleted_at,omitempty"`
 }
 
 type ContextEvent struct {
@@ -117,18 +141,22 @@ type ContextEvent struct {
 }
 
 type CreateInput struct {
-	ID          string      `json:"id,omitempty"`
-	ProjectID   string      `json:"project_id"`
-	Kind        Kind        `json:"kind"`
-	Title       string      `json:"title"`
-	Body        string      `json:"body"`
-	Tags        []string    `json:"tags"`
-	Source      Source      `json:"source"`
-	Visibility  Visibility  `json:"visibility"`
-	Sensitivity Sensitivity `json:"sensitivity"`
-	Enabled     *bool       `json:"enabled,omitempty"`
-	Priority    *Priority   `json:"priority,omitempty"`
-	Scope       *Scope      `json:"scope,omitempty"`
+	ID           string      `json:"id,omitempty"`
+	ProjectID    string      `json:"project_id"`
+	Kind         Kind        `json:"kind"`
+	Title        string      `json:"title"`
+	Body         string      `json:"body"`
+	Tags         []string    `json:"tags"`
+	Source       Source      `json:"source"`
+	Visibility   Visibility  `json:"visibility"`
+	Sensitivity  Sensitivity `json:"sensitivity"`
+	Delivery     Delivery    `json:"delivery,omitempty"`
+	Enabled      *bool       `json:"enabled,omitempty"`
+	Priority     *Priority   `json:"priority,omitempty"`
+	Scope        *Scope      `json:"scope,omitempty"`
+	ReviewAfter  *time.Time  `json:"review_after,omitempty"`
+	ExpiresAt    *time.Time  `json:"expires_at,omitempty"`
+	SupersededBy *string     `json:"superseded_by,omitempty"`
 }
 
 func (v CreateInput) Validate() error {
@@ -153,6 +181,21 @@ func (v CreateInput) Validate() error {
 	if !v.Sensitivity.Valid() {
 		return NewError(CodeInvalid, "context sensitivity is invalid")
 	}
+	if v.Delivery != "" && !v.Delivery.Valid() {
+		return NewError(CodeInvalid, "context delivery is invalid")
+	}
+	if v.ReviewAfter != nil && v.ReviewAfter.IsZero() {
+		return NewError(CodeInvalid, "review_after must be a valid timestamp")
+	}
+	if v.ExpiresAt != nil && v.ExpiresAt.IsZero() {
+		return NewError(CodeInvalid, "expires_at must be a valid timestamp")
+	}
+	if v.ReviewAfter != nil && v.ExpiresAt != nil && v.ExpiresAt.Before(*v.ReviewAfter) {
+		return NewError(CodeInvalid, "expires_at must not be before review_after")
+	}
+	if v.SupersededBy != nil && !IsUUIDv7(strings.TrimSpace(*v.SupersededBy)) {
+		return NewError(CodeInvalid, "superseded_by must be a canonical UUIDv7")
+	}
 
 	if _, err := NormalizeTags(v.Tags); err != nil {
 		return err
@@ -171,20 +214,29 @@ func (v CreateInput) Validate() error {
 }
 
 type Patch struct {
-	Kind        *Kind        `json:"kind,omitempty"`
-	Title       *string      `json:"title,omitempty"`
-	Body        *string      `json:"body,omitempty"`
-	Tags        *[]string    `json:"tags,omitempty"`
-	Source      *Source      `json:"source,omitempty"`
-	Visibility  *Visibility  `json:"visibility,omitempty"`
-	Sensitivity *Sensitivity `json:"sensitivity,omitempty"`
-	Enabled     *bool        `json:"enabled,omitempty"`
-	Priority    *Priority    `json:"priority,omitempty"`
-	Scope       *Scope       `json:"scope,omitempty"`
+	Kind         *Kind        `json:"kind,omitempty"`
+	Title        *string      `json:"title,omitempty"`
+	Body         *string      `json:"body,omitempty"`
+	Tags         *[]string    `json:"tags,omitempty"`
+	Source       *Source      `json:"source,omitempty"`
+	Visibility   *Visibility  `json:"visibility,omitempty"`
+	Sensitivity  *Sensitivity `json:"sensitivity,omitempty"`
+	Delivery     *Delivery    `json:"delivery,omitempty"`
+	Enabled      *bool        `json:"enabled,omitempty"`
+	Priority     *Priority    `json:"priority,omitempty"`
+	Scope        *Scope       `json:"scope,omitempty"`
+	ReviewAfter  TimePatch    `json:"-"`
+	ExpiresAt    TimePatch    `json:"-"`
+	SupersededBy *string      `json:"superseded_by,omitempty"`
+}
+
+type TimePatch struct {
+	Set   bool
+	Value *time.Time
 }
 
 func (v Patch) Validate() error {
-	if v.Kind == nil && v.Title == nil && v.Body == nil && v.Tags == nil && v.Source == nil && v.Visibility == nil && v.Sensitivity == nil && v.Enabled == nil && v.Priority == nil && v.Scope == nil {
+	if v.Kind == nil && v.Title == nil && v.Body == nil && v.Tags == nil && v.Source == nil && v.Visibility == nil && v.Sensitivity == nil && v.Delivery == nil && v.Enabled == nil && v.Priority == nil && v.Scope == nil && !v.ReviewAfter.Set && !v.ExpiresAt.Set && v.SupersededBy == nil {
 		return NewError(CodeInvalid, "context patch must not be empty")
 	}
 
@@ -202,6 +254,20 @@ func (v Patch) Validate() error {
 	}
 	if v.Sensitivity != nil && !v.Sensitivity.Valid() {
 		return NewError(CodeInvalid, "context sensitivity is invalid")
+	}
+	if v.Delivery != nil && !v.Delivery.Valid() {
+		return NewError(CodeInvalid, "context delivery is invalid")
+	}
+	for _, patch := range []TimePatch{v.ReviewAfter, v.ExpiresAt} {
+		if patch.Set && patch.Value != nil && patch.Value.IsZero() {
+			return NewError(CodeInvalid, "context lifecycle timestamp is invalid")
+		}
+	}
+	if v.SupersededBy != nil {
+		value := strings.TrimSpace(*v.SupersededBy)
+		if value != "" && !IsUUIDv7(value) {
+			return NewError(CodeInvalid, "superseded_by must be a canonical UUIDv7")
+		}
 	}
 	if v.Tags != nil {
 		if _, err := NormalizeTags(*v.Tags); err != nil {
@@ -247,6 +313,31 @@ func (v Patch) Apply(value *ProjectContextRecord) error {
 	}
 	if v.Sensitivity != nil {
 		value.Sensitivity = *v.Sensitivity
+	}
+	if v.Delivery != nil {
+		value.Delivery = *v.Delivery
+	}
+	if v.ReviewAfter.Set {
+		value.ReviewAfter = cloneTime(v.ReviewAfter.Value)
+	}
+	if v.ExpiresAt.Set {
+		value.ExpiresAt = cloneTime(v.ExpiresAt.Value)
+	}
+	if v.SupersededBy != nil {
+		normalized := strings.TrimSpace(*v.SupersededBy)
+		value.SupersededBy = nil
+		if normalized != "" {
+			value.SupersededBy = &normalized
+		}
+	}
+	if value.Delivery == "" {
+		value.Delivery = DefaultDelivery(value.Kind)
+	}
+	if value.ReviewAfter != nil && value.ExpiresAt != nil && value.ExpiresAt.Before(*value.ReviewAfter) {
+		return NewError(CodeInvalid, "expires_at must not be before review_after")
+	}
+	if value.SupersededBy != nil && *value.SupersededBy == value.ID {
+		return NewError(CodeInvalid, "context record cannot supersede itself")
 	}
 	if value.Kind != KindInstruction && (v.Enabled != nil || v.Priority != nil || v.Scope != nil) {
 		return NewError(CodeInvalid, "instruction policy is only valid for instruction context")
@@ -344,6 +435,15 @@ type BuildOptions struct {
 	Limit          int  `json:"limit,omitempty"`
 }
 
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	copy := value.UTC()
+	return &copy
+}
+
 func (v BuildOptions) Validate() error {
 	if v.Limit < 0 {
 		return NewError(CodeInvalid, "limit must be non-negative")
@@ -367,6 +467,7 @@ type ContextPackageItem struct {
 	Source         Source      `json:"source"`
 	Visibility     Visibility  `json:"visibility"`
 	Sensitivity    Sensitivity `json:"sensitivity"`
+	Delivery       Delivery    `json:"delivery,omitempty"`
 	Enabled        *bool       `json:"enabled,omitempty"`
 	Priority       *Priority   `json:"priority,omitempty"`
 	Scope          *Scope      `json:"scope,omitempty"`
@@ -374,6 +475,10 @@ type ContextPackageItem struct {
 	Body           string      `json:"body"`
 	Snippet        string      `json:"snippet"`
 	Tags           []string    `json:"tags"`
+	Lane           string      `json:"lane,omitempty"`
+	Score          float64     `json:"score,omitempty"`
+	MatchedTerms   []string    `json:"matched_terms,omitempty"`
+	Reasons        []string    `json:"reasons,omitempty"`
 	Comment        string      `json:"comment,omitempty"`
 }
 

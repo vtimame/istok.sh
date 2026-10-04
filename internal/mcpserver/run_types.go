@@ -70,14 +70,17 @@ type ArtifactVerifyResult struct {
 }
 
 type runClaimInput struct {
-	TaskID                  string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
-	RunID                   string `json:"run_id,omitempty" jsonschema:"Optional canonical UUIDv7 run identifier."`
-	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Optional canonical UUIDv7 snapshot identifier."`
-	ContextLimit            int    `json:"context_limit,omitempty" jsonschema:"Maximum number of context records to include in run snapshots."`
-	BaseBranch              string `json:"base_branch,omitempty" jsonschema:"Optional task base branch for reporting and traceability."`
-	BaseCommit              string `json:"base_commit,omitempty" jsonschema:"Optional task base commit for reporting and traceability."`
-	WithoutRetrieval        bool   `json:"without_retrieval,omitempty" jsonschema:"Skip local task retrieval; requires retrieval_override_reason."`
-	RetrievalOverrideReason string `json:"retrieval_override_reason,omitempty" jsonschema:"Audited reason required with without_retrieval."`
+	TaskID                  string   `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
+	RunID                   string   `json:"run_id,omitempty" jsonschema:"Optional canonical UUIDv7 run identifier."`
+	SnapshotID              string   `json:"snapshot_id,omitempty" jsonschema:"Optional canonical UUIDv7 snapshot identifier."`
+	ContextLimit            int      `json:"context_limit,omitempty" jsonschema:"Maximum number of context records to include in run snapshots."`
+	ContextIDs              []string `json:"context_ids,omitempty" jsonschema:"Explicit context record UUIDv7 values to include."`
+	AllContext              bool     `json:"all_context,omitempty" jsonschema:"Include all active context; requires context_override_reason."`
+	ContextOverrideReason   string   `json:"context_override_reason,omitempty" jsonschema:"Audited reason required with all_context."`
+	BaseBranch              string   `json:"base_branch,omitempty" jsonschema:"Optional task base branch for reporting and traceability."`
+	BaseCommit              string   `json:"base_commit,omitempty" jsonschema:"Optional task base commit for reporting and traceability."`
+	WithoutRetrieval        bool     `json:"without_retrieval,omitempty" jsonschema:"Skip local task retrieval; requires retrieval_override_reason."`
+	RetrievalOverrideReason string   `json:"retrieval_override_reason,omitempty" jsonschema:"Audited reason required with without_retrieval."`
 }
 
 type runListInput struct {

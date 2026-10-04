@@ -188,6 +188,42 @@ func TestInstructionPolicyDefaultsAndDisabledFiltering(t *testing.T) {
 	}
 }
 
+func TestDeliveryLifecycleAndSupersessionRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repository, _, p := newContextRepository(t)
+	replacement := createRecord(t, ctx, repository, p.ID, contextmodel.CreateInput{
+		Kind: contextmodel.KindDecision, Title: "Current decision", Source: contextmodel.SourceUser,
+		Visibility: contextmodel.VisibilityShared, Sensitivity: contextmodel.SensitivityNormal,
+	}, actor)
+	reviewAfter := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	expiresAt := reviewAfter.Add(30 * 24 * time.Hour)
+	original := createRecord(t, ctx, repository, p.ID, contextmodel.CreateInput{
+		Kind: contextmodel.KindNote, Title: "Old decision", Source: contextmodel.SourceUser,
+		Visibility: contextmodel.VisibilityShared, Sensitivity: contextmodel.SensitivityNormal,
+		Delivery: contextmodel.DeliveryManual, ReviewAfter: &reviewAfter, ExpiresAt: &expiresAt, SupersededBy: &replacement.ID,
+	}, actor)
+
+	if original.Delivery != contextmodel.DeliveryManual || original.ReviewAfter == nil || !original.ReviewAfter.Equal(reviewAfter) || original.ExpiresAt == nil || !original.ExpiresAt.Equal(expiresAt) || original.SupersededBy == nil || *original.SupersededBy != replacement.ID {
+		t.Fatalf("created lifecycle record = %#v", original)
+	}
+	cleared := ""
+	ranked := contextmodel.DeliveryRanked
+	updated, err := repository.Update(ctx, original.ID, original.Revision, contextmodel.Patch{
+		Delivery: &ranked, ReviewAfter: contextmodel.TimePatch{Set: true}, ExpiresAt: contextmodel.TimePatch{Set: true}, SupersededBy: &cleared,
+	}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Delivery != contextmodel.DeliveryRanked || updated.ReviewAfter != nil || updated.ExpiresAt != nil || updated.SupersededBy != nil {
+		t.Fatalf("cleared lifecycle record = %#v", updated)
+	}
+
+	self := original.ID
+	if _, err := repository.Update(ctx, updated.ID, updated.Revision, contextmodel.Patch{SupersededBy: &self}, actor); contextmodel.ErrorCode(err) != contextmodel.CodeInvalid {
+		t.Fatalf("self supersession error = %v", err)
+	}
+}
+
 func TestConcurrentCASUpdatesAreConflictAware(t *testing.T) {
 	ctx := context.Background()
 	repository, _, p := newContextRepository(t)

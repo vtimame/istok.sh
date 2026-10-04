@@ -3,6 +3,8 @@ package cli
 import (
 	"time"
 
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
@@ -140,17 +142,25 @@ type validationJSON struct {
 }
 
 type snapshotItemJSON struct {
-	RecordID       string   `json:"record_id"`
-	RecordRevision int64    `json:"record_revision"`
-	ContentHash    string   `json:"content_hash"`
-	Kind           string   `json:"kind"`
-	Source         string   `json:"source"`
-	Visibility     string   `json:"visibility"`
-	Sensitivity    string   `json:"sensitivity"`
-	Title          string   `json:"title"`
-	Body           string   `json:"body"`
-	Snippet        string   `json:"snippet"`
-	Tags           []string `json:"tags"`
+	RecordID       string                 `json:"record_id"`
+	RecordRevision int64                  `json:"record_revision"`
+	ContentHash    string                 `json:"content_hash"`
+	Kind           string                 `json:"kind"`
+	Source         string                 `json:"source"`
+	Visibility     string                 `json:"visibility"`
+	Sensitivity    string                 `json:"sensitivity"`
+	Delivery       string                 `json:"delivery,omitempty"`
+	Enabled        *bool                  `json:"enabled,omitempty"`
+	Priority       *contextmodel.Priority `json:"priority,omitempty"`
+	Scope          *contextmodel.Scope    `json:"scope,omitempty"`
+	Title          string                 `json:"title"`
+	Body           string                 `json:"body"`
+	Snippet        string                 `json:"snippet"`
+	Tags           []string               `json:"tags"`
+	Lane           string                 `json:"lane,omitempty"`
+	Score          float64                `json:"score,omitempty"`
+	MatchedTerms   []string               `json:"matched_terms,omitempty"`
+	Reasons        []string               `json:"reasons,omitempty"`
 }
 
 type snapshotJSON struct {
@@ -161,6 +171,7 @@ type snapshotJSON struct {
 	CreatedAt     time.Time                                 `json:"created_at"`
 	Records       []snapshotItemJSON                        `json:"records"`
 	Retrieval     []runmodel.ContextSnapshotRetrievalItem   `json:"retrieval"`
+	Knowledge     []knowledge.BriefingItem                  `json:"knowledge_catalog"`
 	Metadata      runmodel.ContextSnapshotRetrievalMetadata `json:"metadata"`
 }
 
@@ -280,12 +291,14 @@ func snapshotJSONValue(value runmodel.ContextSnapshot) snapshotJSON {
 		records = append(records, snapshotItemJSON{
 			RecordID: record.RecordID, RecordRevision: record.RecordRevision, ContentHash: record.ContentHash,
 			Kind: string(record.Kind), Source: string(record.Source), Visibility: string(record.Visibility),
-			Sensitivity: string(record.Sensitivity), Title: record.Title, Body: record.Body,
-			Snippet: record.Snippet, Tags: nonNilStrings(record.Tags),
+			Sensitivity: string(record.Sensitivity), Delivery: string(record.Delivery), Enabled: record.Enabled,
+			Priority: record.Priority, Scope: record.Scope, Title: record.Title, Body: record.Body,
+			Snippet: record.Snippet, Tags: nonNilStrings(record.Tags), Lane: record.Lane, Score: record.Score,
+			MatchedTerms: nonNilStrings(record.MatchedTerms), Reasons: nonNilStrings(record.Reasons),
 		})
 	}
 
-	return snapshotJSON{ID: value.ID, SchemaVersion: value.SchemaVersion, ProjectID: value.ProjectID, GeneratedAt: value.GeneratedAt, CreatedAt: value.CreatedAt, Records: records, Retrieval: append([]runmodel.ContextSnapshotRetrievalItem{}, value.Retrieval...), Metadata: value.Metadata}
+	return snapshotJSON{ID: value.ID, SchemaVersion: value.SchemaVersion, ProjectID: value.ProjectID, GeneratedAt: value.GeneratedAt, CreatedAt: value.CreatedAt, Records: records, Retrieval: append([]runmodel.ContextSnapshotRetrievalItem{}, value.Retrieval...), Knowledge: append([]knowledge.BriefingItem{}, value.Knowledge...), Metadata: value.Metadata}
 }
 
 func runShowJSONValue(value runmodel.Show, taskNumber int64) runShowJSON {

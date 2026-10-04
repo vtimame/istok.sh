@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/contextpack"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 func TestContextCLIJSONLifecycleUsesCurrentProject(t *testing.T) {
@@ -238,6 +241,75 @@ func TestContextCLIInstructionPolicyLifecycle(t *testing.T) {
 	assertVersionedBusinessError(t, invalid.err, string(contextmodel.CodeInvalid))
 }
 
+func TestContextCLIPreviewDoctorAndLifecycle(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	initialized := executeAt(t, root, database, "init", "--json")
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized.output).Project.ID
+
+	added := executeAt(t, root, database,
+		"context", "add", "Authentication rotation",
+		"--kind", "decision",
+		"--delivery", "ranked",
+		"--body", "Rotate authentication token",
+		"--review-after", "2020-01-01T00:00:00Z",
+		"--expires-at", "2030-01-01T00:00:00Z",
+		"--json",
+	)
+	if added.err != nil {
+		t.Fatal(added.err)
+	}
+	created := decodeJSONResult[contextView](t, added.output).Record
+	if created.Delivery != contextmodel.DeliveryRanked || created.ReviewAfter == nil || created.ExpiresAt == nil {
+		t.Fatalf("created lifecycle record = %#v", created)
+	}
+
+	tasks, _ := newTaskRepositoryForTest(t, database)
+	if _, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "Rotate authentication token"}, task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	previewed := executeAt(t, root, database,
+		"context", "preview", "1",
+		"--without-retrieval", "--retrieval-override-reason", "preview only",
+		"--json",
+	)
+	if previewed.err != nil {
+		t.Fatal(previewed.err)
+	}
+	preview := decodeJSONResultAtVersion[contextpack.Package](t, previewed.output, "2")
+	if len(preview.Records) != 1 || preview.Records[0].RecordID != created.ID || preview.Records[0].Lane != contextmodel.LaneRanked || preview.Metadata.Assembly.SelectedCount != 1 {
+		t.Fatalf("preview = %#v", preview)
+	}
+
+	doctorResult := executeAt(t, root, database, "context", "doctor", "--json")
+	if doctorResult.err != nil {
+		t.Fatal(doctorResult.err)
+	}
+	doctor := decodeJSONResult[contextmodel.DiagnosticReport](t, doctorResult.output)
+	if doctor.ActiveRecords != 1 || doctor.ReviewDueRecords != 1 {
+		t.Fatalf("doctor = %#v", doctor)
+	}
+
+	cleared := executeAt(t, root, database,
+		"context", "update", created.ID,
+		"--expected-revision", "1",
+		"--review-after=", "--expires-at=",
+		"--json",
+	)
+	if cleared.err != nil {
+		t.Fatal(cleared.err)
+	}
+	updated := decodeJSONResult[contextView](t, cleared.output).Record
+	if updated.ReviewAfter != nil || updated.ExpiresAt != nil {
+		t.Fatalf("cleared lifecycle record = %#v", updated)
+	}
+}
+
 func TestContextCLIHumanOutputAndHelpDoNotCreateDatabase(t *testing.T) {
 	root := t.TempDir()
 	database := filepath.Join(t.TempDir(), "istok.db")
@@ -269,6 +341,8 @@ func TestContextCLIHumanOutputAndHelpDoNotCreateDatabase(t *testing.T) {
 		{"context", "enable", "--help"},
 		{"context", "disable", "--help"},
 		{"context", "delete", "--help"},
+		{"context", "preview", "--help"},
+		{"context", "doctor", "--help"},
 	} {
 		if got := executeHelp(t, args...); !strings.Contains(got, "context") {
 			t.Fatalf("context help %v = %q", args, got)

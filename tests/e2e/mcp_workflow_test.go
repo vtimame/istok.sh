@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -39,10 +40,28 @@ func TestMCPWorkflowOverStdio(t *testing.T) {
 	if contextRecord["id"] == "" {
 		t.Fatalf("context add = %#v", contextRecord)
 	}
+	knowledgeResult := mcpCall(t, session, "knowledge_create", map[string]any{
+		"title": "MCP knowledge", "summary": "Bounded run briefing", "body": strings.Repeat("pull-only body ", 100), "kind": "architecture",
+	})
+	knowledgeItem := mcpObject(t, knowledgeResult, "knowledge")
+	knowledgeID := stringValue(t, knowledgeItem, "id")
+	reviewed := mcpObject(t, mcpCall(t, session, "knowledge_review", map[string]any{"knowledge_id": knowledgeID, "expected_revision": number(t, knowledgeItem, "revision"), "note": "e2e review"}), "knowledge")
+	mcpCall(t, session, "knowledge_promote", map[string]any{"knowledge_id": knowledgeID, "expected_revision": number(t, reviewed, "revision")})
+	catalog := mcpStructuredAtVersion(t, mcpCall(t, session, "knowledge_catalog", map[string]any{}), "1")
+	items := array(t, catalog, "items")
+	if len(items) != 1 || items[0].(map[string]any)["body"] != nil {
+		t.Fatalf("knowledge catalog = %#v", catalog)
+	}
 
 	taskID := uuid.Must(uuid.NewV7()).String()
 	created := mcpObject(t, mcpCall(t, session, "task_create", map[string]any{"task_id": taskID, "title": "MCP workflow"}), "task")
-	claimed := mcpObjectAtVersion(t, mcpCall(t, session, "task_claim", map[string]any{"task_id": taskID}), "2", "run")
+	claimResult := mcpCall(t, session, "task_claim", map[string]any{"task_id": taskID})
+	claimed := mcpObjectAtVersion(t, claimResult, "2", "run")
+	snapshot := mcpObjectAtVersion(t, claimResult, "2", "snapshot")
+	briefing := array(t, snapshot, "knowledge_catalog")
+	if len(briefing) != 1 || briefing[0].(map[string]any)["body"] != nil {
+		t.Fatalf("knowledge briefing = %#v", snapshot)
+	}
 	runID, leaseID := stringValue(t, claimed, "id"), stringValue(t, claimed, "lease_id")
 	mcpCall(t, session, "run_heartbeat", map[string]any{"run_id": runID, "lease_id": leaseID})
 

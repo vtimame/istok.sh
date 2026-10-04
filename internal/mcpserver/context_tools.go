@@ -2,15 +2,19 @@ package mcpserver
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
 	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/run"
 )
 
-func addContextTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
+func addContextTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, runs *runapp.Service, root string, actor actorIdentity) {
 	addContextAddTool(server, projects, contexts, root, actor)
 	addContextUpdateTool(server, projects, contexts, root, actor)
 	addContextEnabledTools(server, projects, contexts, root, actor)
@@ -18,6 +22,8 @@ func addContextTools(server *mcp.Server, projects *project.Service, contexts *co
 	addContextShowTool(server, projects, contexts, root)
 	addContextSearchTool(server, projects, contexts, root)
 	addContextPackageTool(server, projects, contexts, root)
+	addContextPreviewTool(server, projects, runs, root)
+	addContextDoctorTool(server, projects, contexts, root)
 }
 
 func addContextEnabledTools(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
@@ -48,17 +54,34 @@ func addContextAddTool(server *mcp.Server, projects *project.Service, contexts *
 			return errorTool(err), contextErrorResult(err), nil
 		}
 
+		reviewAfter, err := parseMCPContextTimestamp(in.ReviewAfter)
+		if err != nil {
+			return errorTool(err), contextErrorResult(err), nil
+		}
+		expiresAt, err := parseMCPContextTimestamp(in.ExpiresAt)
+		if err != nil {
+			return errorTool(err), contextErrorResult(err), nil
+		}
+		var supersededBy *string
+		if value := strings.TrimSpace(in.SupersededBy); value != "" {
+			supersededBy = &value
+		}
+
 		input := contextmodel.CreateInput{
-			ProjectID:   current.ID,
-			Kind:        defaultContextKind(in.Kind),
-			Title:       in.Title,
-			Body:        in.Body,
-			Tags:        in.Tags,
-			Source:      defaultContextSource(in.Source),
-			Visibility:  defaultContextVisibility(in.Visibility),
-			Sensitivity: defaultContextSensitivity(in.Sensitivity),
-			Priority:    in.Priority,
-			Scope:       in.Scope,
+			ProjectID:    current.ID,
+			Kind:         defaultContextKind(in.Kind),
+			Title:        in.Title,
+			Body:         in.Body,
+			Tags:         in.Tags,
+			Source:       defaultContextSource(in.Source),
+			Visibility:   defaultContextVisibility(in.Visibility),
+			Sensitivity:  defaultContextSensitivity(in.Sensitivity),
+			Delivery:     in.Delivery,
+			Priority:     in.Priority,
+			Scope:        in.Scope,
+			ReviewAfter:  reviewAfter,
+			ExpiresAt:    expiresAt,
+			SupersededBy: supersededBy,
 		}
 		value, err := contexts.Create(ctx, input, actor.context())
 		if err != nil {
@@ -78,15 +101,25 @@ func addContextUpdateTool(server *mcp.Server, projects *project.Service, context
 		_ = current
 
 		patch := contextmodel.Patch{
-			Kind:        in.Kind,
-			Title:       in.Title,
-			Body:        in.Body,
-			Tags:        in.Tags,
-			Source:      in.Source,
-			Visibility:  in.Visibility,
-			Sensitivity: in.Sensitivity,
-			Priority:    in.Priority,
-			Scope:       in.Scope,
+			Kind:         in.Kind,
+			Title:        in.Title,
+			Body:         in.Body,
+			Tags:         in.Tags,
+			Source:       in.Source,
+			Visibility:   in.Visibility,
+			Sensitivity:  in.Sensitivity,
+			Delivery:     in.Delivery,
+			Priority:     in.Priority,
+			Scope:        in.Scope,
+			SupersededBy: in.SupersededBy,
+		}
+		patch.ReviewAfter, err = parseMCPContextTimePatch(in.ReviewAfter)
+		if err != nil {
+			return errorTool(err), contextErrorResult(err), nil
+		}
+		patch.ExpiresAt, err = parseMCPContextTimePatch(in.ExpiresAt)
+		if err != nil {
+			return errorTool(err), contextErrorResult(err), nil
 		}
 		value, err = contexts.Update(ctx, value.ID, in.ExpectedRevision, patch, actor.context())
 		if err != nil {
@@ -94,6 +127,47 @@ func addContextUpdateTool(server *mcp.Server, projects *project.Service, context
 		}
 
 		return nil, contextResult(value), nil
+	})
+}
+
+func addContextPreviewTool(server *mcp.Server, projects *project.Service, runs *runapp.Service, root string) {
+	mcp.AddTool(server, tool("context_preview", "Preview bounded context assembly for a task without creating a run.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextPreviewInput) (*mcp.CallToolResult, ContextPreviewResult, error) {
+		current, err := projects.Current(ctx, root)
+		if err != nil {
+			return errorTool(err), contextPreviewErrorResult(err), nil
+		}
+		selector, err := taskSelector(current.ID, in.TaskID)
+		if err != nil {
+			return errorTool(err), contextPreviewErrorResult(err), nil
+		}
+		value, err := runs.PreviewContext(ctx, selector, run.ClaimInput{
+			ContextLimit:            in.ContextLimit,
+			ContextIDs:              append([]string{}, in.ContextIDs...),
+			AllContext:              in.AllContext,
+			ContextOverrideReason:   in.ContextOverrideReason,
+			WithoutRetrieval:        in.WithoutRetrieval,
+			RetrievalOverrideReason: in.RetrievalOverrideReason,
+		})
+		if err != nil {
+			return errorTool(err), contextPreviewErrorResult(err), nil
+		}
+
+		return nil, ContextPreviewResult{SchemaVersion: contextSchemaVersion, Package: &value}, nil
+	})
+}
+
+func addContextDoctorTool(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string) {
+	mcp.AddTool(server, tool("context_doctor", "Diagnose context growth and lifecycle issues in the current project.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ContextDoctorResult, error) {
+		current, err := projects.Current(ctx, root)
+		if err != nil {
+			return errorTool(err), contextDoctorErrorResult(err), nil
+		}
+		value, err := contexts.Doctor(ctx, current.ID)
+		if err != nil {
+			return errorTool(err), contextDoctorErrorResult(err), nil
+		}
+
+		return nil, ContextDoctorResult{SchemaVersion: contextSchemaVersion, Report: &value}, nil
 	})
 }
 
@@ -219,6 +293,40 @@ func contextListResult(values []contextmodel.ProjectContextRecord, toolErr *Tool
 
 func contextPackageErrorResult(err error) ContextPackageResult {
 	return ContextPackageResult{SchemaVersion: contextSchemaVersion, Error: toolError(err)}
+}
+
+func contextPreviewErrorResult(err error) ContextPreviewResult {
+	return ContextPreviewResult{SchemaVersion: contextSchemaVersion, Error: toolError(err)}
+}
+
+func contextDoctorErrorResult(err error) ContextDoctorResult {
+	return ContextDoctorResult{SchemaVersion: contextSchemaVersion, Error: toolError(err)}
+}
+
+func parseMCPContextTimestamp(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, contextmodel.NewError(contextmodel.CodeInvalid, "context lifecycle timestamp must use RFC3339")
+	}
+	parsed = parsed.UTC()
+
+	return &parsed, nil
+}
+
+func parseMCPContextTimePatch(value *string) (contextmodel.TimePatch, error) {
+	if value == nil {
+		return contextmodel.TimePatch{}, nil
+	}
+	parsed, err := parseMCPContextTimestamp(*value)
+	if err != nil {
+		return contextmodel.TimePatch{}, err
+	}
+
+	return contextmodel.TimePatch{Set: true, Value: parsed}, nil
 }
 
 func defaultContextKind(value contextmodel.Kind) contextmodel.Kind {

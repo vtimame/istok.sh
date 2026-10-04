@@ -235,6 +235,76 @@ func TestRunAbandonedMigrationRoundTripPreservesChildrenAndIndexes(t *testing.T)
 	assertRunChildForeignKeys(t, db)
 }
 
+func TestBoundedContextMigrationBackfillsDeliveryAndRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	database := filepath.Join(t.TempDir(), "bounded-context.db")
+	db, err := sql.Open("sqlite3", sqliteDSN(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrationFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	queries := []string{
+		`INSERT INTO projects (id,name,revision,created_at,updated_at) VALUES ('project','Project',1,'2026-08-31T10:00:00Z','2026-08-31T10:00:00Z')`,
+		`INSERT INTO context_records (id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,enabled,priority,scope,actor_id,actor_kind,actor_name,created_at,updated_at) VALUES ('instruction','project',1,'instruction','Policy','Body','[]','user','shared','normal',1,'normal','project','actor','user','User','2026-08-31T10:00:00Z','2026-08-31T10:00:00Z')`,
+		`INSERT INTO context_records (id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,actor_id,actor_kind,actor_name,created_at,updated_at) VALUES ('note','project',1,'note','Note','Body','[]','user','shared','normal','actor','user','User','2026-08-31T10:00:00Z','2026-08-31T10:00:00Z')`,
+		`INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at) VALUES ('snapshot','3','project','2026-08-31T10:00:00Z','2026-08-31T10:00:00Z')`,
+		`INSERT INTO context_snapshot_items (snapshot_id,position,record_id,record_revision,content_hash,kind,source,visibility,sensitivity,title,body,snippet,tags) VALUES ('snapshot',0,'note',1,'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff','note','user','shared','normal','Note','Body','Body','[]')`,
+	}
+	for _, query := range queries {
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatalf("seed v10 state: %v", err)
+		}
+	}
+
+	if _, err := provider.UpTo(ctx, 11); err != nil {
+		t.Fatal(err)
+	}
+	var instructionDelivery, noteDelivery, snapshotDelivery, lane, matchedTerms string
+	if err := db.QueryRowContext(ctx, `SELECT delivery FROM context_records WHERE id='instruction'`).Scan(&instructionDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT delivery FROM context_records WHERE id='note'`).Scan(&noteDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT delivery,lane,matched_terms FROM context_snapshot_items WHERE snapshot_id='snapshot'`).Scan(&snapshotDelivery, &lane, &matchedTerms); err != nil {
+		t.Fatal(err)
+	}
+	if instructionDelivery != "always" || noteDelivery != "ranked" || snapshotDelivery != "ranked" || lane != "" || matchedTerms != "[]" {
+		t.Fatalf("migration defaults = %q %q %q %q %q", instructionDelivery, noteDelivery, snapshotDelivery, lane, matchedTerms)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO context_snapshot_assembly_metadata (snapshot_id,assembly_version,task_query_hash,candidate_set_hash,candidate_count,selected_count,durable_budget_bytes,retrieval_budget_bytes,total_budget_bytes,always_bytes,explicit_bytes,ranked_bytes,durable_bytes,retrieval_bytes,total_bytes,warnings) VALUES ('snapshot','v1',?,?,1,1,16384,32768,49152,0,0,1,1,0,1,'[]')`, strings.Repeat("a", 64), strings.Repeat("b", 64)); err != nil {
+		t.Fatalf("insert assembly metadata: %v", err)
+	}
+
+	if _, err := provider.DownTo(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	var addedColumns int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('context_records') WHERE name IN ('delivery','review_after','expires_at','superseded_by')`).Scan(&addedColumns); err != nil {
+		t.Fatal(err)
+	}
+	if addedColumns != 0 {
+		t.Fatalf("context lifecycle columns after down = %d", addedColumns)
+	}
+	var recordCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM context_records`).Scan(&recordCount); err != nil || recordCount != 2 {
+		t.Fatalf("context records after down = %d, %v", recordCount, err)
+	}
+}
+
 func assertRunChildForeignKeys(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -270,8 +340,15 @@ func TestEmbeddedMigrationIsApplied(t *testing.T) {
 		t.Fatalf("query goose version: %v", err)
 	}
 
-	if version != 10 {
-		t.Errorf("migration version = %d, want 10", version)
+	if version != 13 {
+		t.Errorf("migration version = %d, want 13", version)
+	}
+
+	for _, table := range []string{"knowledge_items", "knowledge_events"} {
+		var count int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("knowledge table %s count=%d err=%v", table, count, err)
+		}
 	}
 }
 

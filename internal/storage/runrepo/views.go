@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	projectcontext "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/knowledge"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
 )
 
@@ -144,13 +145,15 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	var value runmodel.ContextSnapshot
 	value.Records = make([]runmodel.ContextSnapshotItem, 0)
 	value.Retrieval = make([]runmodel.ContextSnapshotRetrievalItem, 0)
+	value.Knowledge = make([]knowledge.BriefingItem, 0)
 	var generatedAt, createdAt string
+	var knowledgeCatalog string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id,schema_version,project_id,generated_at,created_at
+		SELECT id,schema_version,project_id,generated_at,created_at,knowledge_catalog
 		FROM context_snapshots
 		WHERE id=?
-	`, id).Scan(&value.ID, &value.SchemaVersion, &value.ProjectID, &generatedAt, &createdAt)
+	`, id).Scan(&value.ID, &value.SchemaVersion, &value.ProjectID, &generatedAt, &createdAt, &knowledgeCatalog)
 	if err == sql.ErrNoRows {
 		return runmodel.ContextSnapshot{}, runmodel.NewError(runmodel.CodeNotFound, "context snapshot was not found")
 	}
@@ -166,10 +169,13 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 	if err != nil {
 		return runmodel.ContextSnapshot{}, fmt.Errorf("parse context snapshot creation time: %w", err)
 	}
+	if err := json.Unmarshal([]byte(knowledgeCatalog), &value.Knowledge); err != nil {
+		return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot knowledge catalog: %w", err)
+	}
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT record_id,record_revision,content_hash,kind,source,visibility,sensitivity,enabled,priority,scope,
-		       title,body,snippet,tags
+		       delivery,lane,selection_score,title,body,snippet,tags,matched_terms,reasons
 		FROM context_snapshot_items
 		WHERE snapshot_id=?
 		ORDER BY position
@@ -185,6 +191,8 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 		var enabled int
 		var priority string
 		var scope string
+		var delivery, lane string
+		var matchedTerms, reasons string
 
 		if err := rows.Scan(
 			&item.RecordID,
@@ -197,20 +205,35 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 			&enabled,
 			&priority,
 			&scope,
+			&delivery,
+			&lane,
+			&item.Score,
 			&item.Title,
 			&item.Body,
 			&item.Snippet,
 			&tags,
+			&matchedTerms,
+			&reasons,
 		); err != nil {
 			return runmodel.ContextSnapshot{}, fmt.Errorf("scan context snapshot item: %w", err)
 		}
 		if err := json.Unmarshal([]byte(tags), &item.Tags); err != nil {
 			return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot tags: %w", err)
 		}
-		if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion && item.Kind == "instruction" {
+		if (value.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV3 || value.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV4 || value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion) && item.Kind == "instruction" {
 			item.Enabled = boolPtr(enabled != 0)
 			item.Priority = priorityPtr(priority)
 			item.Scope = scopePtr(scope)
+		}
+		if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV4 || value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+			item.Delivery = projectcontext.Delivery(delivery)
+			item.Lane = lane
+			if err := json.Unmarshal([]byte(matchedTerms), &item.MatchedTerms); err != nil {
+				return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot matched terms: %w", err)
+			}
+			if err := json.Unmarshal([]byte(reasons), &item.Reasons); err != nil {
+				return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot reasons: %w", err)
+			}
 		}
 
 		value.Records = append(value.Records, item)
@@ -227,6 +250,82 @@ func (r *Repository) getSnapshot(ctx context.Context, id string) (runmodel.Conte
 		return runmodel.ContextSnapshot{}, fmt.Errorf("get context snapshot retrieval metadata: %w", err)
 	}
 	value.Metadata.WithoutRetrieval = withoutRetrieval != 0
+	if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV4 || value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+		var warnings string
+		assembly := &value.Metadata.Assembly
+		query := `
+			SELECT assembly_version,context_override_reason,task_query_hash,candidate_set_hash,
+			       candidate_count,selected_count,durable_budget_bytes,retrieval_budget_bytes,total_budget_bytes,
+			       always_bytes,explicit_bytes,ranked_bytes,durable_bytes,retrieval_bytes,total_bytes,warnings
+			FROM context_snapshot_assembly_metadata WHERE snapshot_id=?
+		`
+		if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+			query = `
+				SELECT assembly_version,context_override_reason,task_query_hash,candidate_set_hash,
+				       candidate_count,selected_count,default_durable_budget_items,durable_budget_items,
+				       durable_item_budget_reason,required_always_items,durable_budget_bytes,retrieval_budget_bytes,total_budget_bytes,
+				       always_bytes,explicit_bytes,ranked_bytes,durable_bytes,retrieval_bytes,total_bytes,warnings,
+				       knowledge_candidate_count,knowledge_selected_count,knowledge_budget_bytes,knowledge_used_bytes,knowledge_truncated
+				FROM context_snapshot_assembly_metadata WHERE snapshot_id=?
+			`
+		}
+		destinations := []any{
+			&assembly.Version,
+			&value.Metadata.ContextOverrideReason,
+			&assembly.TaskQueryHash,
+			&assembly.CandidateSetHash,
+			&assembly.CandidateCount,
+			&assembly.SelectedCount,
+			&assembly.DurableBudgetBytes,
+			&assembly.RetrievalBudgetBytes,
+			&assembly.TotalBudgetBytes,
+			&assembly.Usage.AlwaysBytes,
+			&assembly.Usage.ExplicitBytes,
+			&assembly.Usage.RankedBytes,
+			&assembly.Usage.DurableBytes,
+			&assembly.Usage.RetrievalBytes,
+			&assembly.Usage.TotalBytes,
+			&warnings,
+		}
+		var truncated int
+		if value.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+			destinations = []any{
+				&assembly.Version,
+				&value.Metadata.ContextOverrideReason,
+				&assembly.TaskQueryHash,
+				&assembly.CandidateSetHash,
+				&assembly.CandidateCount,
+				&assembly.SelectedCount,
+				&assembly.DefaultBudgetItems,
+				&assembly.DurableBudgetItems,
+				&assembly.ItemBudgetReason,
+				&assembly.RequiredAlwaysItems,
+				&assembly.DurableBudgetBytes,
+				&assembly.RetrievalBudgetBytes,
+				&assembly.TotalBudgetBytes,
+				&assembly.Usage.AlwaysBytes,
+				&assembly.Usage.ExplicitBytes,
+				&assembly.Usage.RankedBytes,
+				&assembly.Usage.DurableBytes,
+				&assembly.Usage.RetrievalBytes,
+				&assembly.Usage.TotalBytes,
+				&warnings,
+				&value.Metadata.Knowledge.CandidateCount,
+				&value.Metadata.Knowledge.SelectedCount,
+				&value.Metadata.Knowledge.BudgetBytes,
+				&value.Metadata.Knowledge.UsedBytes,
+				&truncated,
+			}
+		}
+		err = r.db.QueryRowContext(ctx, query, id).Scan(destinations...)
+		if err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("get context snapshot assembly metadata: %w", err)
+		}
+		if err := json.Unmarshal([]byte(warnings), &assembly.Warnings); err != nil {
+			return runmodel.ContextSnapshot{}, fmt.Errorf("decode context snapshot assembly warnings: %w", err)
+		}
+		value.Metadata.Knowledge.Truncated = truncated != 0
+	}
 	retrievalRows, err := r.db.QueryContext(ctx, `SELECT item_id,contract_version,chunk_id,kind,path,language,symbol,line_start,line_end,content_hash,snippet,score,lexical_score,graph_score,matched_terms,provenance,reasons,visibility FROM context_snapshot_retrieval_items WHERE snapshot_id=? ORDER BY position`, id)
 	if err != nil {
 		return runmodel.ContextSnapshot{}, fmt.Errorf("list context snapshot retrieval items: %w", err)

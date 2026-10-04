@@ -5,6 +5,7 @@ import (
 
 	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	run "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
@@ -19,6 +20,11 @@ func errorCode(err error) string {
 	var taskError *task.Error
 	if errors.As(err, &taskError) {
 		return string(taskError.Code)
+	}
+
+	var knowledgeError *knowledge.Error
+	if errors.As(err, &knowledgeError) {
+		return string(knowledgeError.Code)
 	}
 
 	var projectError *project.Error

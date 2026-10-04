@@ -17,6 +17,8 @@ import (
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
 	"github.com/vtimame/istok.sh/internal/project"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 var cliContextActor = contextmodel.ActorSnapshot{ID: "cli", Kind: "cli", Name: "CLI"}
@@ -40,6 +42,19 @@ type contextListView struct {
 func runContext(ctx context.Context, command ContextCommand, commandName, cwd string, input io.Reader, output io.Writer) error {
 	switch {
 	case strings.HasPrefix(commandName, "context add"):
+		reviewAfter, err := parseContextTimestamp(command.Add.ReviewAfter)
+		if err != nil {
+			return contextCommandError(command.Add.JSON, err)
+		}
+		expiresAt, err := parseContextTimestamp(command.Add.ExpiresAt)
+		if err != nil {
+			return contextCommandError(command.Add.JSON, err)
+		}
+		var supersededBy *string
+		if value := strings.TrimSpace(command.Add.SupersededBy); value != "" {
+			supersededBy = &value
+		}
+
 		return runContextApp(ctx, command.Add.Database, command.Add.JSON, output, func(projects *project.Service, contexts *contextapp.Service) (any, error) {
 			current, err := projects.Current(ctx, cwd)
 			if err != nil {
@@ -47,16 +62,20 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 
 			value, err := contexts.Create(ctx, contextmodel.CreateInput{
-				ProjectID:   current.ID,
-				Kind:        command.Add.Kind,
-				Title:       command.Add.Title,
-				Body:        command.Add.Body,
-				Tags:        command.Add.Tag,
-				Source:      command.Add.Source,
-				Visibility:  command.Add.Visibility,
-				Sensitivity: command.Add.Sensitivity,
-				Priority:    command.Add.Priority,
-				Scope:       command.Add.Scope,
+				ProjectID:    current.ID,
+				Kind:         command.Add.Kind,
+				Title:        command.Add.Title,
+				Body:         command.Add.Body,
+				Tags:         command.Add.Tag,
+				Source:       command.Add.Source,
+				Visibility:   command.Add.Visibility,
+				Sensitivity:  command.Add.Sensitivity,
+				Delivery:     dereferenceDelivery(command.Add.Delivery),
+				Priority:     command.Add.Priority,
+				Scope:        command.Add.Scope,
+				ReviewAfter:  reviewAfter,
+				ExpiresAt:    expiresAt,
+				SupersededBy: supersededBy,
 			}, cliContextActor)
 			if err != nil {
 				return nil, err
@@ -140,6 +159,15 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			return contextListView{Project: current, Records: values}, nil
 		})
 	case strings.HasPrefix(commandName, "context update"):
+		reviewAfter, err := parseContextTimePatch(command.Update.ReviewAfter)
+		if err != nil {
+			return contextCommandError(command.Update.JSON, err)
+		}
+		expiresAt, err := parseContextTimePatch(command.Update.ExpiresAt)
+		if err != nil {
+			return contextCommandError(command.Update.JSON, err)
+		}
+
 		return runContextApp(ctx, command.Update.Database, command.Update.JSON, output, func(projects *project.Service, contexts *contextapp.Service) (any, error) {
 			current, err := projects.Current(ctx, cwd)
 			if err != nil {
@@ -154,14 +182,18 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 
 			patch := contextmodel.Patch{
-				Kind:        command.Update.Kind,
-				Title:       command.Update.Title,
-				Body:        command.Update.Body,
-				Source:      command.Update.Source,
-				Visibility:  command.Update.Visibility,
-				Sensitivity: command.Update.Sensitivity,
-				Priority:    command.Update.Priority,
-				Scope:       command.Update.Scope,
+				Kind:         command.Update.Kind,
+				Title:        command.Update.Title,
+				Body:         command.Update.Body,
+				Source:       command.Update.Source,
+				Visibility:   command.Update.Visibility,
+				Sensitivity:  command.Update.Sensitivity,
+				Delivery:     command.Update.Delivery,
+				Priority:     command.Update.Priority,
+				Scope:        command.Update.Scope,
+				ReviewAfter:  reviewAfter,
+				ExpiresAt:    expiresAt,
+				SupersededBy: command.Update.SupersededBy,
 			}
 			if len(command.Update.Tag) > 0 {
 				patch.Tags = &command.Update.Tag
@@ -173,6 +205,31 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 			}
 
 			return contextView{Project: current, Record: value}, nil
+		})
+	case strings.HasPrefix(commandName, "context preview"):
+		return runKernelCommand(ctx, command.Preview.Database, command.Preview.JSON, output, func(kernel runKernel) (any, error) {
+			current, err := kernel.projects.Current(ctx, cwd)
+			if err != nil {
+				return nil, err
+			}
+
+			return kernel.runs.PreviewContext(ctx, task.Selector{ProjectID: current.ID, Number: command.Preview.Task}, runmodel.ClaimInput{
+				ContextLimit:            command.Preview.ContextLimit,
+				ContextIDs:              append([]string{}, command.Preview.ContextID...),
+				AllContext:              command.Preview.AllContext,
+				ContextOverrideReason:   command.Preview.ContextOverrideReason,
+				WithoutRetrieval:        command.Preview.WithoutRetrieval,
+				RetrievalOverrideReason: command.Preview.RetrievalOverrideReason,
+			})
+		})
+	case commandName == "context doctor":
+		return runContextApp(ctx, command.Doctor.Database, command.Doctor.JSON, output, func(projects *project.Service, contexts *contextapp.Service) (any, error) {
+			current, err := projects.Current(ctx, cwd)
+			if err != nil {
+				return nil, err
+			}
+
+			return contexts.Doctor(ctx, current.ID)
 		})
 	case strings.HasPrefix(commandName, "context delete"):
 		if !command.Delete.Yes {
@@ -241,6 +298,50 @@ func runContext(ctx context.Context, command ContextCommand, commandName, cwd st
 	}
 }
 
+func parseContextTimestamp(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, contextmodel.NewError(contextmodel.CodeInvalid, "context lifecycle timestamp must use RFC3339")
+	}
+	parsed = parsed.UTC()
+
+	return &parsed, nil
+}
+
+func parseContextTimePatch(value *string) (contextmodel.TimePatch, error) {
+	if value == nil {
+		return contextmodel.TimePatch{}, nil
+	}
+
+	parsed, err := parseContextTimestamp(*value)
+	if err != nil {
+		return contextmodel.TimePatch{}, err
+	}
+
+	return contextmodel.TimePatch{Set: true, Value: parsed}, nil
+}
+
+func dereferenceDelivery(value *contextmodel.Delivery) contextmodel.Delivery {
+	if value == nil {
+		return ""
+	}
+
+	return *value
+}
+
+func contextCommandError(jsonOutput bool, err error) error {
+	if jsonOutput {
+		return jsonContextError(err)
+	}
+
+	return err
+}
+
 func runContextApp(ctx context.Context, database string, jsonOutput bool, output io.Writer, action func(*project.Service, *contextapp.Service) (any, error)) error {
 	var projects *project.Service
 	var contexts *contextapp.Service
@@ -294,13 +395,15 @@ func jsonContextError(err error) error {
 	encoded, marshalErr := json.Marshal(struct {
 		SchemaVersion string `json:"schema_version"`
 		Error         struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code    string                      `json:"code"`
+			Message string                      `json:"message"`
+			Details *contextmodel.BudgetFailure `json:"details,omitempty"`
 		} `json:"error"`
 	}{SchemaVersion: "1", Error: struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{Code: contextErrorCode(err), Message: err.Error()}})
+		Code    string                      `json:"code"`
+		Message string                      `json:"message"`
+		Details *contextmodel.BudgetFailure `json:"details,omitempty"`
+	}{Code: contextErrorCode(err), Message: err.Error(), Details: contextmodel.ErrorBudget(err)}})
 	if marshalErr != nil {
 		return err
 	}

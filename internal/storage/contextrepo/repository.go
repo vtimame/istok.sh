@@ -21,7 +21,7 @@ func New(db *sql.DB) *Repository {
 }
 
 const contextRecordQuery = `
-SELECT cr.id,cr.project_id,cr.revision,cr.kind,cr.title,cr.body,cr.tags,cr.source,cr.visibility,cr.sensitivity,cr.enabled,cr.priority,cr.scope,cr.actor_id,cr.actor_kind,cr.actor_name,cr.created_at,cr.updated_at,cr.deleted_at
+SELECT cr.id,cr.project_id,cr.revision,cr.kind,cr.title,cr.body,cr.tags,cr.source,cr.visibility,cr.sensitivity,cr.enabled,cr.priority,cr.scope,cr.delivery,cr.review_after,cr.expires_at,cr.superseded_by,cr.actor_id,cr.actor_kind,cr.actor_name,cr.created_at,cr.updated_at,cr.deleted_at
 FROM context_records cr `
 
 func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput, actor contextmodel.ActorSnapshot) (contextmodel.ProjectContextRecord, error) {
@@ -42,15 +42,22 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 	}
 
 	value := contextmodel.ProjectContextRecord{
-		ID:          id,
-		ProjectID:   input.ProjectID,
-		Kind:        input.Kind,
-		Title:       strings.TrimSpace(input.Title),
-		Body:        input.Body,
-		Source:      input.Source,
-		Visibility:  input.Visibility,
-		Sensitivity: input.Sensitivity,
-		Actor:       actor,
+		ID:           id,
+		ProjectID:    input.ProjectID,
+		Kind:         input.Kind,
+		Title:        strings.TrimSpace(input.Title),
+		Body:         input.Body,
+		Source:       input.Source,
+		Visibility:   input.Visibility,
+		Sensitivity:  input.Sensitivity,
+		Delivery:     input.Delivery,
+		Actor:        actor,
+		ReviewAfter:  cloneTime(input.ReviewAfter),
+		ExpiresAt:    cloneTime(input.ExpiresAt),
+		SupersededBy: cloneString(input.SupersededBy),
+	}
+	if value.Delivery == "" {
+		value.Delivery = contextmodel.DefaultDelivery(value.Kind)
 	}
 	normalizePolicy(&value, input.Enabled, input.Priority, input.Scope)
 
@@ -62,6 +69,9 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 
 	return r.write(ctx, func(conn *sql.Conn) (contextmodel.ProjectContextRecord, error) {
 		if err := requireActiveProject(ctx, conn, value.ProjectID); err != nil {
+			return contextmodel.ProjectContextRecord{}, err
+		}
+		if err := validateSupersession(ctx, conn, value); err != nil {
 			return contextmodel.ProjectContextRecord{}, err
 		}
 
@@ -78,8 +88,8 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 		_, err = conn.ExecContext(
 			ctx,
 			`INSERT INTO context_records(
-			id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,enabled,priority,scope,actor_id,actor_kind,actor_name,created_at,updated_at
-			) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			id,project_id,revision,kind,title,body,tags,source,visibility,sensitivity,enabled,priority,scope,delivery,review_after,expires_at,superseded_by,actor_id,actor_kind,actor_name,created_at,updated_at
+			) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			value.ID,
 			value.ProjectID,
 			value.Revision,
@@ -93,6 +103,10 @@ func (r *Repository) Create(ctx context.Context, input contextmodel.CreateInput,
 			policyEnabled(value),
 			policyPriority(value),
 			policyScope(value),
+			value.Delivery,
+			nullableTime(value.ReviewAfter),
+			nullableTime(value.ExpiresAt),
+			nullableString(value.SupersededBy),
 			value.Actor.ID,
 			value.Actor.Kind,
 			value.Actor.Name,
@@ -335,6 +349,9 @@ func (r *Repository) mutate(ctx context.Context, id string, expected int64, acto
 		if err = patch.Apply(&value); err != nil {
 			return contextmodel.ProjectContextRecord{}, err
 		}
+		if err = validateSupersession(ctx, conn, value); err != nil {
+			return contextmodel.ProjectContextRecord{}, err
+		}
 
 		marshaledTags, err := contextmodel.MarshalTags(value.Tags)
 		if err != nil {
@@ -344,7 +361,7 @@ func (r *Repository) mutate(ctx context.Context, id string, expected int64, acto
 		now := time.Now().UTC()
 		result, err := conn.ExecContext(
 			ctx,
-			`UPDATE context_records SET kind=?,title=?,body=?,tags=?,source=?,visibility=?,sensitivity=?,enabled=?,priority=?,scope=?,actor_id=?,actor_kind=?,actor_name=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`,
+			`UPDATE context_records SET kind=?,title=?,body=?,tags=?,source=?,visibility=?,sensitivity=?,enabled=?,priority=?,scope=?,delivery=?,review_after=?,expires_at=?,superseded_by=?,actor_id=?,actor_kind=?,actor_name=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`,
 			value.Kind,
 			value.Title,
 			value.Body,
@@ -355,6 +372,10 @@ func (r *Repository) mutate(ctx context.Context, id string, expected int64, acto
 			policyEnabled(value),
 			policyPriority(value),
 			policyScope(value),
+			value.Delivery,
+			nullableTime(value.ReviewAfter),
+			nullableTime(value.ExpiresAt),
+			nullableString(value.SupersededBy),
 			actor.ID,
 			actor.Kind,
 			actor.Name,
@@ -460,6 +481,10 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 	var enabled int
 	var priority contextmodel.Priority
 	var scope contextmodel.Scope
+	var delivery contextmodel.Delivery
+	var reviewAfter sql.NullString
+	var expiresAt sql.NullString
+	var supersededBy sql.NullString
 
 	err := row.Scan(
 		&value.ID,
@@ -475,6 +500,10 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 		&enabled,
 		&priority,
 		&scope,
+		&delivery,
+		&reviewAfter,
+		&expiresAt,
+		&supersededBy,
 		&value.Actor.ID,
 		&value.Actor.Kind,
 		&value.Actor.Name,
@@ -503,6 +532,7 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 	}
 	value.CreatedAt = createdAt
 	value.UpdatedAt = updatedAt
+	value.Delivery = delivery
 	if value.Kind == contextmodel.KindInstruction {
 		value.Enabled = boolPtr(enabled != 0)
 		value.Priority = priorityPtr(priority)
@@ -515,6 +545,23 @@ func scanContextRecord(row interface{ Scan(...any) error }) (contextmodel.Projec
 			return contextmodel.ProjectContextRecord{}, fmt.Errorf("parse context deletion time: %w", err)
 		}
 		value.DeletedAt = &parsed
+	}
+	if reviewAfter.Valid {
+		parsed, err := time.Parse(time.RFC3339Nano, reviewAfter.String)
+		if err != nil {
+			return contextmodel.ProjectContextRecord{}, fmt.Errorf("parse context review time: %w", err)
+		}
+		value.ReviewAfter = &parsed
+	}
+	if expiresAt.Valid {
+		parsed, err := time.Parse(time.RFC3339Nano, expiresAt.String)
+		if err != nil {
+			return contextmodel.ProjectContextRecord{}, fmt.Errorf("parse context expiry time: %w", err)
+		}
+		value.ExpiresAt = &parsed
+	}
+	if supersededBy.Valid {
+		value.SupersededBy = &supersededBy.String
 	}
 
 	return value, nil
@@ -556,6 +603,63 @@ func policyScope(value contextmodel.ProjectContextRecord) contextmodel.Scope {
 		return *value.Scope
 	}
 	return contextmodel.ScopeProject
+}
+
+func validateSupersession(ctx context.Context, conn *sql.Conn, value contextmodel.ProjectContextRecord) error {
+	if value.SupersededBy == nil {
+		return nil
+	}
+	if *value.SupersededBy == value.ID {
+		return contextmodel.NewError(contextmodel.CodeInvalid, "context record cannot supersede itself")
+	}
+
+	var projectID string
+	err := conn.QueryRowContext(ctx, `SELECT project_id FROM context_records WHERE id=? AND deleted_at IS NULL`, *value.SupersededBy).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return contextmodel.NewError(contextmodel.CodeNotFound, "superseding context record was not found")
+	}
+	if err != nil {
+		return fmt.Errorf("validate superseding context record: %w", err)
+	}
+	if projectID != value.ProjectID {
+		return contextmodel.NewError(contextmodel.CodeConflict, "superseding context record belongs to another project")
+	}
+
+	return nil
+}
+
+func nullableTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+
+	return stamp(value.UTC())
+}
+
+func nullableString(value *string) any {
+	if value == nil {
+		return nil
+	}
+
+	return *value
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	copy := value.UTC()
+	return &copy
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+
+	copy := strings.TrimSpace(*value)
+	return &copy
 }
 
 func boolPtr(value bool) *bool                                       { return &value }

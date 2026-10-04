@@ -21,6 +21,7 @@ import (
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/contextpack"
 	"github.com/vtimame/istok.sh/internal/project"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
@@ -80,6 +81,9 @@ func runTaskClaim(ctx context.Context, command TaskClaimCommand, cwd string, out
 			ID:                      command.RunID,
 			SnapshotID:              command.SnapshotID,
 			ContextLimit:            command.ContextLimit,
+			ContextIDs:              append([]string{}, command.ContextID...),
+			AllContext:              command.AllContext,
+			ContextOverrideReason:   command.ContextOverrideReason,
 			BaseBranch:              baseBranch,
 			BaseCommit:              baseCommit,
 			WithoutRetrieval:        command.WithoutRetrieval,
@@ -482,13 +486,15 @@ func runJSONError(err error) error {
 	encoded, marshalErr := json.Marshal(struct {
 		SchemaVersion string `json:"schema_version"`
 		Error         struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code    string                      `json:"code"`
+			Message string                      `json:"message"`
+			Details *contextmodel.BudgetFailure `json:"details,omitempty"`
 		} `json:"error"`
 	}{SchemaVersion: runSchemaVersion, Error: struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{Code: runErrorCode(err), Message: err.Error()}})
+		Code    string                      `json:"code"`
+		Message string                      `json:"message"`
+		Details *contextmodel.BudgetFailure `json:"details,omitempty"`
+	}{Code: runErrorCode(err), Message: err.Error(), Details: contextmodel.ErrorBudget(err)}})
 	if marshalErr != nil {
 		return err
 	}
@@ -545,6 +551,8 @@ func renderRunValue(value any) string {
 		return renderArtifactVerification(typed)
 	case taskCompletionResult:
 		return renderCompletion(typed)
+	case contextpack.Package:
+		return renderContextPreview(typed)
 	default:
 		return fmt.Sprint(value)
 	}

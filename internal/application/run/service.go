@@ -48,7 +48,7 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 		return run.Run{}, err
 	}
 
-	pkg, err := s.contextBuilder.BuildForTask(ctx, taskValue, contextpack.BuildOptions{ContextLimit: input.ContextLimit, WithoutRetrieval: input.WithoutRetrieval, RetrievalOverrideReason: input.RetrievalOverrideReason})
+	pkg, err := s.contextBuilder.BuildForTask(ctx, taskValue, contextpack.BuildOptions{ContextLimit: input.ContextLimit, ExplicitContextIDs: input.ContextIDs, LegacyAllContext: input.AllContext, ContextOverrideReason: input.ContextOverrideReason, WithoutRetrieval: input.WithoutRetrieval, RetrievalOverrideReason: input.RetrievalOverrideReason})
 	if err != nil {
 		return run.Run{}, err
 	}
@@ -102,6 +102,29 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 	}
 
 	return s.repository.Claim(ctx, record)
+}
+
+func (s *Service) PreviewContext(ctx context.Context, selector task.Selector, input run.ClaimInput) (contextpack.Package, error) {
+	if err := selector.Validate(); err != nil {
+		return contextpack.Package{}, err
+	}
+	if err := input.Validate(); err != nil {
+		return contextpack.Package{}, err
+	}
+
+	taskValue, err := s.taskResolver.Resolve(ctx, selector, false)
+	if err != nil {
+		return contextpack.Package{}, err
+	}
+
+	return s.contextBuilder.BuildForTask(ctx, taskValue, contextpack.BuildOptions{
+		ContextLimit:            input.ContextLimit,
+		ExplicitContextIDs:      input.ContextIDs,
+		LegacyAllContext:        input.AllContext,
+		ContextOverrideReason:   input.ContextOverrideReason,
+		WithoutRetrieval:        input.WithoutRetrieval,
+		RetrievalOverrideReason: input.RetrievalOverrideReason,
+	})
 }
 
 func (s *Service) GetRun(ctx context.Context, runID string) (run.Run, error) {

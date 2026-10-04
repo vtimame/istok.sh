@@ -3,6 +3,7 @@ package runapp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,10 +38,21 @@ func TestClaimCallsResolverBuilderRepositoryOnce(t *testing.T) {
 					Source:         projectcontext.SourceUser,
 					Visibility:     projectcontext.VisibilityShared,
 					Sensitivity:    projectcontext.SensitivityNormal,
+					Delivery:       projectcontext.DeliveryRanked,
 					Title:          "title",
 					Tags:           []string{"t"},
+					Lane:           projectcontext.LaneRanked,
+					MatchedTerms:   []string{"title"},
+					Reasons:        []string{"task lexical relevance"},
 				},
 			},
+			Retrieval: []contextpack.Item{},
+			Metadata: contextpack.Metadata{Assembly: projectcontext.AssemblyMetadata{
+				Version: projectcontext.AssemblyVersion, TaskQueryHash: strings.Repeat("a", 64), CandidateSetHash: strings.Repeat("b", 64),
+				CandidateCount: 1, SelectedCount: 1, DurableBudgetBytes: projectcontext.DefaultDurableBudgetBytes,
+				RetrievalBudgetBytes: projectcontext.DefaultRetrievalBudgetBytes, TotalBudgetBytes: projectcontext.DefaultTotalBudgetBytes,
+				Warnings: []string{},
+			}},
 		},
 	}
 

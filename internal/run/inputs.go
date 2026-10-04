@@ -8,13 +8,16 @@ import (
 )
 
 type ClaimInput struct {
-	ID                      string `json:"id,omitempty"`
-	SnapshotID              string `json:"snapshot_id,omitempty"`
-	ContextLimit            int    `json:"context_limit"`
-	BaseBranch              string `json:"base_branch"`
-	BaseCommit              string `json:"base_commit"`
-	WithoutRetrieval        bool   `json:"without_retrieval"`
-	RetrievalOverrideReason string `json:"retrieval_override_reason"`
+	ID                      string   `json:"id,omitempty"`
+	SnapshotID              string   `json:"snapshot_id,omitempty"`
+	ContextLimit            int      `json:"context_limit"`
+	ContextIDs              []string `json:"context_ids"`
+	AllContext              bool     `json:"all_context"`
+	ContextOverrideReason   string   `json:"context_override_reason"`
+	BaseBranch              string   `json:"base_branch"`
+	BaseCommit              string   `json:"base_commit"`
+	WithoutRetrieval        bool     `json:"without_retrieval"`
+	RetrievalOverrideReason string   `json:"retrieval_override_reason"`
 }
 
 func (v ClaimInput) Validate() error {
@@ -26,6 +29,15 @@ func (v ClaimInput) Validate() error {
 	}
 	if v.ContextLimit < 0 {
 		return NewError(CodeInvalid, "context limit must be non-negative")
+	}
+	for _, id := range v.ContextIDs {
+		if !IsUUIDv7(strings.TrimSpace(id)) {
+			return NewError(CodeInvalid, "context ids must be canonical UUIDv7 values")
+		}
+	}
+	v.ContextOverrideReason = strings.TrimSpace(v.ContextOverrideReason)
+	if v.AllContext != (v.ContextOverrideReason != "") {
+		return NewError(CodeInvalid, "all_context and context_override_reason must be set together")
 	}
 	v.RetrievalOverrideReason = strings.TrimSpace(v.RetrievalOverrideReason)
 	if v.WithoutRetrieval != (v.RetrievalOverrideReason != "") {

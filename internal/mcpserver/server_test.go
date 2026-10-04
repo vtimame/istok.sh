@@ -17,16 +17,19 @@ import (
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
 	contextpackapp "github.com/vtimame/istok.sh/internal/application/contextpack"
 	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/artifactstore"
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 	contextmodel "github.com/vtimame/istok.sh/internal/context"
+	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/storage"
 	"github.com/vtimame/istok.sh/internal/storage/contextrepo"
+	"github.com/vtimame/istok.sh/internal/storage/knowledgerepo"
 	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
@@ -84,6 +87,18 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"context_show":           {readOnly: true, destructive: false, idempotent: true},
 		"context_search":         {readOnly: true, destructive: false, idempotent: true},
 		"context_package":        {readOnly: true, destructive: false, idempotent: true},
+		"context_preview":        {readOnly: true, destructive: false, idempotent: true},
+		"context_doctor":         {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_create":       {readOnly: false, destructive: false, idempotent: true},
+		"knowledge_distill":      {readOnly: false, destructive: false, idempotent: true},
+		"knowledge_catalog":      {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_search":       {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_show":         {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_read":         {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_update":       {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_review":       {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_promote":      {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_supersede":    {readOnly: false, destructive: true, idempotent: true},
 		"index_status":           {readOnly: true, destructive: false, idempotent: true},
 		"index_rebuild":          {readOnly: false, destructive: false, idempotent: true},
 		"search":                 {readOnly: true, destructive: false, idempotent: true},
@@ -137,7 +152,19 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"context_show":           {readOnly: true, destructive: false, idempotent: true},
 		"context_search":         {readOnly: true, destructive: false, idempotent: true},
 		"context_package":        {readOnly: true, destructive: false, idempotent: true},
+		"context_preview":        {readOnly: true, destructive: false, idempotent: true},
+		"context_doctor":         {readOnly: true, destructive: false, idempotent: true},
 		"context_archive":        {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_create":       {readOnly: false, destructive: false, idempotent: true},
+		"knowledge_distill":      {readOnly: false, destructive: false, idempotent: true},
+		"knowledge_catalog":      {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_search":       {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_show":         {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_read":         {readOnly: true, destructive: false, idempotent: true},
+		"knowledge_update":       {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_review":       {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_promote":      {readOnly: false, destructive: true, idempotent: true},
+		"knowledge_supersede":    {readOnly: false, destructive: true, idempotent: true},
 		"index_status":           {readOnly: true, destructive: false, idempotent: true},
 		"index_rebuild":          {readOnly: false, destructive: false, idempotent: true},
 		"search":                 {readOnly: true, destructive: false, idempotent: true},
@@ -200,6 +227,25 @@ func TestWorkerProjectCurrentNotFoundIsStructuredToolError(t *testing.T) {
 	}
 }
 
+func TestToolErrorIncludesStructuredContextBudgetDetails(t *testing.T) {
+	err := contextmodel.NewBudgetError("required context exceeds item limit", contextmodel.BudgetFailure{
+		Reason:                contextmodel.BudgetReasonDurableItems,
+		Lane:                  contextmodel.LaneAlways,
+		Action:                "retry with context_limit=15 or omit the explicit limit",
+		RequiredItems:         15,
+		MaxItems:              12,
+		RequiredBytes:         12548,
+		MaxBytes:              contextmodel.DefaultDurableBudgetBytes,
+		RecordIDs:             []string{"record-a", "record-b"},
+		SuggestedContextLimit: 15,
+	})
+
+	structured := toolError(err)
+	if structured.Code != string(contextmodel.CodeConflict) || structured.Details == nil || !reflect.DeepEqual(structured.Details, contextmodel.ErrorBudget(err)) {
+		t.Fatalf("tool error = %#v", structured)
+	}
+}
+
 func TestScopedInitAndAdminMutationContracts(t *testing.T) {
 	root := t.TempDir()
 	_, worker := newSession(t, Worker, root)
@@ -256,6 +302,48 @@ func TestScopedInitAndAdminMutationContracts(t *testing.T) {
 	decodeStructured(t, restored, &restoredProject)
 	if restoredProject.Project == nil || restoredProject.Project.DeletedAt != nil {
 		t.Fatalf("restore result = %+v", restoredProject)
+	}
+}
+
+func TestNestedProjectInitializationUsesExactServerRootInEitherOrder(t *testing.T) {
+	for _, childFirst := range []bool{false, true} {
+		name := "parent first"
+		if childFirst {
+			name = "child first"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			parentRoot := t.TempDir()
+			childRoot := filepath.Join(parentRoot, "packages", "api")
+			if err := os.MkdirAll(childRoot, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			database := filepath.Join(t.TempDir(), "nested.db")
+
+			roots := []string{parentRoot, childRoot}
+			if childFirst {
+				roots[0], roots[1] = roots[1], roots[0]
+			}
+
+			projects := make(map[string]project.Project, 2)
+			for _, root := range roots {
+				_, session := newSessionAtDatabase(t, Worker, root, database)
+				projects[root] = initProject(t, session, filepath.Base(root))
+			}
+			if projects[parentRoot].ID == projects[childRoot].ID {
+				t.Fatalf("nested project IDs = %q, want distinct IDs", projects[parentRoot].ID)
+			}
+
+			for _, root := range []string{parentRoot, childRoot} {
+				_, session := newSessionAtDatabase(t, Worker, root, database)
+				result := callTool(t, session, "project_current", map[string]any{})
+				var current Result
+				decodeStructured(t, result, &current)
+				if current.Project == nil || current.Project.ID != projects[root].ID {
+					t.Fatalf("project_current at %q = %+v, want %q", root, current, projects[root].ID)
+				}
+			}
+		})
 	}
 }
 
@@ -354,7 +442,10 @@ func TestTaskToolsHappyContractAndAdminLifecycle(t *testing.T) {
 func TestTaskToolsAreProjectScopedAndShareApplicationState(t *testing.T) {
 	database := filepath.Join(t.TempDir(), "scoped.db")
 	firstRoot := t.TempDir()
-	secondRoot := t.TempDir()
+	secondRoot := filepath.Join(firstRoot, "packages", "api")
+	if err := os.MkdirAll(secondRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	_, firstSession := newSessionAtDatabase(t, Worker, firstRoot, database)
 
 	firstProject := initProject(t, firstSession, "first")
@@ -384,7 +475,10 @@ func TestTaskToolsAreProjectScopedAndShareApplicationState(t *testing.T) {
 func TestContextToolsAreScopedAndBuildPackage(t *testing.T) {
 	database := filepath.Join(t.TempDir(), "context.db")
 	firstRoot := t.TempDir()
-	secondRoot := t.TempDir()
+	secondRoot := filepath.Join(firstRoot, "packages", "api")
+	if err := os.MkdirAll(secondRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	_, firstSession := newSessionAtDatabase(t, Worker, firstRoot, database)
 	initProject(t, firstSession, "first")
 
@@ -440,6 +534,56 @@ func TestContextToolsAreScopedAndBuildPackage(t *testing.T) {
 	decodeStructured(t, archived, &archivedContext)
 	if archivedContext.Context == nil || archivedContext.Context.DeletedAt == nil {
 		t.Fatalf("archived context = %+v", archivedContext)
+	}
+}
+
+func TestKnowledgeToolsKeepCatalogBoundedAndReadBodiesOnDemand(t *testing.T) {
+	_, session := newSession(t, Worker, t.TempDir())
+	initProject(t, session, "knowledge")
+	body := strings.Repeat("catalog prefix ", 40) + "full-body-tail-marker"
+
+	createdResult := callTool(t, session, "knowledge_create", map[string]any{
+		"title": "Authentication", "summary": "Current authentication contract", "body": body, "kind": "architecture",
+	})
+	var created KnowledgeResult
+	decodeStructured(t, createdResult, &created)
+	if created.Knowledge == nil || created.Knowledge.Status != knowledge.StatusDraft || created.Knowledge.Revision != 1 {
+		t.Fatalf("created knowledge = %+v", created)
+	}
+
+	catalogResult := callTool(t, session, "knowledge_catalog", map[string]any{"limit": 10})
+	encodedCatalog, err := json.Marshal(catalogResult.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedCatalog), "full-body-tail-marker") {
+		t.Fatalf("catalog leaked content beyond bounded snippet: %s", encodedCatalog)
+	}
+	var catalog KnowledgeCatalogResult
+	decodeStructured(t, catalogResult, &catalog)
+	if len(catalog.Items) != 1 || catalog.Items[0].ID != created.Knowledge.ID || len(catalog.Items[0].Snippet) > knowledge.SnippetBytes+len("…") {
+		t.Fatalf("knowledge catalog = %+v", catalog)
+	}
+
+	readResult := callTool(t, session, "knowledge_read", map[string]any{"knowledge_id": created.Knowledge.ID})
+	var read KnowledgeResult
+	decodeStructured(t, readResult, &read)
+	if read.Knowledge == nil || read.Knowledge.Body != body {
+		t.Fatalf("knowledge read = %+v", read)
+	}
+
+	reviewedResult := callTool(t, session, "knowledge_review", map[string]any{"knowledge_id": created.Knowledge.ID, "expected_revision": 1, "note": "Verified against code"})
+	var reviewed KnowledgeResult
+	decodeStructured(t, reviewedResult, &reviewed)
+	if reviewed.Knowledge == nil || reviewed.Knowledge.ReviewedAt == nil || reviewed.Knowledge.Revision != 2 {
+		t.Fatalf("reviewed knowledge = %+v", reviewed)
+	}
+
+	promotedResult := callTool(t, session, "knowledge_promote", map[string]any{"knowledge_id": created.Knowledge.ID, "expected_revision": 2})
+	var promoted KnowledgeResult
+	decodeStructured(t, promotedResult, &promoted)
+	if promoted.Knowledge == nil || promoted.Knowledge.Status != knowledge.StatusCurrent || promoted.Knowledge.Revision != 3 {
+		t.Fatalf("promoted knowledge = %+v", promoted)
 	}
 }
 
@@ -512,6 +656,56 @@ func TestContextInstructionToolsManagePolicyAndPackageFiltering(t *testing.T) {
 	decodeStructured(t, packaged, &enabledPackage)
 	if enabledPackage.Package == nil || len(enabledPackage.Package.Records) != 1 || enabledPackage.Package.Records[0].RecordID != created.Context.ID {
 		t.Fatalf("package with enabled instruction = %+v", enabledPackage)
+	}
+}
+
+func TestContextPreviewDoctorAndLifecycleTools(t *testing.T) {
+	_, session := newSession(t, Worker, t.TempDir())
+	initProject(t, session, "context-preview")
+
+	added := callTool(t, session, "context_add", map[string]any{
+		"title":        "Authentication rotation",
+		"body":         "Rotate authentication token",
+		"kind":         "decision",
+		"delivery":     "ranked",
+		"review_after": "2020-01-01T00:00:00Z",
+		"expires_at":   "2030-01-01T00:00:00Z",
+	})
+	var created ContextResult
+	decodeStructured(t, added, &created)
+	if created.Context == nil || created.Context.Delivery != contextmodel.DeliveryRanked || created.Context.ReviewAfter == nil {
+		t.Fatalf("created context = %+v", created)
+	}
+
+	taskValue := createTask(t, session, newTaskID(t), "Rotate authentication token")
+	previewed := callTool(t, session, "context_preview", map[string]any{
+		"task_id":                   taskValue.Task.ID,
+		"without_retrieval":         true,
+		"retrieval_override_reason": "preview only",
+	})
+	var preview ContextPreviewResult
+	decodeStructured(t, previewed, &preview)
+	if preview.Package == nil || len(preview.Package.Records) != 1 || preview.Package.Records[0].RecordID != created.Context.ID || preview.Package.Records[0].Lane != contextmodel.LaneRanked {
+		t.Fatalf("preview = %+v", preview)
+	}
+
+	diagnosed := callTool(t, session, "context_doctor", map[string]any{})
+	var doctor ContextDoctorResult
+	decodeStructured(t, diagnosed, &doctor)
+	if doctor.Report == nil || doctor.Report.ActiveRecords != 1 || doctor.Report.ReviewDueRecords != 1 {
+		t.Fatalf("doctor = %+v", doctor)
+	}
+
+	cleared := callTool(t, session, "context_update", map[string]any{
+		"context_id":        created.Context.ID,
+		"expected_revision": created.Context.Revision,
+		"review_after":      "",
+		"expires_at":        "",
+	})
+	var updated ContextResult
+	decodeStructured(t, cleared, &updated)
+	if updated.Context == nil || updated.Context.ReviewAfter != nil || updated.Context.ExpiresAt != nil {
+		t.Fatalf("cleared context = %+v", updated)
 	}
 }
 
@@ -1185,6 +1379,10 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 		fx.Provide(contextrepo.New),
 		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
 		fx.Provide(contextapp.NewService),
+		fx.Provide(knowledgerepo.New),
+		fx.Provide(func(repository *knowledgerepo.Repository) knowledgeapp.Repository { return repository }),
+		fx.Provide(knowledgeapp.NewService),
+		fx.Provide(func(service *knowledgeapp.Service) contextpackapp.KnowledgeCatalog { return service }),
 		fx.Provide(runrepo.New),
 		fx.Provide(func(repository *runrepo.Repository) runapp.Repository { return repository }),
 		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),
@@ -1202,8 +1400,8 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 		}),
 		fx.Provide(runworkflow.NewService),
 		fx.Provide(func(db *sql.DB) HealthChecker { return db }),
-		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
-			return New(health, service, tasks, contexts, indexes, runs, workflow, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
+		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
+			return New(health, service, tasks, contexts, knowledge, indexes, runs, workflow, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
 		}),
 		fx.Invoke(func(value *mcp.Server) { server = value }),
 	)

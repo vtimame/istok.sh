@@ -14,6 +14,7 @@ import (
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
 	contextpackapp "github.com/vtimame/istok.sh/internal/application/contextpack"
 	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
@@ -24,6 +25,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/storage"
 	"github.com/vtimame/istok.sh/internal/storage/contextrepo"
+	"github.com/vtimame/istok.sh/internal/storage/knowledgerepo"
 	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
@@ -122,6 +124,10 @@ func kernelOptions(path string) fx.Option {
 		fx.Provide(contextrepo.New),
 		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
 		fx.Provide(contextapp.NewService),
+		fx.Provide(knowledgerepo.New),
+		fx.Provide(func(repository *knowledgerepo.Repository) knowledgeapp.Repository { return repository }),
+		fx.Provide(knowledgeapp.NewService),
+		fx.Provide(func(service *knowledgeapp.Service) contextpackapp.KnowledgeCatalog { return service }),
 		fx.Provide(func(service *project.Service) contextpackapp.ProjectResolver { return service }),
 		fx.Provide(func(service *indexingapp.Service) contextpackapp.TaskRetriever { return service }),
 		fx.Provide(contextpackapp.NewService),
@@ -140,6 +146,15 @@ func ContextOptions(path string) fx.Option {
 		fx.Provide(contextrepo.New),
 		fx.Provide(func(repository *contextrepo.Repository) contextapp.Repository { return repository }),
 		fx.Provide(contextapp.NewService),
+	)
+}
+
+func KnowledgeOptions(path string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		fx.Provide(knowledgerepo.New),
+		fx.Provide(func(repository *knowledgerepo.Repository) knowledgeapp.Repository { return repository }),
+		fx.Provide(knowledgeapp.NewService),
 	)
 }
 

@@ -11,10 +11,12 @@ import (
 
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
 	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
+	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/buildinfo"
+	contextmodel "github.com/vtimame/istok.sh/internal/context"
 	"github.com/vtimame/istok.sh/internal/project"
 )
 
@@ -63,23 +65,21 @@ type ListResult struct {
 }
 
 type ToolError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string                      `json:"code"`
+	Message string                      `json:"message"`
+	Details *contextmodel.BudgetFailure `json:"details,omitempty"`
 }
 
 type ErrorResult struct {
-	SchemaVersion string `json:"schema_version"`
-	Error         struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+	SchemaVersion string    `json:"schema_version"`
+	Error         ToolError `json:"error"`
 }
 
 func Module(config Config) fx.Option {
 	return fx.Module("mcp", fx.Supply(config), fx.Provide(New))
 }
 
-func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
+func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
 	if config.Profile == "" {
 		config.Profile = Worker
 	}
@@ -117,7 +117,8 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 		return nil, InitResult{SchemaVersion: "1", Project: &initialized.Project, Created: initialized.Created}, nil
 	})
 	addTaskTools(server, service, tasks, config.Root, actor)
-	addContextTools(server, service, contexts, config.Root, actor)
+	addContextTools(server, service, contexts, runs, config.Root, actor)
+	addKnowledgeTools(server, service, knowledge, config.Root, actor)
 	addIndexTools(server, service, indexes, config.Root)
 	addRunTools(server, service, runs, workflow, config.Root, actor, config.Profile)
 	if config.Profile == Admin {
@@ -206,7 +207,7 @@ func result(p project.Project) Result { return Result{SchemaVersion: "1", Projec
 func errorResult(err error) Result    { return Result{SchemaVersion: "1", Error: toolError(err)} }
 
 func toolError(err error) *ToolError {
-	return &ToolError{Code: errorCode(err), Message: err.Error()}
+	return &ToolError{Code: errorCode(err), Message: err.Error(), Details: contextmodel.ErrorBudget(err)}
 }
 func tool(name, description string, readOnly, destructive, idempotent bool) *mcp.Tool {
 	open := false
@@ -232,10 +233,7 @@ func runErrorTool(err error) *mcp.CallToolResult {
 }
 
 func errorToolAtVersion(err error, schemaVersion string) *mcp.CallToolResult {
-	encoded, _ := json.Marshal(ErrorResult{SchemaVersion: schemaVersion, Error: struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{Code: errorCode(err), Message: err.Error()}})
+	encoded, _ := json.Marshal(ErrorResult{SchemaVersion: schemaVersion, Error: *toolError(err)})
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}
 }
 

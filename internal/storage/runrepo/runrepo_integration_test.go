@@ -116,7 +116,7 @@ func newRunFixtureAtPath(t *testing.T, database string, clock func() time.Time) 
 		tasks:          tasks,
 		contextRecords: records,
 		runs:           runs,
-		runService:     runapp.NewService(runs, tasks, contextpackapp.NewService(contextapp.NewService(records), service, indexingapp.NewService(indexingapp.Config{IndexRoot: t.TempDir()}))),
+		runService:     runapp.NewService(runs, tasks, contextpackapp.NewService(contextapp.NewService(records), service, indexingapp.NewService(indexingapp.Config{IndexRoot: t.TempDir()}), nil)),
 	}
 }
 
@@ -170,6 +170,7 @@ func newContextRecord(
 		Source:      runmodel.SourceUser,
 		Visibility:  runmodel.VisibilityShared,
 		Sensitivity: runmodel.SensitivityNormal,
+		Delivery:    runmodel.DeliveryAlways,
 	}, testContextActor)
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +198,7 @@ func newSnapshot(t *testing.T, projectID string, hashes map[string]string, recor
 			Source:         record.Source,
 			Visibility:     record.Visibility,
 			Sensitivity:    record.Sensitivity,
+			Delivery:       record.Delivery,
 			Enabled:        record.Enabled,
 			Priority:       record.Priority,
 			Scope:          record.Scope,
@@ -204,6 +206,9 @@ func newSnapshot(t *testing.T, projectID string, hashes map[string]string, recor
 			Body:           record.Body,
 			Snippet:        record.Body,
 			Tags:           append([]string(nil), record.Tags...),
+			Lane:           runmodel.LaneAlways,
+			MatchedTerms:   []string{},
+			Reasons:        []string{"delivery=always"},
 		})
 	}
 
@@ -213,6 +218,13 @@ func newSnapshot(t *testing.T, projectID string, hashes map[string]string, recor
 		ProjectID:     projectID,
 		GeneratedAt:   time.Unix(1, 0).UTC(),
 		Records:       items,
+		Retrieval:     []contextpack.Item{},
+		Metadata: contextpack.Metadata{Assembly: runmodel.AssemblyMetadata{
+			Version: runmodel.AssemblyVersion, TaskQueryHash: strings.Repeat("a", 64), CandidateSetHash: strings.Repeat("b", 64),
+			CandidateCount: len(items), SelectedCount: len(items), DurableBudgetBytes: runmodel.DefaultDurableBudgetBytes,
+			RetrievalBudgetBytes: runmodel.DefaultRetrievalBudgetBytes, TotalBudgetBytes: runmodel.DefaultTotalBudgetBytes,
+			Warnings: []string{},
+		}},
 	}, projectID)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +283,7 @@ func TestRunRepoSnapshotV2RetrievalRoundTripAndOverrideAudit(t *testing.T) {
 	taskValue := newTask(t, f, projectValue.ID, "retrieval")
 	snapshot := newSnapshot(t, projectValue.ID, nil)
 	snapshot.Retrieval = []run.ContextSnapshotRetrievalItem{retrievalItem(t)}
-	snapshot.Metadata = run.ContextSnapshotRetrievalMetadata{WithoutRetrieval: false}
+	snapshot.Metadata.WithoutRetrieval = false
 	claimed := claimRun(t, f, taskValue.ID, snapshot)
 	show, err := f.runs.ShowRun(context.Background(), claimed.ID)
 	if err != nil {
@@ -280,10 +292,15 @@ func TestRunRepoSnapshotV2RetrievalRoundTripAndOverrideAudit(t *testing.T) {
 	if len(show.Snapshot.Retrieval) != 1 || show.Snapshot.Retrieval[0].Path != "internal/unique.go" || show.Snapshot.Retrieval[0].MatchedTerms == nil {
 		t.Fatalf("snapshot = %#v", show.Snapshot)
 	}
+	assembly := show.Snapshot.Metadata.Assembly
+	if assembly.DefaultBudgetItems != runmodel.DefaultMaxDurableItems || assembly.DurableBudgetItems != runmodel.DefaultMaxDurableItems || assembly.ItemBudgetReason != runmodel.ItemBudgetReasonDefault {
+		t.Fatalf("snapshot item budget metadata = %#v", assembly)
+	}
 
 	overrideTask := newTask(t, f, projectValue.ID, "override")
 	override := newSnapshot(t, projectValue.ID, nil)
-	override.Metadata = run.ContextSnapshotRetrievalMetadata{WithoutRetrieval: true, OverrideReason: "maintenance"}
+	override.Metadata.WithoutRetrieval = true
+	override.Metadata.OverrideReason = "maintenance"
 	overrideRun := claimRun(t, f, overrideTask.ID, override)
 	var body string
 	if err := f.db.QueryRowContext(context.Background(), `SELECT body FROM task_events WHERE task_id=? AND type='claimed'`, overrideTask.ID).Scan(&body); err != nil {
@@ -299,6 +316,25 @@ func TestRunRepoSnapshotV2RetrievalRoundTripAndOverrideAudit(t *testing.T) {
 	}
 	if event.RunID != overrideRun.ID || !event.WithoutRetrieval || event.OverrideReason != "maintenance" {
 		t.Fatalf("event = %#v", event)
+	}
+
+	allContextTask := newTask(t, f, projectValue.ID, "all context override")
+	allContext := newSnapshot(t, projectValue.ID, nil)
+	allContext.Metadata.ContextOverrideReason = "migration audit"
+	allContextRun := claimRun(t, f, allContextTask.ID, allContext)
+	if err := f.db.QueryRowContext(context.Background(), `SELECT body FROM task_events WHERE task_id=? AND type='claimed'`, allContextTask.ID).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	var contextEvent struct {
+		RunID                 string `json:"run_id"`
+		AllContext            bool   `json:"all_context"`
+		ContextOverrideReason string `json:"context_override_reason"`
+	}
+	if err := json.Unmarshal([]byte(body), &contextEvent); err != nil {
+		t.Fatal(err)
+	}
+	if contextEvent.RunID != allContextRun.ID || !contextEvent.AllContext || contextEvent.ContextOverrideReason != "migration audit" {
+		t.Fatalf("all-context event = %#v", contextEvent)
 	}
 }
 
@@ -528,27 +564,35 @@ func contextRecordHash(value runmodel.ProjectContextRecord) string {
 	tags := append([]string(nil), value.Tags...)
 	sort.Strings(tags)
 	payload := struct {
-		Kind        runmodel.Kind        `json:"kind"`
-		Title       string               `json:"title"`
-		Body        string               `json:"body"`
-		Tags        []string             `json:"tags"`
-		Source      runmodel.Source      `json:"source"`
-		Visibility  runmodel.Visibility  `json:"visibility"`
-		Sensitivity runmodel.Sensitivity `json:"sensitivity"`
-		Enabled     *bool                `json:"enabled,omitempty"`
-		Priority    *runmodel.Priority   `json:"priority,omitempty"`
-		Scope       *runmodel.Scope      `json:"scope,omitempty"`
+		Kind         runmodel.Kind        `json:"kind"`
+		Title        string               `json:"title"`
+		Body         string               `json:"body"`
+		Tags         []string             `json:"tags"`
+		Source       runmodel.Source      `json:"source"`
+		Visibility   runmodel.Visibility  `json:"visibility"`
+		Sensitivity  runmodel.Sensitivity `json:"sensitivity"`
+		Delivery     runmodel.Delivery    `json:"delivery"`
+		Enabled      *bool                `json:"enabled,omitempty"`
+		Priority     *runmodel.Priority   `json:"priority,omitempty"`
+		Scope        *runmodel.Scope      `json:"scope,omitempty"`
+		ReviewAfter  *time.Time           `json:"review_after,omitempty"`
+		ExpiresAt    *time.Time           `json:"expires_at,omitempty"`
+		SupersededBy *string              `json:"superseded_by,omitempty"`
 	}{
-		Kind:        value.Kind,
-		Title:       value.Title,
-		Body:        value.Body,
-		Tags:        tags,
-		Source:      value.Source,
-		Visibility:  value.Visibility,
-		Sensitivity: value.Sensitivity,
-		Enabled:     value.Enabled,
-		Priority:    value.Priority,
-		Scope:       value.Scope,
+		Kind:         value.Kind,
+		Title:        value.Title,
+		Body:         value.Body,
+		Tags:         tags,
+		Source:       value.Source,
+		Visibility:   value.Visibility,
+		Sensitivity:  value.Sensitivity,
+		Delivery:     value.Delivery,
+		Enabled:      value.Enabled,
+		Priority:     value.Priority,
+		Scope:        value.Scope,
+		ReviewAfter:  value.ReviewAfter,
+		ExpiresAt:    value.ExpiresAt,
+		SupersededBy: value.SupersededBy,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

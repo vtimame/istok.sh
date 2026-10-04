@@ -74,7 +74,7 @@ func TestBuildForTaskMapsTaskAndCreatesLocalOnlyItems(t *testing.T) {
 	contexts := contextapp.NewService(&contextRepository{values: []contextmodel.ProjectContextRecord{{ID: testID(t), ProjectID: projectID, Revision: 1, Kind: contextmodel.KindNote, Title: "note", Source: contextmodel.SourceUser, Visibility: contextmodel.VisibilityShared, Sensitivity: contextmodel.SensitivityNormal}}})
 	resolver := &projectResolver{value: project.Project{ID: projectID}}
 	retriever := &taskRetriever{values: []retrieval.SearchResult{{ContractVersion: retrieval.ContractVersion, ChunkID: "chunk", Path: "internal/unique.go", Language: "go", LineStart: 3, LineEnd: 5, ContentHash: hash, Snippet: "UniqueSymbol", MatchedTerms: nil, Provenance: nil, Reasons: nil}}}
-	service := NewService(contexts, resolver, retriever)
+	service := NewService(contexts, resolver, retriever, nil)
 	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.FixedZone("x", 3600))
 	service.now = func() time.Time { return now }
 	service.newID = func() (string, error) { return testID(t), nil }
@@ -103,8 +103,8 @@ func TestBuildForTaskFailureAndOverride(t *testing.T) {
 	contexts := contextapp.NewService(&contextRepository{values: []contextmodel.ProjectContextRecord{{ID: testID(t), ProjectID: projectID, Revision: 1, Kind: contextmodel.KindNote, Title: "record", Source: contextmodel.SourceUser, Visibility: contextmodel.VisibilityShared, Sensitivity: contextmodel.SensitivityNormal}}})
 	resolver := &projectResolver{value: project.Project{ID: projectID}}
 	retriever := &taskRetriever{err: errors.New("index unavailable")}
-	service := NewService(contexts, resolver, retriever)
-	value := task.Task{ID: testID(t), ProjectID: projectID}
+	service := NewService(contexts, resolver, retriever, nil)
+	value := task.Task{ID: testID(t), ProjectID: projectID, Title: "record"}
 	if _, err := service.BuildForTask(context.Background(), value, contextpack.BuildOptions{}); !errors.Is(err, retriever.err) {
 		t.Fatalf("error = %v", err)
 	}
@@ -119,6 +119,55 @@ func TestBuildForTaskFailureAndOverride(t *testing.T) {
 	}
 	if resolver.calls != 0 || retriever.calls != 0 || len(got.Records) != 1 || got.Retrieval == nil || len(got.Retrieval) != 0 || !got.Metadata.WithoutRetrieval {
 		t.Fatalf("override package = %#v", got)
+	}
+}
+
+func TestBuildForTaskAuditedAllContextSupportsLegacyOversizePackage(t *testing.T) {
+	projectID := testID(t)
+	values := make([]contextmodel.ProjectContextRecord, 0, 6)
+	for index := 0; index < 6; index++ {
+		values = append(values, contextmodel.ProjectContextRecord{
+			ID: testID(t), ProjectID: projectID, Revision: 1, Kind: contextmodel.KindNote,
+			Title: "legacy record", Body: strings.Repeat("x", 10*1024), Tags: []string{},
+			Source: contextmodel.SourceUser, Visibility: contextmodel.VisibilityShared,
+			Sensitivity: contextmodel.SensitivityNormal, Delivery: contextmodel.DeliveryManual,
+		})
+	}
+	service := NewService(
+		contextapp.NewService(&contextRepository{values: values}),
+		&projectResolver{value: project.Project{ID: projectID}},
+		&taskRetriever{},
+		nil,
+	)
+
+	got, err := service.BuildForTask(context.Background(), task.Task{ID: testID(t), ProjectID: projectID}, contextpack.BuildOptions{
+		LegacyAllContext: true, ContextOverrideReason: "migration audit",
+		WithoutRetrieval: true, RetrievalOverrideReason: "offline preview",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Records) != len(values) || got.Metadata.Assembly.Usage.TotalBytes <= contextmodel.DefaultTotalBudgetBytes || got.Metadata.ContextOverrideReason != "migration audit" {
+		t.Fatalf("legacy all-context package = %#v", got)
+	}
+}
+
+func TestBuildForTaskRejectsRetrievalOverBudget(t *testing.T) {
+	projectID := testID(t)
+	retriever := &taskRetriever{values: []retrieval.SearchResult{{
+		ContractVersion: retrieval.ContractVersion, ChunkID: "chunk", Path: "large.go", Language: "go",
+		LineStart: 1, LineEnd: 1, ContentHash: hash, Snippet: strings.Repeat("x", contextmodel.DefaultRetrievalBudgetBytes+1),
+	}}}
+	service := NewService(
+		contextapp.NewService(&contextRepository{}),
+		&projectResolver{value: project.Project{ID: projectID}},
+		retriever,
+		nil,
+	)
+
+	_, err := service.BuildForTask(context.Background(), task.Task{ID: testID(t), ProjectID: projectID, Title: "large"}, contextpack.BuildOptions{})
+	if contextmodel.ErrorCode(err) != contextmodel.CodeConflict {
+		t.Fatalf("error = %v", err)
 	}
 }
 

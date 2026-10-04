@@ -74,16 +74,19 @@ type TaskDependencyRemoveCommand struct {
 }
 
 type TaskClaimCommand struct {
-	ID                      int64  `arg:"" name:"ID" required:"" help:"Project-scoped task number in the current project."`
-	RunID                   string `name:"run-id" help:"Client-generated canonical UUIDv7 run ID."`
-	SnapshotID              string `name:"snapshot-id" help:"Client-generated canonical UUIDv7 context snapshot ID."`
-	ContextLimit            int    `name:"context-limit" help:"Maximum number of current context records to snapshot; zero means unlimited."`
-	BaseBranch              string `name:"base-branch" help:"Base Git branch; detected from the worktree when omitted."`
-	BaseCommit              string `name:"base-commit" help:"Base Git commit; detected from the worktree when omitted."`
-	WithoutRetrieval        bool   `name:"without-retrieval" help:"Claim without local code retrieval; requires --override-reason."`
-	RetrievalOverrideReason string `name:"override-reason" help:"Audited reason for --without-retrieval."`
-	Database                string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
-	JSON                    bool   `name:"json" help:"Write a versioned JSON response."`
+	ID                      int64    `arg:"" name:"ID" required:"" help:"Project-scoped task number in the current project."`
+	RunID                   string   `name:"run-id" help:"Client-generated canonical UUIDv7 run ID."`
+	SnapshotID              string   `name:"snapshot-id" help:"Client-generated canonical UUIDv7 context snapshot ID."`
+	ContextLimit            int      `name:"context-limit" help:"Explicit durable record limit (1-64); zero auto-expands for required always context."`
+	ContextID               []string `name:"context-id" help:"Explicit context record UUIDv7 to include; can be repeated."`
+	AllContext              bool     `name:"all-context" help:"Include all active context with an audited override."`
+	ContextOverrideReason   string   `name:"context-override-reason" help:"Audited reason required with --all-context."`
+	BaseBranch              string   `name:"base-branch" help:"Base Git branch; detected from the worktree when omitted."`
+	BaseCommit              string   `name:"base-commit" help:"Base Git commit; detected from the worktree when omitted."`
+	WithoutRetrieval        bool     `name:"without-retrieval" help:"Claim without local code retrieval; requires --override-reason."`
+	RetrievalOverrideReason string   `name:"override-reason" help:"Audited reason for --without-retrieval."`
+	Database                string   `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
+	JSON                    bool     `name:"json" help:"Write a versioned JSON response."`
 }
 
 type TaskDoneCommand struct {

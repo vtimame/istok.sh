@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	projectcontext "github.com/vtimame/istok.sh/internal/context"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
 )
@@ -90,12 +91,20 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 		}
 
 		body := input.RunID
-		if input.Snapshot.Metadata.WithoutRetrieval {
+		if input.Snapshot.Metadata.WithoutRetrieval || input.Snapshot.Metadata.ContextOverrideReason != "" {
 			encoded, encodeErr := json.Marshal(struct {
-				RunID            string `json:"run_id"`
-				WithoutRetrieval bool   `json:"without_retrieval"`
-				OverrideReason   string `json:"override_reason"`
-			}{RunID: input.RunID, WithoutRetrieval: true, OverrideReason: input.Snapshot.Metadata.OverrideReason})
+				RunID                 string `json:"run_id"`
+				WithoutRetrieval      bool   `json:"without_retrieval"`
+				OverrideReason        string `json:"override_reason,omitempty"`
+				AllContext            bool   `json:"all_context"`
+				ContextOverrideReason string `json:"context_override_reason,omitempty"`
+			}{
+				RunID:                 input.RunID,
+				WithoutRetrieval:      input.Snapshot.Metadata.WithoutRetrieval,
+				OverrideReason:        input.Snapshot.Metadata.OverrideReason,
+				AllContext:            input.Snapshot.Metadata.ContextOverrideReason != "",
+				ContextOverrideReason: input.Snapshot.Metadata.ContextOverrideReason,
+			})
 			if encodeErr != nil {
 				return fmt.Errorf("encode claim override event: %w", encodeErr)
 			}
@@ -161,10 +170,14 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 }
 
 func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.ContextSnapshot, createdAt time.Time) error {
-	_, err := conn.ExecContext(ctx, `
-		INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at)
-		VALUES (?,?,?,?,?)
-	`, snapshot.ID, snapshot.SchemaVersion, snapshot.ProjectID, stamp(snapshot.GeneratedAt), stamp(createdAt))
+	knowledgeCatalog, err := json.Marshal(snapshot.Knowledge)
+	if err != nil {
+		return fmt.Errorf("encode snapshot knowledge catalog: %w", err)
+	}
+	_, err = conn.ExecContext(ctx, `
+		INSERT INTO context_snapshots (id,schema_version,project_id,generated_at,created_at,knowledge_catalog)
+		VALUES (?,?,?,?,?,?)
+	`, snapshot.ID, snapshot.SchemaVersion, snapshot.ProjectID, stamp(snapshot.GeneratedAt), stamp(createdAt), string(knowledgeCatalog))
 	if err != nil {
 		return mapSQLError(err, "context snapshot conflicts with existing data")
 	}
@@ -174,12 +187,21 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 		if err != nil {
 			return fmt.Errorf("encode context snapshot tags: %w", err)
 		}
+		matchedTerms, err := json.Marshal(nonNilSnapshotStrings(item.MatchedTerms))
+		if err != nil {
+			return fmt.Errorf("encode context snapshot matched terms: %w", err)
+		}
+		reasons, err := json.Marshal(nonNilSnapshotStrings(item.Reasons))
+		if err != nil {
+			return fmt.Errorf("encode context snapshot reasons: %w", err)
+		}
 
 		_, err = conn.ExecContext(ctx, `
 			INSERT INTO context_snapshot_items (
 				snapshot_id,position,record_id,record_revision,content_hash,
-				kind,source,visibility,sensitivity,enabled,priority,scope,title,body,snippet,tags
-			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+				kind,source,visibility,sensitivity,enabled,priority,scope,delivery,lane,selection_score,
+				title,body,snippet,tags,matched_terms,reasons
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		`,
 			snapshot.ID,
 			position,
@@ -193,19 +215,69 @@ func insertSnapshot(ctx context.Context, conn *sql.Conn, snapshot runmodel.Conte
 			snapshotPolicyEnabled(item),
 			snapshotPolicyPriority(item),
 			snapshotPolicyScope(item),
+			snapshotDelivery(item),
+			item.Lane,
+			item.Score,
 			item.Title,
 			item.Body,
 			item.Snippet,
 			string(tags),
+			string(matchedTerms),
+			string(reasons),
 		)
 		if err != nil {
 			return mapSQLError(err, "context snapshot item conflicts with existing data")
 		}
 	}
-	if snapshot.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+	if snapshot.SchemaVersion == runmodel.ContextSnapshotSchemaVersionV4 || snapshot.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
 		_, err = conn.ExecContext(ctx, `INSERT INTO context_snapshot_retrieval_metadata (snapshot_id,without_retrieval,override_reason) VALUES (?,?,?)`, snapshot.ID, snapshot.Metadata.WithoutRetrieval, snapshot.Metadata.OverrideReason)
 		if err != nil {
 			return mapSQLError(err, "context snapshot retrieval metadata conflicts with existing data")
+		}
+		warnings, err := json.Marshal(snapshot.Metadata.Assembly.Warnings)
+		if err != nil {
+			return fmt.Errorf("encode context assembly warnings: %w", err)
+		}
+		assembly := normalizedSnapshotAssembly(snapshot)
+		knowledgeMetadata := snapshot.Metadata.Knowledge
+		if knowledgeMetadata.BudgetBytes == 0 {
+			knowledgeMetadata.BudgetBytes = 4096
+		}
+		assemblyQuery := `
+			INSERT INTO context_snapshot_assembly_metadata (
+				snapshot_id,assembly_version,context_override_reason,task_query_hash,candidate_set_hash,
+				candidate_count,selected_count,durable_budget_bytes,retrieval_budget_bytes,total_budget_bytes,
+				always_bytes,explicit_bytes,ranked_bytes,durable_bytes,retrieval_bytes,total_bytes,warnings,
+				knowledge_candidate_count,knowledge_selected_count,knowledge_budget_bytes,knowledge_used_bytes,knowledge_truncated
+			) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		`
+		assemblyArgs := []any{
+			snapshot.ID, assembly.Version, snapshot.Metadata.ContextOverrideReason, assembly.TaskQueryHash, assembly.CandidateSetHash,
+			assembly.CandidateCount, assembly.SelectedCount, assembly.DurableBudgetBytes, assembly.RetrievalBudgetBytes, assembly.TotalBudgetBytes,
+			assembly.Usage.AlwaysBytes, assembly.Usage.ExplicitBytes, assembly.Usage.RankedBytes, assembly.Usage.DurableBytes, assembly.Usage.RetrievalBytes, assembly.Usage.TotalBytes, string(warnings),
+			knowledgeMetadata.CandidateCount, knowledgeMetadata.SelectedCount, knowledgeMetadata.BudgetBytes, knowledgeMetadata.UsedBytes, knowledgeMetadata.Truncated,
+		}
+		if snapshot.SchemaVersion == runmodel.ContextSnapshotSchemaVersion {
+			assemblyQuery = `
+				INSERT INTO context_snapshot_assembly_metadata (
+					snapshot_id,assembly_version,context_override_reason,task_query_hash,candidate_set_hash,
+					candidate_count,selected_count,default_durable_budget_items,durable_budget_items,
+					durable_item_budget_reason,required_always_items,durable_budget_bytes,retrieval_budget_bytes,total_budget_bytes,
+					always_bytes,explicit_bytes,ranked_bytes,durable_bytes,retrieval_bytes,total_bytes,warnings,
+					knowledge_candidate_count,knowledge_selected_count,knowledge_budget_bytes,knowledge_used_bytes,knowledge_truncated
+				) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			`
+			assemblyArgs = []any{
+				snapshot.ID, assembly.Version, snapshot.Metadata.ContextOverrideReason, assembly.TaskQueryHash, assembly.CandidateSetHash,
+				assembly.CandidateCount, assembly.SelectedCount, assembly.DefaultBudgetItems, assembly.DurableBudgetItems,
+				assembly.ItemBudgetReason, assembly.RequiredAlwaysItems, assembly.DurableBudgetBytes, assembly.RetrievalBudgetBytes, assembly.TotalBudgetBytes,
+				assembly.Usage.AlwaysBytes, assembly.Usage.ExplicitBytes, assembly.Usage.RankedBytes, assembly.Usage.DurableBytes, assembly.Usage.RetrievalBytes, assembly.Usage.TotalBytes, string(warnings),
+				knowledgeMetadata.CandidateCount, knowledgeMetadata.SelectedCount, knowledgeMetadata.BudgetBytes, knowledgeMetadata.UsedBytes, knowledgeMetadata.Truncated,
+			}
+		}
+		_, err = conn.ExecContext(ctx, assemblyQuery, assemblyArgs...)
+		if err != nil {
+			return mapSQLError(err, "context snapshot assembly metadata conflicts with existing data")
 		}
 		for position, item := range snapshot.Retrieval {
 			matchedTerms, err := json.Marshal(item.MatchedTerms)
@@ -247,4 +319,52 @@ func snapshotPolicyScope(item runmodel.ContextSnapshotItem) string {
 		return string(*item.Scope)
 	}
 	return "project"
+}
+
+func snapshotDelivery(item runmodel.ContextSnapshotItem) string {
+	if item.Delivery.Valid() {
+		return string(item.Delivery)
+	}
+
+	return string(projectcontext.DefaultDelivery(item.Kind))
+}
+
+func nonNilSnapshotStrings(values []string) []string {
+	return append([]string{}, values...)
+}
+
+func normalizedSnapshotAssembly(snapshot runmodel.ContextSnapshot) projectcontext.AssemblyMetadata {
+	assembly := snapshot.Metadata.Assembly
+	if assembly.DefaultBudgetItems <= 0 {
+		assembly.DefaultBudgetItems = projectcontext.DefaultMaxDurableItems
+	}
+
+	requiredAlwaysItems := 0
+	for _, item := range snapshot.Records {
+		if item.Lane == projectcontext.LaneAlways {
+			requiredAlwaysItems++
+		}
+	}
+	if assembly.RequiredAlwaysItems == 0 {
+		assembly.RequiredAlwaysItems = requiredAlwaysItems
+	}
+
+	if assembly.DurableBudgetItems <= 0 {
+		assembly.DurableBudgetItems = max(assembly.DefaultBudgetItems, assembly.SelectedCount)
+		assembly.DurableBudgetItems = max(assembly.DurableBudgetItems, assembly.RequiredAlwaysItems)
+	}
+	if assembly.ItemBudgetReason == "" {
+		switch {
+		case snapshot.Metadata.ContextOverrideReason != "":
+			assembly.ItemBudgetReason = projectcontext.ItemBudgetReasonLegacyAll
+		case assembly.RequiredAlwaysItems > assembly.DefaultBudgetItems && assembly.DurableBudgetItems == assembly.RequiredAlwaysItems:
+			assembly.ItemBudgetReason = projectcontext.ItemBudgetReasonRequiredAlways
+		case assembly.DurableBudgetItems != assembly.DefaultBudgetItems:
+			assembly.ItemBudgetReason = projectcontext.ItemBudgetReasonExplicit
+		default:
+			assembly.ItemBudgetReason = projectcontext.ItemBudgetReasonDefault
+		}
+	}
+
+	return assembly
 }

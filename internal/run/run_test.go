@@ -91,6 +91,24 @@ func TestClaimInputRequiresAuditedRetrievalOverride(t *testing.T) {
 	}
 }
 
+func TestClaimInputRequiresAuditedAllContextOverrideAndValidExplicitIDs(t *testing.T) {
+	value := ClaimInput{AllContext: true}
+	if ErrorCode(value.Validate()) != CodeInvalid {
+		t.Fatalf("ClaimInput.Validate() = %v", value.Validate())
+	}
+
+	value.ContextOverrideReason = "  migration audit  "
+	value.ContextIDs = []string{mustID(t)}
+	if err := value.Validate(); err != nil {
+		t.Fatalf("ClaimInput.Validate() = %v", err)
+	}
+
+	value.ContextIDs = []string{"not-an-id"}
+	if ErrorCode(value.Validate()) != CodeInvalid {
+		t.Fatalf("ClaimInput.Validate() = %v", value.Validate())
+	}
+}
+
 func TestArtifactInputValidationRejectsUnmanagedMetadata(t *testing.T) {
 	base := ArtifactInput{
 		ID:           mustID(t),
@@ -197,10 +215,14 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 				Source:         projectcontext.SourceAgent,
 				Visibility:     projectcontext.VisibilityShared,
 				Sensitivity:    projectcontext.SensitivityNormal,
+				Delivery:       projectcontext.DeliveryRanked,
 				Title:          "Title",
 				Body:           "Body",
 				Snippet:        "Snippet",
 				Tags:           []string{"one", "two"},
+				Lane:           projectcontext.LaneRanked,
+				MatchedTerms:   []string{"title"},
+				Reasons:        []string{"task lexical relevance"},
 			},
 			{
 				RecordID:       mustID(t),
@@ -210,11 +232,15 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 				Source:         projectcontext.SourceUser,
 				Visibility:     projectcontext.VisibilityShared,
 				Sensitivity:    projectcontext.SensitivityNormal,
+				Delivery:       projectcontext.DeliveryAlways,
 				Enabled:        &enabled,
 				Priority:       &priority,
 				Scope:          &scope,
 				Title:          "Instruction",
 				Tags:           []string{},
+				Lane:           projectcontext.LaneAlways,
+				MatchedTerms:   []string{},
+				Reasons:        []string{"delivery=always"},
 			},
 		},
 		Retrieval: []contextpack.Item{{
@@ -223,6 +249,7 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 			ContentHash: validHash, Snippet: "package main", Score: 1, Visibility: "local_only",
 			MatchedTerms: []string{"title"}, Provenance: []string{}, Reasons: []string{},
 		}},
+		Metadata: validContextPackageMetadata(2),
 	}
 
 	snapshot, err := NewContextSnapshot(mustID(t), contextPackage, contextPackage.ProjectID)
@@ -241,6 +268,7 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 	*contextPackage.Records[1].Enabled = false
 	*contextPackage.Records[1].Priority = projectcontext.PriorityLow
 	contextPackage.Retrieval[0].MatchedTerms[0] = "changed"
+	contextPackage.Metadata.Assembly.Warnings = append(contextPackage.Metadata.Assembly.Warnings, "changed")
 	if snapshot.Records[0].Title == "changed" {
 		t.Fatal("snapshot title changed after source mutation")
 	}
@@ -255,6 +283,9 @@ func TestContextSnapshotCopiesRecordsDeeply(t *testing.T) {
 	}
 	if snapshot.Retrieval[0].Provenance == nil || snapshot.Retrieval[0].Reasons == nil {
 		t.Fatal("snapshot retrieval arrays must remain non-nil")
+	}
+	if len(snapshot.Metadata.Assembly.Warnings) != 0 {
+		t.Fatalf("snapshot assembly warnings changed after source mutation: %v", snapshot.Metadata.Assembly.Warnings)
 	}
 }
 
@@ -297,6 +328,16 @@ func TestContextSnapshotValidationPreservesHistoricalInstructionSchemas(t *testi
 	current.Records[0].Enabled = &enabled
 	current.Records[0].Priority = &priority
 	current.Records[0].Scope = &scope
+	legacyPolicy := current
+	legacyPolicy.SchemaVersion = ContextSnapshotSchemaVersionV3
+	if err := legacyPolicy.Validate(); err != nil {
+		t.Fatalf("historical snapshot v3 validation = %v", err)
+	}
+	current.Records[0].Delivery = projectcontext.DeliveryAlways
+	current.Records[0].Lane = projectcontext.LaneAlways
+	current.Records[0].MatchedTerms = []string{}
+	current.Records[0].Reasons = []string{"delivery=always"}
+	current.Metadata.Assembly = validContextPackageMetadata(1).Assembly
 	if err := current.Validate(); err != nil {
 		t.Fatalf("current instruction snapshot validation = %v", err)
 	}
@@ -352,4 +393,13 @@ func mustID(t *testing.T) string {
 func mustProjectID(t *testing.T) string {
 	t.Helper()
 	return mustID(t)
+}
+
+func validContextPackageMetadata(selected int) contextpack.Metadata {
+	return contextpack.Metadata{Assembly: projectcontext.AssemblyMetadata{
+		Version: projectcontext.AssemblyVersion, TaskQueryHash: strings.Repeat("a", 64), CandidateSetHash: strings.Repeat("b", 64),
+		CandidateCount: selected, SelectedCount: selected, DurableBudgetBytes: projectcontext.DefaultDurableBudgetBytes,
+		RetrievalBudgetBytes: projectcontext.DefaultRetrievalBudgetBytes, TotalBudgetBytes: projectcontext.DefaultTotalBudgetBytes,
+		Warnings: []string{},
+	}}
 }
