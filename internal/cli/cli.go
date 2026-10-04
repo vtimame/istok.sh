@@ -528,7 +528,7 @@ func renderProjectList(projects []project.Project) string {
 		rows = append(rows, []string{presentation.BrandStrong(item.Name), presentation.StyledStatus(status), presentation.Neutral(root)})
 	}
 
-	output.WriteString(presentation.RenderTable([]string{"NAME", "STATE", "ROOT"}, rows))
+	output.WriteString(presentation.RenderUnboundedTable([]string{"NAME", "STATE", "ROOT"}, rows))
 	output.WriteString("\n\n")
 	output.WriteString(presentation.Neutral(fmt.Sprintf("  %d total projects", len(projects))))
 

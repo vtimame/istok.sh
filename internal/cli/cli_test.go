@@ -513,17 +513,14 @@ func TestProjectListHumanOutputIsTable(t *testing.T) {
 	}
 	plain := stripANSI(listed.output)
 
-	// The human table truncates long rows, and temporary roots on macOS exceed
-	// that width, so only the leading part of the root is guaranteed to be visible.
-	visibleRoot := root[:min(len(root), 40)]
-
 	for _, want := range []string{
 		"Local projects",
 		"NAME",
 		"STATE",
 		"ROOT",
+		filepath.Base(root),
 		"ACTIVE",
-		visibleRoot,
+		root,
 		"1 total projects",
 	} {
 		if !strings.Contains(plain, want) {
