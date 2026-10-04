@@ -130,6 +130,17 @@
 }
 /* Thin scrollbars that follow the theme tokens. */
 @layer base {
+  /* Reserve the scrollbar track so the layout does not shift when it appears. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* Radix dialogs lock scrolling and add a right margin equal to the scrollbar
+     width; with the gutter already reserved that margin would shift the page. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
