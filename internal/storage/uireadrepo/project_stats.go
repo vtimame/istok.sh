@@ -1,4 +1,4 @@
-package taskrepo
+package uireadrepo
 
 import (
 	"context"

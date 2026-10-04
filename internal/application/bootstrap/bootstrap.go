@@ -29,6 +29,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
+	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
 	"github.com/vtimame/istok.sh/internal/updater"
 	"github.com/vtimame/istok.sh/internal/webui"
 )
@@ -182,8 +183,9 @@ func UIApp(path string, services *webui.Services) *fx.App {
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
 		kernelOptions(path),
-		fx.Invoke(func(info buildinfo.Info, stats *taskrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
-			*services = webui.Services{Build: info, Stats: stats, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
+		fx.Provide(uireadrepo.New),
+		fx.Invoke(func(info buildinfo.Info, readModel *uireadrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
+			*services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
 		}),
 	)
 }

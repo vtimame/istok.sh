@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 
 import { apiGet } from "@/lib/api"
 import { list } from "@/lib/types"
 import type {
+  FeedItem,
   Health,
   KnowledgeItem,
   List,
@@ -91,5 +92,37 @@ export function useKnowledge(projectId: string) {
       apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge`).then(
         list
       ),
+  })
+}
+
+export const FEED_PAGE_SIZE = 50
+
+export function useRunFeed(
+  projectId: string,
+  statuses: string[],
+  lease: "" | "live" | "expired"
+) {
+  return useInfiniteQuery({
+    queryKey: ["runs", "feed", projectId, statuses, lease],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({
+        limit: String(FEED_PAGE_SIZE),
+        offset: String(pageParam),
+      })
+      if (projectId) {
+        params.set("project", projectId)
+      }
+      if (lease) {
+        params.set("lease", lease)
+      }
+      statuses.forEach((status) => params.append("status", status))
+
+      return apiGet<List<FeedItem>>(`/runs?${params}`).then(list)
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.length < FEED_PAGE_SIZE
+        ? undefined
+        : pages.length * FEED_PAGE_SIZE,
   })
 }

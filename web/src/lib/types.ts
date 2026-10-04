@@ -209,3 +209,21 @@ export type KnowledgeItem = {
   reviewed_at?: string
   updated_at: string
 }
+
+// FeedItem is one entry of the cross-project run feed (GET /api/v1/runs).
+export type FeedItem = {
+  run: {
+    id: string
+    status: RunStatus
+    actor_name: string
+    actor_kind: string
+    started_at: string
+    finished_at?: string
+    heartbeat_at?: string
+    expires_at?: string
+    result_summary: string
+  }
+  task: { id: string; number: number; title: string; status: TaskStatus }
+  project: { id: string; name: string }
+  validations: { passed: number; failed: number }
+}
