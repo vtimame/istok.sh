@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react"
 import { Link, useParams } from "react-router"
 
 import { AbandonRunDialog } from "@/components/abandon-run-dialog"
+import { CodeBlock } from "@/components/code-block"
 import { InlineCode, Markdown } from "@/components/markdown"
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
@@ -275,9 +276,11 @@ function SnapshotView({ snapshot }: { snapshot: ContextSnapshot }) {
               </>
             }
           >
-            <pre className="max-h-96 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed">
-              {item.snippet}
-            </pre>
+            <CodeBlock
+              code={item.snippet}
+              language={item.language}
+              startLine={item.line_start}
+            />
           </Expandable>
         ))}
       </SnapshotSection>
