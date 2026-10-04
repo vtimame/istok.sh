@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useKnowledge, useProject } from "@/hooks/queries"
 import { formatRelative } from "@/lib/format"
+import { list } from "@/lib/types"
 
 export function KnowledgePage() {
   const { projectId = "" } = useParams()
@@ -39,7 +40,7 @@ export function KnowledgePage() {
                   <CardTitle className="text-base">{item.title}</CardTitle>
                   <StatusBadge status={item.status} />
                   <Badge variant="outline">{item.kind}</Badge>
-                  {item.tags.map((tag) => (
+                  {list(item.tags).map((tag) => (
                     <Badge key={tag} variant="secondary">
                       {tag}
                     </Badge>

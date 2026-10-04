@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { apiGet } from "@/lib/api"
+import { list } from "@/lib/types"
 import type {
   KnowledgeItem,
+  List,
   Project,
   Run,
   RunShow,
@@ -21,7 +23,7 @@ export function useHealth() {
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: () => apiGet<Project[]>("/projects"),
+    queryFn: () => apiGet<List<Project>>("/projects").then(list),
   })
 }
 
@@ -37,7 +39,8 @@ export function useProject(projectId: string) {
 export function useTasks(projectId: string) {
   return useQuery({
     queryKey: ["projects", projectId, "tasks"],
-    queryFn: () => apiGet<TaskListItem[]>(`/projects/${projectId}/tasks`),
+    queryFn: () => apiGet<List<TaskListItem>>(`/projects/${projectId}/tasks`).then(list),
+    enabled: projectId !== "",
   })
 }
 
@@ -53,7 +56,7 @@ export function useRuns(projectId: string, taskId?: string) {
 
   return useQuery({
     queryKey: ["projects", projectId, "runs", taskId ?? "all"],
-    queryFn: () => apiGet<Run[]>(`/projects/${projectId}/runs${query}`),
+    queryFn: () => apiGet<List<Run>>(`/projects/${projectId}/runs${query}`).then(list),
     enabled: taskId !== "",
   })
 }
@@ -65,9 +68,20 @@ export function useRun(runId: string) {
   })
 }
 
+export function useKnowledgeSearch(projectId: string, query: string) {
+  return useQuery({
+    queryKey: ["projects", projectId, "knowledge", "search", query],
+    queryFn: () =>
+      apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge?q=${encodeURIComponent(query)}`).then(list),
+    enabled: projectId !== "" && query.length >= 2,
+    refetchInterval: false,
+    placeholderData: (previous) => previous,
+  })
+}
+
 export function useKnowledge(projectId: string) {
   return useQuery({
     queryKey: ["projects", projectId, "knowledge"],
-    queryFn: () => apiGet<KnowledgeItem[]>(`/projects/${projectId}/knowledge`),
+    queryFn: () => apiGet<List<KnowledgeItem>>(`/projects/${projectId}/knowledge`).then(list),
   })
 }

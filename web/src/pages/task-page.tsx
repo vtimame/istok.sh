@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useProject, useRuns, useTask } from "@/hooks/queries"
 import { formatDateTime, formatRelative } from "@/lib/format"
+import { list } from "@/lib/types"
 import type { TaskSummary } from "@/lib/types"
 
 function TextSection({ title, body }: { title: string; body: string }) {
@@ -119,9 +120,9 @@ export function TaskPage() {
                   <CardTitle className="text-sm">Dependencies</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
-                  <TaskLinks projectId={projectId} title="Blocked by" tasks={shown.data.blockers} />
-                  <TaskLinks projectId={projectId} title="Blocks" tasks={shown.data.dependents} />
-                  {shown.data.blockers.length === 0 && shown.data.dependents.length === 0 && (
+                  <TaskLinks projectId={projectId} title="Blocked by" tasks={list(shown.data.blockers)} />
+                  <TaskLinks projectId={projectId} title="Blocks" tasks={list(shown.data.dependents)} />
+                  {list(shown.data.blockers).length === 0 && list(shown.data.dependents).length === 0 && (
                     <p className="text-sm text-muted-foreground">None.</p>
                   )}
                 </CardContent>

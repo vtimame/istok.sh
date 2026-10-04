@@ -182,8 +182,8 @@ func UIApp(path string, services *webui.Services) *fx.App {
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
 		kernelOptions(path),
-		fx.Invoke(func(info buildinfo.Info, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
-			*services = webui.Services{Build: info, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
+		fx.Invoke(func(info buildinfo.Info, activity *taskrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
+			*services = webui.Services{Build: info, Activity: activity, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
 		}),
 	)
 }

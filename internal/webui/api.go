@@ -1,8 +1,11 @@
 package webui
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
@@ -19,9 +22,15 @@ const (
 	knowledgeLimit  = 200
 )
 
+// ActivityReader reports the latest task update per project.
+type ActivityReader interface {
+	LastActivity(ctx context.Context) (map[string]time.Time, error)
+}
+
 // Services are the application services the read-only API reads from.
 type Services struct {
 	Build     buildinfo.Info
+	Activity  ActivityReader
 	Projects  *project.Service
 	Tasks     *taskapp.Service
 	Runs      *runapp.Service
@@ -38,7 +47,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/{project}/tasks", a.tasks)
 	mux.HandleFunc("GET /api/v1/projects/{project}/tasks/{number}", a.task)
 	mux.HandleFunc("GET /api/v1/projects/{project}/runs", a.runs)
-	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge)
+	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge) // ?q= switches to full-text search
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
@@ -52,6 +61,13 @@ func (a api) health(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// projectView adds the latest task activity, which project.updated_at does
+// not track: that field changes only on rename, rebind and delete.
+type projectView struct {
+	project.Project
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+}
+
 func (a api) projects(w http.ResponseWriter, r *http.Request) {
 	projects, err := a.services.Projects.List(r.Context(), false)
 	if err != nil {
@@ -59,7 +75,22 @@ func (a api) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResult(w, projects)
+	activity, err := a.services.Activity.LastActivity(r.Context())
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+
+	views := make([]projectView, 0, len(projects))
+	for _, value := range projects {
+		view := projectView{Project: value}
+		if at, ok := activity[value.ID]; ok {
+			view.LastActivityAt = &at
+		}
+		views = append(views, view)
+	}
+
+	writeResult(w, views)
 }
 
 func (a api) tasks(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +165,18 @@ func (a api) run(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a api) knowledge(w http.ResponseWriter, r *http.Request) {
-	items, err := a.services.Knowledge.Catalog(r.Context(), r.PathValue("project"), knowledge.CatalogOptions{Limit: knowledgeLimit})
+	projectID := r.PathValue("project")
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	var (
+		items []knowledge.CatalogItem
+		err   error
+	)
+	if query == "" {
+		items, err = a.services.Knowledge.Catalog(r.Context(), projectID, knowledge.CatalogOptions{Limit: knowledgeLimit})
+	} else {
+		items, err = a.services.Knowledge.Search(r.Context(), projectID, knowledge.SearchOptions{Query: query, Limit: knowledgeLimit})
+	}
 	if err != nil {
 		writeDomainError(w, err)
 		return
