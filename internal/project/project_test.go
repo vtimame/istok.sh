@@ -57,7 +57,11 @@ func TestInitUsesUUIDv7AndCanonicalBasename(t *testing.T) {
 }
 
 func TestCanonicalizeResolvesSymlink(t *testing.T) {
-	target := filepath.Join(t.TempDir(), "target")
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(directory, "target")
 	if err := os.Mkdir(target, 0o755); err != nil {
 		t.Fatal(err)
 	}

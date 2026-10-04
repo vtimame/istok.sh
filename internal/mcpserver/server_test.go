@@ -247,7 +247,10 @@ func TestToolErrorIncludesStructuredContextBudgetDetails(t *testing.T) {
 }
 
 func TestScopedInitAndAdminMutationContracts(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, worker := newSession(t, Worker, root)
 	first := callTool(t, worker, "project_init", map[string]any{"name": "scoped"})
 	var initialized InitResult

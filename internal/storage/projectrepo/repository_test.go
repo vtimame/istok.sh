@@ -385,7 +385,12 @@ func makeDirectory(t *testing.T, elements ...string) string {
 	if err := os.Mkdir(path, 0o755); err != nil {
 		t.Fatalf("create directory %q: %v", path, err)
 	}
-	return path
+
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve directory %q: %v", path, err)
+	}
+	return canonical
 }
 
 func assertCode(t *testing.T, err error, want project.Code) {

@@ -39,7 +39,10 @@ func TestAuthorizeCommandRequiresReasonedDangerousOverride(t *testing.T) {
 }
 
 func TestScopedWorkingDirectoryRejectsEscapeIncludingSymlink(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	nested := filepath.Join(root, "nested")
 	if err := os.Mkdir(nested, 0o700); err != nil {
 		t.Fatal(err)
