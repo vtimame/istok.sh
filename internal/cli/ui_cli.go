@@ -63,7 +63,7 @@ func runUIServiceInstall(ctx context.Context, command UIServiceInstallCommand, o
 	}
 	_, err = fmt.Fprintf(output,
 		"Unit %s (%s)\nRunning %s\nIstok UI: http://127.0.0.1:%d/\n"+
-			"Rerun `istok ui service install` after updating istok to restart it on the new binary.\n"+
+			"`istok update` restarts it on the new version. If you move istok elsewhere, rerun `istok ui service install`.\n"+
 			"To keep it running after logout: loginctl enable-linger\n",
 		uiservice.UnitPath(), state, executable, command.Port)
 	return err
