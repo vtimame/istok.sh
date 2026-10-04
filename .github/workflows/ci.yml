@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      run-index-hardening:
+        description: Run the containerized repository-index release gate.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Check formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: Check module files
+        run: go mod tidy -diff
+      - name: Test unit and integration packages
+        run: go test -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+
+  native-contracts:
+    name: Native contracts (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+          - name: macOS
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Verify executor timeout, cancellation, and process-group termination
+        run: go test -count=1 ./internal/executor -run '^TestExecute(Timeout|Cancellation|TimeoutTerminatesProcessGroup)$'
+      - name: Verify CLI task-run-evidence workflow
+        run: go test -count=1 ./tests/e2e -run '^TestCLIWorkflow$'
+      - name: Verify MCP task-run-evidence workflow
+        run: go test -count=1 ./tests/e2e -run '^TestMCPWorkflowOverStdio$'
+
+  race:
+    name: Race detector (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+          - name: macOS
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Race test
+        run: go test -race -count=1 ./...
+
+  index-hardening:
+    name: Index hardening release evidence
+    if: inputs.run-index-hardening
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run clean-tree index hardening gate
+        run: make test-index-release REPORT_DIR="$RUNNER_TEMP/index-acceptance"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: index-hardening-evidence
+          path: ${{ runner.temp }}/index-acceptance/index-acceptance.json
+          if-no-files-found: error
+          retention-days: 90
