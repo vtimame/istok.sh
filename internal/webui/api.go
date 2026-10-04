@@ -51,7 +51,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/{project}/tasks/{number}", a.task)
 	mux.HandleFunc("GET /api/v1/projects/{project}/runs", a.runs)
 	mux.HandleFunc("GET /api/v1/projects/{project}/knowledge", a.knowledge) // ?q= switches to full-text search
-	mux.HandleFunc("GET /api/v1/runs", a.feed)                              // ?project=&status=&lease=&limit=&offset=
+	mux.HandleFunc("GET /api/v1/runs", a.feed)                              // ?project=...&status=...&lease=&limit=&offset=
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
 	a.registerMutations(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
@@ -193,9 +193,9 @@ func (a api) knowledge(w http.ResponseWriter, r *http.Request) {
 func (a api) feed(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	options := uireadrepo.FeedOptions{
-		ProjectID: query.Get("project"),
-		Statuses:  query["status"],
-		Limit:     50,
+		ProjectIDs: query["project"],
+		Statuses:   query["status"],
+		Limit:      50,
 	}
 
 	if raw := query.Get("limit"); raw != "" {
@@ -219,6 +219,10 @@ func (a api) feed(w http.ResponseWriter, r *http.Request) {
 		options.Lease = lease
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_argument", "lease must be live or expired")
+		return
+	}
+	if len(options.ProjectIDs) > maxFeedLimit {
+		writeError(w, http.StatusBadRequest, "invalid_argument", "too many project filters")
 		return
 	}
 	for _, status := range options.Statuses {
