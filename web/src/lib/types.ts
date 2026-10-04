@@ -1,5 +1,12 @@
 // Mirrors the JSON tags of the Go domain types served by /api/v1.
 
+// Go encodes nil slices as null, so every array from the API may be null.
+export type List<T> = T[] | null
+
+export function list<T>(value: List<T> | undefined): T[] {
+  return value ?? []
+}
+
 export type Actor = {
   id: string
   kind: string
@@ -14,6 +21,8 @@ export type Project = {
   updated_at: string
   deleted_at?: string
   root?: { canonical_path: string; active_at: string; detached_at?: string }
+  // Latest task update in the project; absent when it has no tasks.
+  last_activity_at?: string
 }
 
 export type TaskStatus = "open" | "blocked" | "done"
@@ -36,7 +45,7 @@ export type Task = {
 export type TaskListItem = Task & {
   has_active_run: boolean
   has_expired_run: boolean
-  active_blockers?: { id: string; number: number; title: string }[]
+  active_blockers?: List<{ id: string; number: number; title: string }>
 }
 
 export type TaskEvent = {
@@ -59,11 +68,11 @@ export type TaskSummary = {
 
 export type TaskShow = {
   task: Task
-  events: TaskEvent[]
+  events: List<TaskEvent>
   has_active_run: boolean
   has_expired_run: boolean
-  blockers: TaskSummary[]
-  dependents: TaskSummary[]
+  blockers: List<TaskSummary>
+  dependents: List<TaskSummary>
 }
 
 export type RunStatus =
@@ -98,7 +107,7 @@ export type Execution = {
   id: string
   run_id: string
   status: "running" | "succeeded" | "failed" | "cancelled"
-  argv: string[]
+  argv: List<string>
   cwd: string
   exit_code?: number
   duration_ms?: number
@@ -128,10 +137,10 @@ export type SnapshotRecord = {
   delivery?: string
   title: string
   snippet: string
-  tags: string[]
+  tags: List<string>
   lane?: string
   score?: number
-  reasons?: string[]
+  reasons?: List<string>
 }
 
 export type SnapshotRetrieval = {
@@ -143,7 +152,7 @@ export type SnapshotRetrieval = {
   symbol?: string
   language?: string
   score: number
-  reasons?: string[]
+  reasons?: List<string>
   snippet: string
 }
 
@@ -152,14 +161,14 @@ export type ContextSnapshot = {
   schema_version: string
   project_id: string
   generated_at: string
-  records: SnapshotRecord[]
-  retrieval: SnapshotRetrieval[]
-  knowledge_catalog: { id: string; title: string; summary?: string }[]
+  records: List<SnapshotRecord>
+  retrieval: List<SnapshotRetrieval>
+  knowledge_catalog: List<{ id: string; title: string; summary?: string }>
   metadata: {
     assembly?: {
       total_budget_bytes?: number
       usage?: { total_bytes?: number; durable_bytes?: number; retrieval_bytes?: number }
-      warnings?: string[]
+      warnings?: List<string>
     }
     without_retrieval?: boolean
     override_reason?: string
@@ -169,8 +178,8 @@ export type ContextSnapshot = {
 export type RunShow = {
   run: Run
   snapshot: ContextSnapshot
-  executions: Execution[]
-  validations: Validation[]
+  executions: List<Execution>
+  validations: List<Validation>
 }
 
 export type KnowledgeItem = {
@@ -181,7 +190,7 @@ export type KnowledgeItem = {
   title: string
   summary: string
   snippet: string
-  tags: string[]
+  tags: List<string>
   reviewed_at?: string
   updated_at: string
 }

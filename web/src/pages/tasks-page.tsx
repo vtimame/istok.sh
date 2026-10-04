@@ -6,6 +6,7 @@ import { QueryState } from "@/components/query-state"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -38,9 +39,12 @@ export function TasksPage() {
   const project = useProject(projectId)
   const tasks = useTasks(projectId)
   const [filter, setFilter] = useState<Filter>("active")
+  const [text, setText] = useState("")
+  const needle = text.trim().toLowerCase()
 
   const visible = (tasks.data ?? [])
     .filter((task) => matches(task, filter))
+    .filter((task) => !needle || `#${task.number} ${task.title}`.toLowerCase().includes(needle))
     .sort((left, right) => right.number - left.number)
 
   return (
@@ -55,15 +59,23 @@ export function TasksPage() {
         }
       />
 
-      <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)} className="mb-4">
-        <TabsList>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
+          <TabsList>
           <TabsTrigger value="active">Not done</TabsTrigger>
           <TabsTrigger value="open">Open</TabsTrigger>
           <TabsTrigger value="blocked">Blocked</TabsTrigger>
           <TabsTrigger value="done">Done</TabsTrigger>
           <TabsTrigger value="all">All</TabsTrigger>
-        </TabsList>
-      </Tabs>
+          </TabsList>
+        </Tabs>
+        <Input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Filter by title or #number"
+          className="w-64"
+        />
+      </div>
 
       <QueryState isPending={tasks.isPending} error={tasks.error}>
         <Table>

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useProject, useRun } from "@/hooks/queries"
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format"
+import { list } from "@/lib/types"
 import type { ContextSnapshot, Execution, Validation } from "@/lib/types"
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
@@ -59,7 +60,7 @@ function ExecutionList({ executions }: { executions: Execution[] }) {
             {execution.timed_out && <Badge variant="destructive">timed out</Badge>}
             <span className="text-xs text-muted-foreground">{formatDuration(execution.duration_ms)}</span>
           </div>
-          <code className="text-xs break-all">{execution.argv.join(" ")}</code>
+          <code className="text-xs break-all">{list(execution.argv).join(" ")}</code>
           <span className="font-mono text-xs text-muted-foreground">{execution.cwd}</span>
         </div>
       ))}
@@ -87,8 +88,8 @@ function SnapshotView({ snapshot }: { snapshot: ContextSnapshot }) {
       )}
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium">Context records ({snapshot.records.length})</h3>
-        {snapshot.records.map((record) => (
+        <h3 className="text-sm font-medium">Context records ({list(snapshot.records).length})</h3>
+        {list(snapshot.records).map((record) => (
           <div key={record.record_id} className="flex flex-col gap-1 rounded-md border p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">{record.kind}</Badge>
@@ -101,8 +102,8 @@ function SnapshotView({ snapshot }: { snapshot: ContextSnapshot }) {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium">Code retrieval ({snapshot.retrieval.length})</h3>
-        {snapshot.retrieval.map((item) => (
+        <h3 className="text-sm font-medium">Code retrieval ({list(snapshot.retrieval).length})</h3>
+        {list(snapshot.retrieval).map((item) => (
           <div key={item.item_id} className="flex flex-col gap-1 rounded-md border p-3">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <code className="break-all">
@@ -111,16 +112,16 @@ function SnapshotView({ snapshot }: { snapshot: ContextSnapshot }) {
               {item.symbol && <Badge variant="outline">{item.symbol}</Badge>}
               <span className="text-xs text-muted-foreground">score {item.score.toFixed(3)}</span>
             </div>
-            {item.reasons && item.reasons.length > 0 && (
-              <p className="line-clamp-2 text-xs text-muted-foreground">{item.reasons.join(" · ")}</p>
+            {list(item.reasons).length > 0 && (
+              <p className="line-clamp-2 text-xs text-muted-foreground">{list(item.reasons).join(" · ")}</p>
             )}
           </div>
         ))}
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium">Knowledge briefing ({snapshot.knowledge_catalog.length})</h3>
-        {snapshot.knowledge_catalog.map((item) => (
+        <h3 className="text-sm font-medium">Knowledge briefing ({list(snapshot.knowledge_catalog).length})</h3>
+        {list(snapshot.knowledge_catalog).map((item) => (
           <div key={item.id} className="rounded-md border p-3 text-sm">
             {item.title}
           </div>
@@ -175,15 +176,15 @@ export function RunPage() {
 
             <Tabs defaultValue="validations">
               <TabsList>
-                <TabsTrigger value="validations">Validations ({shown.data.validations.length})</TabsTrigger>
-                <TabsTrigger value="executions">Executions ({shown.data.executions.length})</TabsTrigger>
+                <TabsTrigger value="validations">Validations ({list(shown.data.validations).length})</TabsTrigger>
+                <TabsTrigger value="executions">Executions ({list(shown.data.executions).length})</TabsTrigger>
                 <TabsTrigger value="context">What the agent saw</TabsTrigger>
               </TabsList>
               <TabsContent value="validations" className="pt-4">
-                <ValidationList validations={shown.data.validations} />
+                <ValidationList validations={list(shown.data.validations)} />
               </TabsContent>
               <TabsContent value="executions" className="pt-4">
-                <ExecutionList executions={shown.data.executions} />
+                <ExecutionList executions={list(shown.data.executions)} />
               </TabsContent>
               <TabsContent value="context" className="pt-4">
                 <SnapshotView snapshot={shown.data.snapshot} />
