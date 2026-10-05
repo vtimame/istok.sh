@@ -21,6 +21,7 @@ import (
 	updateapp "github.com/vtimame/istok.sh/internal/application/update"
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	"github.com/vtimame/istok.sh/internal/exchange"
 	"github.com/vtimame/istok.sh/internal/mcpserver"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/updater"
@@ -37,6 +38,8 @@ type CLI struct {
 	Run        RunCommand             `cmd:"" help:"Manage local runs and execution evidence."`
 	Context    ContextCommand         `cmd:"" help:"Manage saved project context."`
 	Knowledge  KnowledgeCommand       `cmd:"" help:"Manage pull-first project knowledge outside the repository."`
+	Export     ExportCommand          `cmd:"" help:"Export projects to a file for another device."`
+	Import     ImportCommand          `cmd:"" help:"Import projects exported on another device."`
 	Index      IndexCommand           `cmd:"" help:"Inspect and rebuild the local code index."`
 	Search     SearchCommand          `cmd:"" help:"Search the local code index."`
 	Graph      GraphCommand           `cmd:"" help:"Explore the local code graph."`
@@ -248,6 +251,10 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runContext(ctx, command.Context, commandName, cwd, input, output)
 	case strings.HasPrefix(commandName, "knowledge"):
 		return runKnowledge(ctx, command.Knowledge, commandName, cwd, output)
+	case commandName == "export":
+		return runExport(ctx, command.Export, cwd, output)
+	case strings.HasPrefix(commandName, "import"):
+		return runImport(ctx, command.Import, cwd, input, output)
 	case commandName == "index status":
 		return runIndexStatus(ctx, command.Index.Status, cwd, output)
 	case commandName == "index rebuild":
@@ -407,6 +414,9 @@ func runProjectApplication(ctx context.Context, jsonOutput bool, output io.Write
 	if err != nil {
 		return errors.Join(err, stopErr)
 	}
+	if value == nil {
+		return stopErr
+	}
 	_, err = fmt.Fprintln(output, renderProjectValue(value))
 	return errors.Join(err, stopErr)
 }
@@ -441,6 +451,9 @@ func commandErrorCode(err error) project.Code {
 	if indexingapp.IsError(err) {
 		return project.Code(indexingapp.ErrorCode)
 	}
+	if code, ok := exchange.ErrorCode(err); ok {
+		return project.Code(code)
+	}
 
 	return project.ErrorCode(err)
 }
@@ -460,6 +473,10 @@ func renderProjectValue(value any) string {
 		return renderProject(typed)
 	case []project.Project:
 		return renderProjectList(typed)
+	case exportSummary:
+		return renderExportSummary(typed)
+	case exchange.Report:
+		return renderImportReport(typed)
 	default:
 		return fmt.Sprint(value)
 	}
@@ -471,7 +488,7 @@ func renderProject(project project.Project) string {
 		status = "deleted"
 	}
 
-	root := "—"
+	root := "not on this device"
 	if project.Root != nil {
 		root = project.Root.CanonicalPath
 	}
@@ -497,7 +514,7 @@ func renderInitResult(project project.Project) string {
 		status = "deleted"
 	}
 
-	root := "—"
+	root := "not on this device"
 	if project.Root != nil {
 		root = project.Root.CanonicalPath
 	}
@@ -529,7 +546,7 @@ func renderProjectList(projects []project.Project) string {
 			status = "deleted"
 		}
 
-		root := "—"
+		root := "not on this device"
 		if item.Root != nil {
 			root = item.Root.CanonicalPath
 		}

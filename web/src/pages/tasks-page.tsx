@@ -1,12 +1,14 @@
 import { useState } from "react"
-import { MoreHorizontal, Trash2 } from "lucide-react"
+import { Download, FolderInput, MoreHorizontal, Trash2 } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router"
 
 import { PageHeader } from "@/components/page-header"
 import { QueryState } from "@/components/query-state"
+import { BindFolderDialog } from "@/components/bind-folder-dialog"
 import { DeleteProjectDialog } from "@/components/delete-project-dialog"
 import { ProjectMissing } from "@/components/project-missing"
 import { InlineCode } from "@/components/markdown"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { RunStateBadge, StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -60,6 +62,7 @@ export function TasksPage() {
   const [filter, setFilter] = useState<Filter>("active")
   const [text, setText] = useState("")
   const [deleting, setDeleting] = useState(false)
+  const [binding, setBinding] = useState(false)
   const needle = text.trim().toLowerCase()
 
   const all = tasks.data ?? []
@@ -106,6 +109,16 @@ export function TasksPage() {
                 </DropdownMenuTrigger>
                 {/* The shadcn default matches the trigger width, too narrow for an icon button. */}
                 <DropdownMenuContent align="end" className="w-auto min-w-44">
+                  <DropdownMenuItem asChild>
+                    <a href={`/api/v1/export?project=${projectId}`} download>
+                      <Download />
+                      Export project
+                    </a>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setBinding(true)}>
+                    <FolderInput />
+                    {project.data.root ? "Change folder…" : "Bind folder…"}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     variant="destructive"
                     onSelect={() => setDeleting(true)}
@@ -119,6 +132,27 @@ export function TasksPage() {
           </div>
         }
       />
+
+      {project.data && !project.data.root && (
+        <Alert className="mb-4">
+          <FolderInput />
+          <AlertTitle>This project is not on this device</AlertTitle>
+          <AlertDescription>
+            <p>
+              Tasks and history are here, but agents need the repository to work
+              on it. Clone the repository, then bind its folder.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() => setBinding(true)}
+            >
+              Bind folder…
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Tabs
@@ -199,11 +233,18 @@ export function TasksPage() {
         </Table>
       </QueryState>
       {project.data && (
-        <DeleteProjectDialog
-          project={project.data}
-          open={deleting}
-          onOpenChange={setDeleting}
-        />
+        <>
+          <DeleteProjectDialog
+            project={project.data}
+            open={deleting}
+            onOpenChange={setDeleting}
+          />
+          <BindFolderDialog
+            project={project.data}
+            open={binding}
+            onOpenChange={setBinding}
+          />
+        </>
       )}
     </>
   )

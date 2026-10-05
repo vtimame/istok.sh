@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	exchangeapp "github.com/vtimame/istok.sh/internal/application/exchange"
 	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
@@ -39,6 +40,7 @@ type Services struct {
 	Tasks     *taskapp.Service
 	Runs      *runapp.Service
 	Knowledge *knowledgeapp.Service
+	Exchange  *exchangeapp.Service
 }
 
 type api struct {
@@ -57,6 +59,7 @@ func (a api) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/runs/{run}", a.run)
 	mux.HandleFunc("GET /api/v1/events", a.events)
 	a.registerMutations(mux)
+	a.registerExchange(mux)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
 	})

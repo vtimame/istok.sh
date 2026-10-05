@@ -13,6 +13,7 @@ import (
 
 	contextapp "github.com/vtimame/istok.sh/internal/application/context"
 	contextpackapp "github.com/vtimame/istok.sh/internal/application/contextpack"
+	exchangeapp "github.com/vtimame/istok.sh/internal/application/exchange"
 	indexingapp "github.com/vtimame/istok.sh/internal/application/indexing"
 	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
@@ -25,6 +26,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/storage"
 	"github.com/vtimame/istok.sh/internal/storage/contextrepo"
+	"github.com/vtimame/istok.sh/internal/storage/exchangerepo"
 	"github.com/vtimame/istok.sh/internal/storage/knowledgerepo"
 	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
@@ -149,6 +151,16 @@ func kernelOptions(path string) fx.Option {
 	)
 }
 
+// ExchangeOptions wires export and import of project bundles.
+func ExchangeOptions(path string) fx.Option {
+	return fx.Options(
+		fx.Supply(buildinfo.Current()),
+		ProjectOptions(path),
+		fx.Provide(exchangerepo.New),
+		fx.Provide(exchangeapp.NewService),
+	)
+}
+
 func ContextOptions(path string) fx.Option {
 	return fx.Options(
 		ProjectOptions(path),
@@ -191,8 +203,10 @@ func UIApp(path string, services *webui.Services) *fx.App {
 		fx.Supply(buildinfo.Current()),
 		kernelOptions(path),
 		fx.Provide(uireadrepo.New),
-		fx.Invoke(func(info buildinfo.Info, readModel *uireadrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service) {
-			*services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
+		fx.Provide(exchangerepo.New),
+		fx.Provide(exchangeapp.NewService),
+		fx.Invoke(func(info buildinfo.Info, readModel *uireadrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service, exchanges *exchangeapp.Service) {
+			*services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge, Exchange: exchanges}
 		}),
 	)
 }

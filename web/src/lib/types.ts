@@ -228,3 +228,44 @@ export type FeedItem = {
   project: { id: string; name: string }
   validations: { passed: number; failed: number }
 }
+
+// ImportReport describes what an import did, or would do in a dry run.
+// The server always sends these collections as arrays, never null.
+export type ImportReport = {
+  dry_run: boolean
+  projects: ImportedProject[]
+  tables: Record<string, ImportTableCounts>
+  renumbered: Renumbering[]
+  conflicts: ImportConflict[]
+  warnings: string[]
+}
+
+export type ImportedProject = {
+  id: string
+  name: string
+  created: boolean
+  // False when the project has no folder on this device yet.
+  bound: boolean
+}
+
+export type ImportTableCounts = {
+  created: number
+  updated: number
+  unchanged: number
+  kept_local: number
+  skipped: number
+}
+
+export type Renumbering = {
+  project_id: string
+  task_id: string
+  title: string
+  from: number
+  to: number
+}
+
+export type ImportConflict = {
+  table: string
+  id: string
+  reason: string
+}

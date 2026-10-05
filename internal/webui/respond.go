@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/vtimame/istok.sh/internal/exchange"
 	"github.com/vtimame/istok.sh/internal/knowledge"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/run"
@@ -48,6 +49,7 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		string(run.ErrorCode(err)),
 		string(project.ErrorCode(err)),
 		string(knowledge.ErrorCode(err)),
+		exchangeCode(err),
 	}
 
 	for _, code := range codes {
@@ -71,4 +73,9 @@ func statusForCode(code string) int {
 	default:
 		return http.StatusConflict
 	}
+}
+
+func exchangeCode(err error) string {
+	code, _ := exchange.ErrorCode(err)
+	return string(code)
 }

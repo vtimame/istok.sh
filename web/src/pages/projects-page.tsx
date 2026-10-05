@@ -1,7 +1,10 @@
 import { useState } from "react"
+import { Download } from "lucide-react"
 import { Link } from "react-router"
 
+import { ImportDialog } from "@/components/import-dialog"
 import { PageHeader } from "@/components/page-header"
+import { Button } from "@/components/ui/button"
 import { QueryState } from "@/components/query-state"
 import {
   Card,
@@ -90,9 +93,18 @@ function ProjectCard({ project, home }: { project: Project; home?: string }) {
               )}
             </div>
           </div>
-          <CardDescription className="truncate font-mono text-xs" title={path}>
-            {path ? shortenPath(path, home) : "detached"}
-          </CardDescription>
+          {path ? (
+            <CardDescription
+              className="truncate font-mono text-xs"
+              title={path}
+            >
+              {shortenPath(path, home)}
+            </CardDescription>
+          ) : (
+            <CardDescription className="text-xs text-amber-700 dark:text-amber-400">
+              Not on this device: bind its folder
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent className="mt-auto flex items-center justify-between gap-2 text-xs">
           <div className="flex gap-3">
@@ -145,13 +157,24 @@ export function ProjectsPage() {
         crumbs={[{ label: "Projects" }]}
         title="Projects"
         actions={
-          <Tabs value={sort} onValueChange={changeSort}>
-            <TabsList>
-              <TabsTrigger value="activity">Recent activity</TabsTrigger>
-              <TabsTrigger value="name">Name</TabsTrigger>
-              <TabsTrigger value="created">Created</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs value={sort} onValueChange={changeSort}>
+              <TabsList>
+                <TabsTrigger value="activity">Recent activity</TabsTrigger>
+                <TabsTrigger value="name">Name</TabsTrigger>
+                <TabsTrigger value="created">Created</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <ImportDialog />
+            {sorted.length > 0 && (
+              <Button variant="outline" asChild>
+                <a href="/api/v1/export?all=1" download>
+                  <Download />
+                  Export all
+                </a>
+              </Button>
+            )}
+          </div>
         }
       />
 

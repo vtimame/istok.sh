@@ -17,12 +17,14 @@ import (
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
 	contextpackapp "github.com/vtimame/istok.sh/internal/application/contextpack"
+	exchangeapp "github.com/vtimame/istok.sh/internal/application/exchange"
 	knowledgeapp "github.com/vtimame/istok.sh/internal/application/knowledge"
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/storage/exchangerepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
@@ -65,6 +67,8 @@ func newFixture(t *testing.T) *fixture {
 		fx.Supply(buildinfo.Current()),
 		bootstrap.TaskOptions(database),
 		fx.Provide(uireadrepo.New),
+		fx.Provide(exchangerepo.New),
+		fx.Provide(exchangeapp.NewService),
 		fx.Invoke(func(
 			info buildinfo.Info,
 			readModel *uireadrepo.Repository,
@@ -75,8 +79,9 @@ func newFixture(t *testing.T) *fixture {
 			database *sql.DB,
 			tasksRepo *taskrepo.Repository,
 			builder *contextpackapp.Service,
+			exchanges *exchangeapp.Service,
 		) {
-			services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge}
+			services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge, Exchange: exchanges}
 			db = database
 			taskRepository = tasksRepo
 			contextBuilder = builder
