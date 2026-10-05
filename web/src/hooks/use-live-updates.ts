@@ -5,7 +5,7 @@ import { setLiveState } from "@/lib/live"
 
 // At most one refetch per interval: during continuous agent activity events
 // arrive every server poll, and this keeps the read load at the 1/s level
-// measured as harmless for agent writes (docs/web-ui.md, tools/uiload).
+// measured as harmless for agent writes (tools/uiload).
 const MIN_REFRESH_INTERVAL_MS = 1000
 
 // useLiveUpdates subscribes to /api/v1/events and refetches the queries on
