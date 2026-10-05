@@ -21,7 +21,7 @@ func runUICommand(ctx context.Context, command UICommand, commandName string, ou
 		if err := uiservice.Uninstall(ctx); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(output, "Removed %s\n", uiservice.UnitName)
+		_, err := fmt.Fprintf(output, "Removed %s\n", uiservice.Name())
 		return err
 	case "ui service start", "ui service stop", "ui service restart":
 		return uiservice.Control(ctx, commandName[len("ui service "):])
@@ -62,11 +62,20 @@ func runUIServiceInstall(ctx context.Context, command UIServiceInstallCommand, o
 		state = "written"
 	}
 	_, err = fmt.Fprintf(output,
-		"Unit %s (%s)\nRunning %s\nIstok UI: http://127.0.0.1:%d/\n"+
-			"`istok update` restarts it on the new version. If you move istok elsewhere, rerun `istok ui service install`.\n"+
-			"To keep it running after logout: loginctl enable-linger\n",
-		uiservice.UnitPath(), state, executable, command.Port)
-	return err
+		"Service %s (%s)\nRunning %s\nIstok UI: http://127.0.0.1:%d/\n"+
+			"`istok update` restarts it on the new version. If you move istok elsewhere, rerun `istok ui service install`.\n",
+		uiservice.Path(), state, executable, command.Port)
+	if err != nil {
+		return err
+	}
+
+	for _, note := range uiservice.Notes() {
+		if _, err = fmt.Fprintln(output, note); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func runUI(ctx context.Context, command UIServeCommand, output io.Writer) error {
