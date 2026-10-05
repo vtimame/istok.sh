@@ -147,7 +147,7 @@ func renderExportSummary(summary exportSummary) string {
 		output.WriteString("\n")
 	}
 
-	output.WriteString(presentation.RailLine(presentation.Key("File:") + " " + presentation.Path(summary.File)))
+	output.WriteString(presentation.RailLine(presentation.Key("File") + " " + presentation.Path(summary.File)))
 	output.WriteString("\n")
 	output.WriteString(presentation.Metadata("Copy the file to the other device and run: istok import " + filepath.Base(summary.File)))
 
@@ -181,7 +181,8 @@ func renderImportReport(report exchange.Report) string {
 		output.WriteString("\n")
 		output.WriteString(presentation.SectionTitle("Changes"))
 		output.WriteString("\n")
-		output.WriteString(presentation.RenderRows(rows))
+		output.WriteString(presentation.RenderTable([]string{"TABLE", "NEW", "UPDATED", "SAME", "KEPT LOCAL", "SKIPPED"}, rows))
+		output.WriteString("\n")
 	}
 
 	if len(report.Renumbered) > 0 {
@@ -221,7 +222,7 @@ func importTableRows(tables map[string]exchange.TableCounts) [][]string {
 	}
 	sort.Strings(names)
 
-	rows := [][]string{{presentation.Key("TABLE"), presentation.Key("NEW"), presentation.Key("UPDATED"), presentation.Key("SAME"), presentation.Key("KEPT LOCAL"), presentation.Key("SKIPPED")}}
+	rows := [][]string{}
 	for _, name := range names {
 		counts := tables[name]
 		if counts == (exchange.TableCounts{}) {
@@ -236,9 +237,5 @@ func importTableRows(tables map[string]exchange.TableCounts) [][]string {
 			fmt.Sprint(counts.Skipped),
 		})
 	}
-	if len(rows) == 1 {
-		return nil
-	}
-
 	return rows
 }
