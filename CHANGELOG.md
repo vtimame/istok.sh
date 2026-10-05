@@ -4,6 +4,31 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-05
+
+### Added
+
+- **Agents learn the workflow from the MCP server.** `istok mcp` now sends
+  server instructions: when to use Istok, how to take a task through a run to
+  a validated completion, and how to recover from revision conflicts and
+  expired leases. Clients that support MCP server instructions pick them up
+  without any rules pasted into `CLAUDE.md` or `AGENTS.md`.
+- **Run the UI as a service on macOS.** `istok ui service install` sets up a
+  launchd agent (`~/Library/LaunchAgents/sh.istok.ui.plist`) that starts at
+  login, restarts after a crash and logs to `~/Library/Logs/istok/ui.log`.
+  `uninstall`, `start`, `stop`, `restart` and `status` work as on Linux, and
+  `istok update` restarts the agent on the new binary.
+
+### Fixed
+
+- `istok task show` wraps long lines at word boundaries and keeps inline code
+  in one piece. The history shows the run each event belongs to, the run
+  summary or reason as text, and no longer prints raw JSON or completion IDs.
+- Task, context and knowledge history keeps events in the order they happened
+  when several land within the same millisecond.
+- `istok ui service install` no longer says to reinstall the service after an
+  update: `istok update` already restarts it.
+
 ## [0.2.1] - 2026-10-04
 
 ### Fixed
@@ -107,6 +132,7 @@ durable tasks, runs and evidence.
 - Signed releases for Linux and macOS (amd64 and arm64) and secure self-update
   with `istok update`.
 
+[0.3.0]: https://github.com/vtimame/istok.sh/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/vtimame/istok.sh/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/vtimame/istok.sh/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/vtimame/istok.sh/compare/v0.1.1...v0.1.2
