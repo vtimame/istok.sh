@@ -92,7 +92,7 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 		return nil, fmt.Errorf("create MCP actor identity: %w", err)
 	}
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "istok", Version: info.Version}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "istok", Version: info.Version}, &mcp.ServerOptions{Instructions: instructions})
 	mcp.AddTool(server, tool("health", "Check Istok and its SQLite storage.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, HealthStatus, error) {
 		if err := health.PingContext(ctx); err != nil {
 			return errorTool(err), HealthStatus{}, nil

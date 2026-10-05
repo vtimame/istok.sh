@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -58,6 +59,54 @@ func TestHealthToolReturnsTypedStatus(t *testing.T) {
 	}
 	if status != (HealthStatus{SchemaVersion: "1", Status: "ok", Version: "test"}) {
 		t.Errorf("health status = %+v", status)
+	}
+}
+
+func TestInitializeSendsInstructionsThatNameExistingTools(t *testing.T) {
+	// Argument and error names that look like tool names in the instructions.
+	notTools := map[string]bool{
+		"task_id":                true,
+		"run_id":                 true,
+		"validation_id":          true,
+		"expected_revision":      true,
+		"expected_task_revision": true,
+		"revision_conflict":      true,
+	}
+
+	var named []string
+	for _, word := range regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`).FindAllString(instructions, -1) {
+		if !notTools[word] {
+			named = append(named, word)
+		}
+	}
+	if len(named) == 0 {
+		t.Fatal("instructions name no tools")
+	}
+
+	for _, profile := range []Profile{Worker, Supervisor, Admin} {
+		t.Run(string(profile), func(t *testing.T) {
+			_, session := newSession(t, profile, t.TempDir())
+
+			if got := session.InitializeResult().Instructions; got != instructions {
+				t.Fatalf("initialize instructions = %q", got)
+			}
+
+			tools, err := session.ListTools(context.Background(), nil)
+			if err != nil {
+				t.Fatalf("ListTools() error = %v", err)
+			}
+
+			available := map[string]bool{}
+			for _, tool := range tools.Tools {
+				available[tool.Name] = true
+			}
+
+			for _, name := range named {
+				if !available[name] {
+					t.Errorf("instructions name %q, which the %s profile does not expose", name, profile)
+				}
+			}
+		})
 	}
 }
 
