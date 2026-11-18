@@ -340,8 +340,8 @@ func TestEmbeddedMigrationIsApplied(t *testing.T) {
 		t.Fatalf("query goose version: %v", err)
 	}
 
-	if version != 13 {
-		t.Errorf("migration version = %d, want 13", version)
+	if version != 14 {
+		t.Errorf("migration version = %d, want 14", version)
 	}
 
 	for _, table := range []string{"knowledge_items", "knowledge_events"} {

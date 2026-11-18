@@ -79,7 +79,7 @@ func Module(config Config) fx.Option {
 	return fx.Module("mcp", fx.Supply(config), fx.Provide(New))
 }
 
-func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service, info buildinfo.Info, config Config) (*mcp.Server, error) {
+func New(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service, calls CallRecorder, info buildinfo.Info, config Config) (*mcp.Server, error) {
 	if config.Profile == "" {
 		config.Profile = Worker
 	}
@@ -93,6 +93,14 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "istok", Version: info.Version}, &mcp.ServerOptions{Instructions: instructions})
+	if calls != nil {
+		log, err := newCallLog(calls, service, config.Root, actor.ID)
+		if err != nil {
+			return nil, err
+		}
+		server.AddReceivingMiddleware(log.middleware)
+	}
+
 	mcp.AddTool(server, tool("health", "Check Istok and its SQLite storage.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, HealthStatus, error) {
 		if err := health.PingContext(ctx); err != nil {
 			return errorTool(err), HealthStatus{}, nil

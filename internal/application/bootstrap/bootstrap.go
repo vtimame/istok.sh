@@ -20,6 +20,7 @@ import (
 	runworkflow "github.com/vtimame/istok.sh/internal/application/runworkflow"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	updateapp "github.com/vtimame/istok.sh/internal/application/update"
+	usageapp "github.com/vtimame/istok.sh/internal/application/usage"
 	"github.com/vtimame/istok.sh/internal/artifactstore"
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 	"github.com/vtimame/istok.sh/internal/mcpserver"
@@ -32,6 +33,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
+	"github.com/vtimame/istok.sh/internal/storage/usagerepo"
 	"github.com/vtimame/istok.sh/internal/uiservice"
 	"github.com/vtimame/istok.sh/internal/updater"
 	"github.com/vtimame/istok.sh/internal/webui"
@@ -182,7 +184,24 @@ func KnowledgeOptions(path string) fx.Option {
 func MCPOptions(path string) fx.Option {
 	return fx.Options(
 		RunWorkflowOptions(path),
+		usageProviders(),
+		fx.Provide(func(service *usageapp.Service) mcpserver.CallRecorder { return service }),
 		fx.Provide(func(db *sql.DB) mcpserver.HealthChecker { return db }),
+	)
+}
+
+// UsageOptions wires the report on the device-local MCP call log.
+func UsageOptions(path string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		usageProviders(),
+	)
+}
+
+func usageProviders() fx.Option {
+	return fx.Options(
+		fx.Provide(usagerepo.New),
+		fx.Provide(usageapp.NewService),
 	)
 }
 

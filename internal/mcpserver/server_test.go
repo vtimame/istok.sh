@@ -1419,6 +1419,11 @@ func newSessionAtDatabase(t *testing.T, profile Profile, root, database string) 
 
 func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database, actorID string) (*mcp.Server, *mcp.ClientSession) {
 	t.Helper()
+	return newSessionWithRecorder(t, profile, root, database, actorID, nil)
+}
+
+func newSessionWithRecorder(t *testing.T, profile Profile, root, database, actorID string, calls CallRecorder) (*mcp.Server, *mcp.ClientSession) {
+	t.Helper()
 	var server *mcp.Server
 	app := fx.New(
 		fx.NopLogger,
@@ -1453,7 +1458,7 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 		fx.Provide(runworkflow.NewService),
 		fx.Provide(func(db *sql.DB) HealthChecker { return db }),
 		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
-			return New(health, service, tasks, contexts, knowledge, indexes, runs, workflow, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
+			return New(health, service, tasks, contexts, knowledge, indexes, runs, workflow, calls, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
 		}),
 		fx.Invoke(func(value *mcp.Server) { server = value }),
 	)

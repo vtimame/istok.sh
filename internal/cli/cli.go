@@ -25,6 +25,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/mcpserver"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/updater"
+	"github.com/vtimame/istok.sh/internal/usage"
 )
 
 type CLI struct {
@@ -43,6 +44,7 @@ type CLI struct {
 	Index      IndexCommand           `cmd:"" help:"Inspect and rebuild the local code index."`
 	Search     SearchCommand          `cmd:"" help:"Search the local code index."`
 	Graph      GraphCommand           `cmd:"" help:"Explore the local code graph."`
+	Usage      UsageCommand           `cmd:"" help:"Report how agents used Istok through MCP on this device."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
 	Migrate    InternalMigrateCommand `cmd:"" hidden:""`
 	Cleanup    InternalCleanupCommand `cmd:"" hidden:""`
@@ -251,6 +253,8 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runContext(ctx, command.Context, commandName, cwd, input, output)
 	case strings.HasPrefix(commandName, "knowledge"):
 		return runKnowledge(ctx, command.Knowledge, commandName, cwd, output)
+	case commandName == "usage":
+		return runUsage(ctx, command.Usage, output)
 	case commandName == "export":
 		return runExport(ctx, command.Export, cwd, output)
 	case strings.HasPrefix(commandName, "import"):
@@ -477,6 +481,8 @@ func renderProjectValue(value any) string {
 		return renderExportSummary(typed)
 	case exchange.Report:
 		return renderImportReport(typed)
+	case usage.Report:
+		return renderUsageReport(typed)
 	default:
 		return fmt.Sprint(value)
 	}
