@@ -71,6 +71,7 @@ func TestInitializeSendsInstructionsThatNameExistingTools(t *testing.T) {
 		"expected_revision":      true,
 		"expected_task_revision": true,
 		"revision_conflict":      true,
+		"not_verified_reason":    true,
 	}
 
 	var named []string
@@ -168,6 +169,8 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"validation_record":      {readOnly: false, destructive: false, idempotent: false},
 		"run_finish":             {readOnly: false, destructive: false, idempotent: false},
 		"task_complete":          {readOnly: false, destructive: false, idempotent: false},
+		"task_evidence":          {readOnly: false, destructive: false, idempotent: false},
+		"task_done":              {readOnly: false, destructive: false, idempotent: false},
 	})
 
 	_, adminSession := newSession(t, Admin, t.TempDir())
@@ -235,6 +238,8 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"validation_record":      {readOnly: false, destructive: false, idempotent: false},
 		"run_finish":             {readOnly: false, destructive: false, idempotent: false},
 		"task_complete":          {readOnly: false, destructive: false, idempotent: false},
+		"task_evidence":          {readOnly: false, destructive: false, idempotent: false},
+		"task_done":              {readOnly: false, destructive: false, idempotent: false},
 	})
 
 	_, supervisorSession := newSession(t, Supervisor, t.TempDir())

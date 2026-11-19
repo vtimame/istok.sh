@@ -25,7 +25,7 @@ type TaskShowResult struct {
 }
 
 type taskCreateInput struct {
-	TaskID             string `json:"task_id" jsonschema:"Client-generated canonical UUIDv7 task identifier."`
+	TaskID             string `json:"task_id,omitempty" jsonschema:"Optional canonical UUIDv7 task identifier. Omit it and the server generates one; pass your own to make retries idempotent."`
 	Title              string `json:"title" jsonschema:"Task title; must not be blank."`
 	Description        string `json:"description,omitempty" jsonschema:"Optional task description."`
 	AcceptanceCriteria string `json:"acceptance_criteria,omitempty" jsonschema:"Optional acceptance criteria."`
@@ -53,7 +53,7 @@ type taskShowInput struct {
 
 type taskTextInput struct {
 	TaskID           string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
-	ExpectedRevision int64  `json:"expected_revision" jsonschema:"Positive current task revision required for compare-and-swap."`
+	ExpectedRevision int64  `json:"expected_revision,omitempty" jsonschema:"Optional current task revision for compare-and-swap. Omit it to append the note without reading the revision first."`
 	Body             string `json:"body" jsonschema:"Non-blank comment or progress body."`
 }
 

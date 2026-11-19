@@ -124,11 +124,12 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 
 		return nil, InitResult{SchemaVersion: "1", Project: &initialized.Project, Created: initialized.Created}, nil
 	})
-	addTaskTools(server, service, tasks, config.Root, actor)
+	addTaskTools(server, service, tasks, runs, config.Root, actor)
 	addContextTools(server, service, contexts, runs, config.Root, actor)
 	addKnowledgeTools(server, service, knowledge, config.Root, actor)
 	addIndexTools(server, service, indexes, config.Root)
 	addRunTools(server, service, runs, workflow, config.Root, actor, config.Profile)
+	addShortcutTools(server, service, runs, config.Root, actor)
 	if config.Profile == Admin {
 		addAdmin(server, service, tasks, contexts, config.Root, actor)
 	}

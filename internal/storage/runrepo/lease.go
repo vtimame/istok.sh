@@ -27,7 +27,9 @@ func (r *Repository) Heartbeat(ctx context.Context, input runmodel.HeartbeatInpu
 			return runmodel.NewError(runmodel.CodeConflict, "run lease is not active or owned by actor")
 		}
 		if !current.ExpiresAt.After(now) {
-			return runmodel.NewError(runmodel.CodeConflict, "run lease has expired and must be recovered")
+			if err := resumeExpiredLease(ctx, conn, current, input.EventID, actor, now); err != nil {
+				return err
+			}
 		}
 
 		result, err := conn.ExecContext(ctx, `
@@ -52,6 +54,36 @@ func (r *Repository) Heartbeat(ctx context.Context, input runmodel.HeartbeatInpu
 		return runmodel.Run{}, err
 	}
 	return r.GetRun(ctx, input.RunID)
+}
+
+// resumeLeaseReason is the history note of a lease its owner revived.
+const resumeLeaseReason = "lease resumed by its owner after expiry"
+
+// resumeExpiredLease lets the owner keep an expired lease while nobody else
+// took the task over: the run is still active, so no other claim replaced it.
+// A running execution may belong to a process that died with the lease, so
+// that case still needs an explicit run_recover.
+func resumeExpiredLease(ctx context.Context, conn *sql.Conn, current runmodel.Run, eventID string, actor runmodel.ActorSnapshot, now time.Time) error {
+	if !runmodel.IsUUIDv7(eventID) {
+		return runmodel.NewError(runmodel.CodeConflict, "run lease has expired and must be recovered")
+	}
+
+	var running int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM executions WHERE run_id=? AND status='running'`, current.ID).Scan(&running); err != nil {
+		return fmt.Errorf("count running executions: %w", err)
+	}
+	if running > 0 {
+		return runmodel.NewError(runmodel.CodeConflict, "run lease has expired with a running execution and must be recovered")
+	}
+
+	var taskRevision int64
+	if err := conn.QueryRowContext(ctx, `SELECT revision FROM tasks WHERE id=?`, current.TaskID).Scan(&taskRevision); err != nil {
+		return fmt.Errorf("read resume task revision: %w", err)
+	}
+
+	_, err := conn.ExecContext(ctx, `INSERT INTO task_events (id,task_id,type,body,task_revision,actor_id,actor_kind,actor_name,created_at) VALUES (?,?,'run_recovered',?,?,?,?,?,?)`, eventID, current.TaskID, resumeLeaseReason, taskRevision, actor.ID, actor.Kind, actor.Name, stamp(now))
+
+	return mapSQLError(err, "lease resume event conflicts with existing data")
 }
 
 func (r *Repository) Recover(ctx context.Context, input runmodel.RecoverInput, actor runmodel.ActorSnapshot) (runmodel.Run, error) {

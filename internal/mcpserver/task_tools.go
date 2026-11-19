@@ -5,23 +5,32 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
-func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.Service, root string, actor actorIdentity) {
+func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, root string, actor actorIdentity) {
 	mcp.AddTool(server, tool("task_create", "Create a task in the current project.", false, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskCreateInput) (*mcp.CallToolResult, TaskResult, error) {
 		current, err := currentTaskProject(ctx, projects, root)
 		if err != nil {
 			return errorTool(err), taskErrorResult(err), nil
 		}
-		if !task.IsUUIDv7(in.TaskID) {
+		taskID := in.TaskID
+		if taskID == "" {
+			generated, err := task.NewID()
+			if err != nil {
+				return errorTool(err), taskErrorResult(err), nil
+			}
+			taskID = generated
+		}
+		if !task.IsUUIDv7(taskID) {
 			err := task.NewError(task.CodeInvalid, "task_id must be a canonical UUIDv7")
 			return errorTool(err), taskErrorResult(err), nil
 		}
 		input := task.CreateInput{
-			ID:                 in.TaskID,
+			ID:                 taskID,
 			ProjectID:          current.ID,
 			Title:              in.Title,
 			Description:        in.Description,
@@ -94,19 +103,31 @@ func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.
 		}
 		return nil, taskListResult(values, nil), nil
 	})
-	addTaskMutationTools(server, projects, tasks, root, actor)
+	addTaskMutationTools(server, projects, tasks, runs, root, actor)
 }
 
-func addTaskMutationTools(server *mcp.Server, projects *project.Service, tasks *taskapp.Service, root string, actor actorIdentity) {
-	addTaskTextTool(server, "task_comment", "Add a task comment.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
-		return tasks.Comment(ctx, selector, expected, body, actor.task())
+func addTaskMutationTools(server *mcp.Server, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, root string, actor actorIdentity) {
+	// keepRunAlive extends the actor's lease after a note, so writing
+	// progress is enough to keep a claimed task.
+	keepRunAlive := func(ctx context.Context) func(task.Task, error) (task.Task, error) {
+		return func(value task.Task, err error) (task.Task, error) {
+			if err == nil {
+				runs.TouchTask(ctx, value.ID, actor.run())
+			}
+
+			return value, err
+		}
+	}
+
+	addTaskTextTool(server, "task_comment", "Add a task comment. Omit expected_revision to append without compare-and-swap.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
+		return keepRunAlive(ctx)(tasks.Comment(ctx, selector, expected, body, actor.task()))
 	})
-	addTaskTextTool(server, "task_progress", "Add a task progress update.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
-		return tasks.Progress(ctx, selector, expected, body, actor.task())
+	addTaskTextTool(server, "task_progress", "Add a task progress update. Omit expected_revision to append without compare-and-swap. Keeps your run lease alive.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
+		return keepRunAlive(ctx)(tasks.Progress(ctx, selector, expected, body, actor.task()))
 	})
 	mcp.AddTool(server, tool("task_block", "Block a task.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskBlockInput) (*mcp.CallToolResult, TaskResult, error) {
 		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {
-			return tasks.Block(ctx, selector, in.ExpectedRevision, in.Reason, actor.task())
+			return keepRunAlive(ctx)(tasks.Block(ctx, selector, in.ExpectedRevision, in.Reason, actor.task()))
 		})
 	})
 	mcp.AddTool(server, tool("task_unblock", "Unblock a task.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskUnblockInput) (*mcp.CallToolResult, TaskResult, error) {

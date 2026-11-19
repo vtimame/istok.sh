@@ -11,15 +11,15 @@ Use Istok for substantial work: features, bug fixes, refactoring, migrations, in
 
 Workflow:
 1. Call project_current. If the directory is not registered, tell the user and continue without Istok; call project_init only when the user asks.
-2. Look for an existing task with task_ready or task_list before creating one with task_create (you generate the UUIDv7 task_id).
-3. task_claim starts a run and returns its lease and bounded context: enabled project rules, task-relevant context and code retrieval hits. Follow the returned rules. Do not bulk-load other context or knowledge.
-4. Record meaningful steps with task_progress and blockers with task_block. A lease lasts 15 minutes; call run_heartbeat during long work.
-5. Validate with run_validate, which runs the command and records the result. For a check run outside Istok, use execution_start, execution_finish and validation_record with source "attested".
-6. Finish with run_finish and a result summary; a succeeded run needs a passed validation. Then call task_complete with the run_id and validation_id. Implementation alone is not completion.
+2. Look for an existing task with task_ready or task_list; otherwise create one with task_create (task_id is optional).
+3. task_claim starts your run and returns bounded context: enabled project rules, task-relevant context and code retrieval hits. Follow the returned rules. Do not bulk-load other context or knowledge.
+4. Record meaningful steps with task_progress (no revision needed) and blockers with task_block. Your Istok calls keep the run lease alive; after a pause the next call resumes it.
+5. Record each check with task_evidence: a command, a CI pipeline or a manual test, passed or failed. run_validate also runs a command for you and records the result.
+6. Close with task_done and a summary. It uses the passed validation of your run; if the result cannot be verified, pass not_verified_reason instead. Implementation alone is not completion.
 
 Recovery:
 - Arguments named expected_revision or expected_task_revision are compare-and-swap. On revision_conflict, read the current revision with task_show or run_show and retry.
-- If a lease expired, call run_recover with a reason before continuing the run.
+- If a lease cannot be resumed, for example because a command was still running, call run_recover with a reason.
 
 Knowledge and code:
 - Find knowledge with knowledge_catalog or knowledge_search and read only relevant items with knowledge_read.

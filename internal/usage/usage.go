@@ -66,9 +66,9 @@ var Funnel = []Step{
 	{Name: "claim", Tools: []string{"task_claim"}},
 	{Name: "progress", Tools: []string{"task_progress", "task_comment", "task_block"}},
 	{Name: "heartbeat", Tools: []string{"run_heartbeat"}},
-	{Name: "validate", Tools: []string{"run_validate", "validation_record"}},
-	{Name: "finish run", Tools: []string{"run_finish"}},
-	{Name: "complete task", Tools: []string{"task_complete"}},
+	{Name: "validate", Tools: []string{"run_validate", "validation_record", "task_evidence"}},
+	{Name: "finish run", Tools: []string{"run_finish", "task_done"}},
+	{Name: "complete task", Tools: []string{"task_complete", "task_done"}},
 }
 
 // Report summarizes the calls selected by a filter.

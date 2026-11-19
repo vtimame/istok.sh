@@ -351,6 +351,10 @@ func (f *fakeRepository) RecordValidation(ctx context.Context, input run.RecordV
 	}
 	return f.recordValidation(ctx, input, actor)
 }
+func (f *fakeRepository) RecordEvidence(context.Context, run.RecordEvidenceInput, run.ActorSnapshot) (run.Evidence, error) {
+	return run.Evidence{}, errors.New("record evidence not mocked")
+}
+
 func (f *fakeRepository) FinishRun(ctx context.Context, input run.FinishRunInput, actor run.ActorSnapshot) (run.Run, error) {
 	if f.finishRun == nil {
 		return run.Run{}, errors.New("finish run not mocked")

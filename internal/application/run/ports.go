@@ -32,6 +32,7 @@ type Repository interface {
 	GetArtifact(context.Context, string) (run.Artifact, error)
 	ListArtifacts(context.Context, string) ([]run.Artifact, error)
 	RecordValidation(context.Context, run.RecordValidationInput, run.ActorSnapshot) (run.Validation, error)
+	RecordEvidence(context.Context, run.RecordEvidenceInput, run.ActorSnapshot) (run.Evidence, error)
 	FinishRun(context.Context, run.FinishRunInput, run.ActorSnapshot) (run.Run, error)
 	CompleteTask(context.Context, run.CompletionRecord) (task.Task, run.Completion, error)
 }

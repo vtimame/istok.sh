@@ -186,6 +186,8 @@ func (s *Service) StartExecution(ctx context.Context, input run.StartExecutionIn
 	}
 	input.DangerousOverride = trim(input.DangerousOverride)
 
+	s.touch(ctx, input.RunID, input.LeaseID, actor)
+
 	return s.repository.StartExecution(ctx, input, actor)
 }
 
@@ -229,9 +231,19 @@ func (s *Service) FinishManagedExecution(ctx context.Context, input run.FinishMa
 	return s.repository.FinishManagedExecution(ctx, input, actor)
 }
 
+// Heartbeat extends the lease. The owner may also revive a lease that
+// expired while nobody else took the task over; the revival is recorded in
+// the task history.
 func (s *Service) Heartbeat(ctx context.Context, input run.HeartbeatInput, actor run.ActorSnapshot) (run.Run, error) {
 	if input.LeaseDuration <= 0 {
 		input.LeaseDuration = defaultLeaseDuration
+	}
+	if input.EventID == "" {
+		eventID, err := run.NewID()
+		if err != nil {
+			return run.Run{}, err
+		}
+		input.EventID = eventID
 	}
 	if err := input.Validate(); err != nil {
 		return run.Run{}, err
@@ -240,6 +252,30 @@ func (s *Service) Heartbeat(ctx context.Context, input run.HeartbeatInput, actor
 		return run.Run{}, err
 	}
 	return s.repository.Heartbeat(ctx, input, actor)
+}
+
+// touch extends or revives the lease before a call that needs it, so an
+// agent that paused does not have to heartbeat or recover first. It is best
+// effort: when the lease cannot be kept, the call itself reports why.
+func (s *Service) touch(ctx context.Context, runID, leaseID string, actor run.ActorSnapshot) {
+	_, _ = s.Heartbeat(ctx, run.HeartbeatInput{RunID: runID, LeaseID: leaseID}, actor)
+}
+
+// TouchTask extends or revives the actor's lease on the task's active run.
+// Task notes call it, so writing progress keeps the run alive. It does
+// nothing when the task has no active run owned by the actor.
+func (s *Service) TouchTask(ctx context.Context, taskID string, actor run.ActorSnapshot) {
+	runs, err := s.repository.ListRuns(ctx, run.ListOptions{TaskID: taskID, Statuses: []run.Status{run.StatusActive}, Limit: 1})
+	if err != nil || len(runs) == 0 {
+		return
+	}
+
+	active := runs[0]
+	if active.LeaseOwner.ID != actor.ID {
+		return
+	}
+
+	s.touch(ctx, active.ID, active.LeaseID, actor)
 }
 
 func (s *Service) Recover(ctx context.Context, input run.RecoverInput, actor run.ActorSnapshot) (run.Run, error) {
@@ -350,6 +386,8 @@ func (s *Service) FinishRun(ctx context.Context, input run.FinishRunInput, actor
 	if !input.AllowUnvalidated {
 		input.OverrideReason = ""
 	}
+
+	s.touch(ctx, input.RunID, input.LeaseID, actor)
 
 	return s.repository.FinishRun(ctx, input, actor)
 }

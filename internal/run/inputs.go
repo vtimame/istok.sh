@@ -64,6 +64,10 @@ type HeartbeatInput struct {
 	RunID         string        `json:"run_id"`
 	LeaseID       string        `json:"lease_id"`
 	LeaseDuration time.Duration `json:"-"`
+
+	// EventID records the resume event when the heartbeat revives an
+	// expired lease.
+	EventID string `json:"-"`
 }
 
 func (v HeartbeatInput) Validate() error {

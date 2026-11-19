@@ -2,6 +2,7 @@ package taskapp
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/vtimame/istok.sh/internal/task"
@@ -26,16 +27,58 @@ func (s *Service) Update(ctx context.Context, selector task.Selector, expected i
 	return s.repository.Update(ctx, value.ID, expected, patch, actor)
 }
 
+// Comment adds a comment. An expected revision of 0 appends without
+// compare-and-swap: a comment only adds history, so it never conflicts with
+// another writer.
 func (s *Service) Comment(ctx context.Context, selector task.Selector, expected int64, body string, actor task.ActorSnapshot) (task.Task, error) {
-	return s.text(ctx, selector, expected, body, actor, s.repository.Comment, func(value *task.Task) error {
-		return value.RequireActive()
-	})
+	return s.appendText(ctx, selector, expected, body, actor, s.repository.Comment)
 }
 
+// Progress adds a progress note. An expected revision of 0 appends without
+// compare-and-swap, as for Comment.
 func (s *Service) Progress(ctx context.Context, selector task.Selector, expected int64, body string, actor task.ActorSnapshot) (task.Task, error) {
-	return s.text(ctx, selector, expected, body, actor, s.repository.Progress, func(value *task.Task) error {
-		return value.RequireActive()
-	})
+	return s.appendText(ctx, selector, expected, body, actor, s.repository.Progress)
+}
+
+// appendAttempts bounds retries when another writer changes the task between
+// reading its revision and appending the event.
+const appendAttempts = 5
+
+func (s *Service) appendText(
+	ctx context.Context,
+	selector task.Selector,
+	expected int64,
+	body string,
+	actor task.ActorSnapshot,
+	mutate func(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error),
+) (task.Task, error) {
+	requireActive := func(value *task.Task) error { return value.RequireActive() }
+
+	if expected != 0 {
+		return s.text(ctx, selector, expected, body, actor, mutate, requireActive)
+	}
+
+	var lastErr error
+	for range appendAttempts {
+		current, err := s.resolve(ctx, selector, true)
+		if err != nil {
+			return task.Task{}, err
+		}
+
+		value, err := s.text(ctx, selector, current.Revision, body, actor, mutate, requireActive)
+		if !isRevisionConflict(err) {
+			return value, err
+		}
+		lastErr = err
+	}
+
+	return task.Task{}, lastErr
+}
+
+func isRevisionConflict(err error) bool {
+	var taskErr *task.Error
+
+	return errors.As(err, &taskErr) && taskErr.Code == task.CodeRevisionConflict
 }
 
 func (s *Service) Block(ctx context.Context, selector task.Selector, expected int64, reason string, actor task.ActorSnapshot) (task.Task, error) {
