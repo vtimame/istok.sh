@@ -46,6 +46,8 @@ type CLI struct {
 	Graph      GraphCommand           `cmd:"" help:"Explore the local code graph."`
 	Usage      UsageCommand           `cmd:"" help:"Report how agents used Istok through MCP on this device."`
 	Resume     ResumeCommand          `cmd:"" help:"Print the interrupted work of the current project, for an agent hook."`
+	Sync       SyncCommand            `cmd:"" help:"Sync projects between devices through a hub."`
+	Hub        HubCommand             `cmd:"" help:"Run a sync hub and manage its devices."`
 	Hooks      HooksCommand           `cmd:"" help:"Install Istok hooks into Claude Code or Codex."`
 	Hook       HookCommand            `cmd:"" hidden:"" help:"Run an Istok hook; agents call it."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
@@ -261,6 +263,10 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runUsage(ctx, command.Usage, output)
 	case commandName == "resume":
 		return runResume(ctx, command.Resume, cwd, output)
+	case commandName == "sync" || strings.HasPrefix(commandName, "sync "):
+		return runSync(ctx, command.Sync, commandName, cwd, output)
+	case strings.HasPrefix(commandName, "hub "):
+		return runHub(ctx, command.Hub, commandName, cwd, output, errorOutput)
 	case strings.HasPrefix(commandName, "hooks"):
 		return runHooks(ctx, command.Hooks, commandName, cwd, output)
 	case strings.HasPrefix(commandName, "hook "):

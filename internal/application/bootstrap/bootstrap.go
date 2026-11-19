@@ -31,6 +31,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/knowledgerepo"
 	"github.com/vtimame/istok.sh/internal/storage/projectrepo"
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
+	"github.com/vtimame/istok.sh/internal/storage/syncrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
 	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
 	"github.com/vtimame/istok.sh/internal/storage/usagerepo"
@@ -160,6 +161,16 @@ func ExchangeOptions(path string) fx.Option {
 		ProjectOptions(path),
 		fx.Provide(exchangerepo.New),
 		fx.Provide(exchangeapp.NewService),
+	)
+}
+
+// SyncOptions wires hub sync: the exchange repository merges pulled rows and
+// the sync repository keeps this device's sync state.
+func SyncOptions(path string) fx.Option {
+	return fx.Options(
+		ProjectOptions(path),
+		fx.Provide(exchangerepo.New),
+		fx.Provide(syncrepo.New),
 	)
 }
 

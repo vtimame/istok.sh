@@ -23,10 +23,24 @@ All notable changes to Istok are documented here. The format follows
 - Your Istok calls keep the run lease alive, and the next call after a pause
   resumes an expired lease instead of requiring `run_recover`.
 - Bundles exported by 0.4.0 do not import into this version: the database
-  schema gained the MCP call log. Update Istok on both devices.
+  schema gained the MCP call log and the sync state. Update Istok on both
+  devices.
 
 ### Added
 
+- **Sync between devices through a hub.** `istok hub serve` runs a hub on any
+  `HOST:PORT` (a VPS, a home server) with no domain, certificate authority or
+  reverse proxy: the hub and every device have their own key and pin each
+  other's fingerprint over mutual TLS. `istok hub device add NAME` prints a
+  one-time invitation; on the device `istok sync join CODE` registers it.
+  The first device creates the sync key; other devices join with
+  `--key` (printed by `istok sync key`). Rows are encrypted on the device, so
+  the hub stores tasks, runs, context and knowledge without being able to
+  read them. `istok sync enable` publishes the current project, or with
+  `--project ID` fetches a hub project into the current folder; `istok sync`
+  pulls and pushes changes, merging them with the same rules as
+  `istok import`. `istok hub device list|revoke` and `istok hub backup`
+  manage the hub. Nothing is written to the repository.
 - **Shorter workflow.** `task_start` creates or claims a task, or continues
   your own run of it, and returns the context and the latest handoff in one
   call. `task_evidence` records a check of any kind, including a CI run or a
