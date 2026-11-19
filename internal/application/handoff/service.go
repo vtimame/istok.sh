@@ -191,3 +191,16 @@ func runBrief(value run.Run, now time.Time) RunBrief {
 		ResultSummary: value.ResultSummary,
 	}
 }
+
+// NeedsHandoff tells whether the task has an active run whose handoff is out
+// of date: none since the run started, or notes written after it.
+func (b Brief) NeedsHandoff() bool {
+	if b.ActiveRun == nil {
+		return false
+	}
+	if b.Handoff == nil || b.Handoff.CreatedAt.Before(b.ActiveRun.StartedAt) {
+		return true
+	}
+
+	return len(b.Notes) > 0
+}

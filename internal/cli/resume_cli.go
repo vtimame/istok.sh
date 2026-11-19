@@ -2,17 +2,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
-	"go.uber.org/fx"
-
-	"github.com/vtimame/istok.sh/internal/application/bootstrap"
 	handoffapp "github.com/vtimame/istok.sh/internal/application/handoff"
-	runapp "github.com/vtimame/istok.sh/internal/application/run"
-	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/project"
 )
 
@@ -33,35 +29,30 @@ type resumeReport struct {
 }
 
 func runResume(ctx context.Context, command ResumeCommand, cwd string, output io.Writer) error {
-	var projects *project.Service
-	var briefs *handoffapp.Service
+	report, err := loadResume(ctx, command.Database, cwd, command.Actor)
 
-	app := fx.New(
-		fx.NopLogger,
-		bootstrap.TaskOptions(command.Database),
-		fx.Invoke(func(projectService *project.Service, tasks *taskapp.Service, runs *runapp.Service) {
-			projects = projectService
-			briefs = handoffapp.NewService(tasks, runs)
-		}),
-	)
-
-	return runProjectApplication(ctx, command.JSON, output, app, func() (any, error) {
-		current, err := projects.Current(ctx, cwd)
+	if command.JSON {
 		if err != nil {
-			if project.ErrorCode(err) == project.CodeNotFound {
-				return resumeReport{Tasks: []handoffapp.Brief{}}, nil
-			}
-
-			return nil, err
+			return jsonError(err)
 		}
 
-		values, err := briefs.Resume(ctx, handoffapp.ResumeInput{ProjectID: current.ID, ActorID: command.Actor})
-		if err != nil {
-			return nil, err
-		}
+		return json.NewEncoder(output).Encode(struct {
+			SchemaVersion string       `json:"schema_version"`
+			Result        resumeReport `json:"result"`
+		}{"1", report})
+	}
+	if err != nil {
+		return err
+	}
 
-		return resumeReport{Registered: true, Project: &current, Tasks: values}, nil
-	})
+	text := renderResumeReport(report)
+	if text == "" {
+		return nil
+	}
+
+	_, err = fmt.Fprintln(output, text)
+
+	return err
 }
 
 // renderResumeReport writes plain text without terminal styling: a hook
