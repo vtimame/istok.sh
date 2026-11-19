@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -97,6 +96,9 @@ type ServeConfig struct {
 	Advertise string
 	Logger    *slog.Logger
 
+	// Limits default to DefaultLimits when zero.
+	Limits Limits
+
 	// Ready, when set, receives the bound address once the hub listens.
 	Ready func(address string)
 }
@@ -126,8 +128,16 @@ func (h *Hub) Serve(ctx context.Context, config ServeConfig) error {
 		return h.Store.Accepts(checkCtx, fingerprint)
 	})
 
+	limits := config.Limits
+	if limits == (Limits{}) {
+		limits = DefaultLimits()
+	}
+	guard := newGuard(limits)
+	guarded := newGuardedListener(ctx, listener, tlsConfig, guard)
+
 	server := &http.Server{
-		Handler:           newHandler(h.Store, logger),
+		Handler:           newHandler(h.Store, guard, logger),
+		ConnState:         guarded.connState,
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute,
@@ -144,7 +154,7 @@ func (h *Hub) Serve(ctx context.Context, config ServeConfig) error {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(tls.NewListener(listener, tlsConfig)) }()
+	go func() { done <- server.Serve(guarded) }()
 
 	select {
 	case err := <-done:

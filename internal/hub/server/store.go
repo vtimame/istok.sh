@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -22,10 +23,16 @@ var migrations embed.FS
 // timeFormat has a fixed width, so stored timestamps compare as strings.
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 
-// Store is the hub database.
+// Store is the hub database. Writes go through one connection; handshake
+// checks and reads use a separate pool, so a long push does not stall
+// connections (SQLite WAL lets readers run beside the writer).
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db   *sql.DB
+	read *sql.DB
+	now  func() time.Time
+
+	seenMu sync.Mutex
+	seen   map[string]time.Time
 }
 
 // OpenStore opens or creates the hub database and applies its migrations.
@@ -60,10 +67,18 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("apply hub migrations: %w", err)
 	}
 
-	return &Store{db: db, now: func() time.Time { return time.Now().UTC() }}, nil
+	readQuery := url.Values{"_busy_timeout": {"5000"}, "_foreign_keys": {"on"}, "mode": {"ro"}}
+	read, err := sql.Open("sqlite3", (&url.URL{Scheme: "file", Path: path, RawQuery: readQuery.Encode()}).String())
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open hub database for reading: %w", err)
+	}
+	read.SetMaxOpenConns(8)
+
+	return &Store{db: db, read: read, now: func() time.Time { return time.Now().UTC() }, seen: map[string]time.Time{}}, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return errors.Join(s.read.Close(), s.db.Close()) }
 
 func (s *Store) timestamp() string { return s.now().Format(timeFormat) }
 
@@ -83,6 +98,26 @@ func (s *Store) SetMeta(ctx context.Context, key, value string) error {
 		"INSERT INTO hub_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
 
 	return err
+}
+
+// SetMetaOnce stores a setting unless one exists and returns the stored value.
+func (s *Store) SetMetaOnce(ctx context.Context, key, value string) (string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "INSERT INTO hub_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING", key, value); err != nil {
+		return "", err
+	}
+
+	var stored string
+	if err := tx.QueryRowContext(ctx, "SELECT value FROM hub_meta WHERE key = ?", key).Scan(&stored); err != nil {
+		return "", err
+	}
+
+	return stored, tx.Commit()
 }
 
 // Backup writes a consistent copy of the database to path.

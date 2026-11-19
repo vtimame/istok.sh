@@ -44,7 +44,7 @@ func (s *Store) AddEnrollment(ctx context.Context, name, secret string, ttl time
 // unknown certificates only while an enrollment is open.
 func (s *Store) Accepts(ctx context.Context, fingerprint string) bool {
 	var known int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM devices WHERE id = ? AND revoked_at IS NULL", fingerprint).Scan(&known)
+	err := s.read.QueryRowContext(ctx, "SELECT COUNT(*) FROM devices WHERE id = ? AND revoked_at IS NULL", fingerprint).Scan(&known)
 	if err != nil {
 		return false
 	}
@@ -59,7 +59,7 @@ func (s *Store) Accepts(ctx context.Context, fingerprint string) bool {
 
 func (s *Store) openEnrollments(ctx context.Context) (int, error) {
 	var open int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM enrollments WHERE used_at IS NULL AND expires_at > ?",
+	err := s.read.QueryRowContext(ctx, "SELECT COUNT(*) FROM enrollments WHERE used_at IS NULL AND expires_at > ?",
 		s.timestamp()).Scan(&open)
 
 	return open, err
@@ -75,15 +75,26 @@ func (s *Store) Device(ctx context.Context, fingerprint string) (Device, bool, e
 		return Device{}, false, err
 	}
 
-	if _, err := s.db.ExecContext(ctx, "UPDATE devices SET last_seen_at = ? WHERE id = ?", s.timestamp(), fingerprint); err != nil {
-		return Device{}, false, err
+	// Last seen is informational; write it at most once a minute per device
+	// so requests do not queue behind the writer.
+	s.seenMu.Lock()
+	stale := s.now().Sub(s.seen[fingerprint]) > time.Minute
+	if stale {
+		s.seen[fingerprint] = s.now()
+	}
+	s.seenMu.Unlock()
+
+	if stale {
+		if _, err := s.db.ExecContext(ctx, "UPDATE devices SET last_seen_at = ? WHERE id = ?", s.timestamp(), fingerprint); err != nil {
+			return Device{}, false, err
+		}
 	}
 
 	return device, true, nil
 }
 
 func (s *Store) device(ctx context.Context, id string) (Device, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, created_at, last_seen_at, revoked_at FROM devices WHERE id = ?", id)
+	rows, err := s.read.QueryContext(ctx, "SELECT id, name, created_at, last_seen_at, revoked_at FROM devices WHERE id = ?", id)
 	if err != nil {
 		return Device{}, err
 	}
@@ -106,6 +117,25 @@ func (s *Store) Enroll(ctx context.Context, fingerprint, secret string) (Device,
 		return Device{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// A device that already used this secret repeats the join after a lost
+	// answer: it gets the same registration.
+	var usedBy sql.NullString
+	err = tx.QueryRowContext(ctx, "SELECT device_id FROM enrollments WHERE secret_hash = ? AND used_at IS NOT NULL",
+		hashSecret(secret)).Scan(&usedBy)
+	if err == nil && usedBy.String == fingerprint {
+		if err := tx.Rollback(); err != nil {
+			return Device{}, err
+		}
+		device, err := s.device(ctx, fingerprint)
+		if err == nil && device.RevokedAt == nil {
+			return device, nil
+		}
+		return Device{}, &protocol.Error{Code: protocol.CodeUnauthorized, Message: "this device was revoked"}
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Device{}, err
+	}
 
 	var name string
 	err = tx.QueryRowContext(ctx,

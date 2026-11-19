@@ -272,3 +272,105 @@ func nudgeAndFlush(t *testing.T, device *syncDevice, projectID string) {
 	defer cancel()
 	syncer.Flush(flushCtx)
 }
+
+// Both devices change task 1 while apart: one edits it to a higher revision
+// and keeps its dependencies, the other adds a blocker. After syncing, both
+// devices hold the same dependencies.
+func TestConcurrentDependencyChangesConverge(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	hub, address := startHub(t)
+	arch, mac := newSyncDevice(t), newSyncDevice(t)
+
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, arch.must("init", "--name", "demo", "--json")).Project.ID
+
+	tasks, _ := newTaskRepositoryForTest(t, arch.database)
+	actor := task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}
+	var blockedID string
+	for _, title := range []string{"blocked", "first blocker", "second blocker"} {
+		created, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: title}, actor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if blockedID == "" {
+			blockedID = created.ID
+		}
+	}
+
+	key := decodeJSONResult[struct {
+		Recovery string `json:"recovery"`
+	}](t, arch.must("sync", "join", invite(t, hub, "arch", address), "--json")).Recovery
+	arch.must("sync", "enable")
+	mac.must("sync", "join", invite(t, hub, "mac", address), "--key", key)
+	mac.must("sync", "enable", "--project", projectID)
+
+	// Both devices hold task 1 blocked by task 2.
+	arch.must("task", "dependency", "add", "1", "--blocker", "2")
+	arch.must("sync")
+	mac.must("sync")
+
+	// The mac edits task 1 twice and leaves its dependencies alone; arch adds
+	// a blocker, a lower revision with a different dependency group.
+	macTasks, _ := newTaskRepositoryForTest(t, mac.database)
+	blocked, err := macTasks.Get(context.Background(), blockedID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range []string{"edited once", "edited twice"} {
+		blocked, err = macTasks.Update(context.Background(), blocked.ID, blocked.Revision, task.Patch{Title: &title}, actor)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	arch.must("task", "dependency", "add", "1", "--blocker", "3")
+
+	arch.must("sync")
+	mac.must("sync")
+	arch.must("sync")
+	mac.must("sync")
+
+	blockers := func(device *syncDevice) string {
+		shown := device.must("task", "show", "1")
+		_, rest, _ := strings.Cut(shown, "Blocked by:")
+		line, _, _ := strings.Cut(rest, "\n")
+		return strings.TrimSpace(stripANSI(line))
+	}
+	if left, right := blockers(arch), blockers(mac); left != right {
+		t.Fatalf("dependencies diverged: arch %q, mac %q", left, right)
+	}
+}
+
+// A device that lost its database restores the project
+// from the hub, its own rows included.
+func TestDeviceRestoresItsOwnRowsFromTheHub(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	hub, address := startHub(t)
+	arch := newSyncDevice(t)
+
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, arch.must("init", "--name", "demo", "--json")).Project.ID
+
+	tasks, _ := newTaskRepositoryForTest(t, arch.database)
+	actor := task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}
+	if _, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "kept on the hub"}, actor); err != nil {
+		t.Fatal(err)
+	}
+
+	arch.must("sync", "join", invite(t, hub, "arch", address))
+	arch.must("sync", "enable")
+
+	// Same device key and membership, fresh database and folder.
+	restored := newSyncDevice(t)
+	restored.syncDir = arch.syncDir
+	restored.must("sync", "enable", "--project", projectID)
+
+	if list := restored.must("task", "list"); !strings.Contains(list, "kept on the hub") {
+		t.Fatalf("restored task list = %q, want the task", list)
+	}
+}

@@ -155,13 +155,18 @@ func ParseBody(data []byte) ([]exchange.Row, error) {
 // are checked column by column on import, so devices on releases with the
 // same exported columns can sync even when their migration versions differ.
 //
-// Import replaces the children of every replaced parent. A parent pulled
-// without its group kept its children on the hub, so the local children are
-// carried along unchanged.
-func (r *Repository) SyncBundle(ctx context.Context, projectID string, rows []SyncRow) (exchange.Bundle, error) {
+// Import replaces the children of every replaced parent, so groups are
+// matched with parents here:
+//   - a group whose parent was pulled applies only at the parent's revision;
+//     an older group (a partial push, or a hub replaying old rows) is
+//     ignored and the local children stay;
+//   - a parent pulled without a usable group keeps its local children;
+//   - a group pulled without its parent is returned as an orphan for
+//     AdoptGroups, which applies it when the local parent is at its revision.
+func (r *Repository) SyncBundle(ctx context.Context, projectID string, rows []SyncRow) (exchange.Bundle, []SyncRow, error) {
 	version, err := r.SchemaVersion(ctx)
 	if err != nil {
-		return exchange.Bundle{}, err
+		return exchange.Bundle{}, nil, err
 	}
 
 	bundle := exchange.Bundle{
@@ -171,44 +176,155 @@ func (r *Repository) SyncBundle(ctx context.Context, projectID string, rows []Sy
 		Tables:        map[string][]exchange.Row{},
 	}
 
-	pulledGroups := map[string]map[string]bool{}
+	groups := map[string]map[string]SyncRow{}
 	for _, row := range rows {
 		if _, ok := specOf(row.Table); !ok {
-			return exchange.Bundle{}, exchange.Errorf(exchange.CodeInvalid, "pulled rows contain unknown table %q; update Istok", row.Table)
+			return exchange.Bundle{}, nil, exchange.Errorf(exchange.CodeInvalid, "pulled rows contain unknown table %q; update Istok", row.Table)
 		}
 		if row.Kind == SyncGroup {
-			if pulledGroups[row.Table] == nil {
-				pulledGroups[row.Table] = map[string]bool{}
+			if groups[row.Table] == nil {
+				groups[row.Table] = map[string]SyncRow{}
 			}
-			pulledGroups[row.Table][row.Key] = true
+			groups[row.Table][row.Key] = row
+			continue
 		}
 		bundle.Tables[row.Table] = append(bundle.Tables[row.Table], row.Rows...)
 	}
 
+	var orphans []SyncRow
 	for _, spec := range tables {
 		if spec.kind != followsParent {
 			continue
 		}
-		if err := r.carryChildren(ctx, spec, &bundle, pulledGroups[spec.name]); err != nil {
-			return exchange.Bundle{}, err
+
+		pulledParents := map[string]int64{}
+		for _, parent := range bundle.Tables[ownerOf(spec)] {
+			revision, _ := normalize(parent["revision"]).(int64)
+			pulledParents[fmt.Sprint(normalize(parent["id"]))] = revision
+		}
+
+		applied := map[string]bool{}
+		for owner, group := range groups[spec.name] {
+			revision, pulled := pulledParents[owner]
+			switch {
+			case !pulled:
+				orphans = append(orphans, group)
+			case revision == group.Revision:
+				bundle.Tables[spec.name] = append(bundle.Tables[spec.name], group.Rows...)
+				applied[owner] = true
+			}
+		}
+
+		if err := r.carryChildren(ctx, spec, &bundle, applied); err != nil {
+			return exchange.Bundle{}, nil, err
 		}
 	}
 
-	return bundle, nil
+	return bundle, orphans, nil
 }
 
-func (r *Repository) carryChildren(ctx context.Context, spec table, bundle *exchange.Bundle, pulled map[string]bool) error {
-	ownerTable := ""
+func ownerOf(spec table) string {
 	for _, link := range spec.parents {
 		if link.column == spec.owner {
-			ownerTable = link.table
+			return link.table
 		}
 	}
 
+	return ""
+}
+
+// AdoptGroups applies groups that arrived without their parent: the parent
+// came in an earlier pull or push batch. A group applies when the local
+// parent is at the group's revision; otherwise the parent changed here since
+// and the local children stay. It returns the groups applied.
+func (r *Repository) AdoptGroups(ctx context.Context, groups []SyncRow) (int, error) {
+	if len(groups) == 0 {
+		return 0, nil
+	}
+
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return 0, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, "PRAGMA defer_foreign_keys = ON"); err != nil {
+		return 0, err
+	}
+
+	state := &importer{
+		conn:     conn,
+		report:   exchange.NewReport(false),
+		skipped:  map[string]map[string]bool{},
+		replaced: map[string]map[string]bool{},
+	}
+
+	applied := 0
+	for _, spec := range tables {
+		if spec.kind != followsParent {
+			continue
+		}
+
+		var rows []exchange.Row
+		for _, group := range groups {
+			if group.Table != spec.name {
+				continue
+			}
+
+			var revision int64
+			err := conn.QueryRowContext(ctx, fmt.Sprintf("SELECT revision FROM %s WHERE id = ?", ownerOf(spec)), group.Key).Scan(&revision)
+			if err != nil || revision != group.Revision {
+				continue
+			}
+
+			state.mark(state.replaced, ownerOf(spec), group.Key)
+			rows = append(rows, group.Rows...)
+			applied++
+		}
+		if len(state.replaced[ownerOf(spec)]) == 0 {
+			continue
+		}
+
+		names, err := columns(ctx, conn, spec)
+		if err != nil {
+			return 0, err
+		}
+		if err := state.replaceChildren(ctx, spec, names, rows); err != nil {
+			return 0, fmt.Errorf("adopt %s: %w", spec.name, err)
+		}
+		state.replaced = map[string]map[string]bool{}
+	}
+
+	var problems int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_foreign_key_check").Scan(&problems); err != nil {
+		return 0, err
+	}
+	if problems > 0 {
+		return 0, exchange.Errorf(exchange.CodeInvalid, "pulled children reference rows this device does not have yet; sync again")
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return 0, err
+	}
+	committed = true
+
+	return applied, nil
+}
+
+func (r *Repository) carryChildren(ctx context.Context, spec table, bundle *exchange.Bundle, applied map[string]bool) error {
 	var owners []any
-	for _, parent := range bundle.Tables[ownerTable] {
+	for _, parent := range bundle.Tables[ownerOf(spec)] {
 		owner := fmt.Sprint(normalize(parent["id"]))
-		if !pulled[owner] {
+		if !applied[owner] {
 			owners = append(owners, owner)
 		}
 	}

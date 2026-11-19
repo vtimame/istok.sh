@@ -130,28 +130,16 @@ func (e *Engine) Clone(ctx context.Context, projectID string) (Result, error) {
 func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone bool) (Result, error) {
 	result := Result{ProjectID: projectID}
 
-	pulled, next, err := e.pull(ctx, projectID, cursor)
+	states, err := e.state.Rows(ctx, projectID)
 	if err != nil {
 		return result, err
 	}
-	result.Pulled = len(pulled)
 
-	if len(pulled) > 0 {
-		rows := make([]exchangerepo.SyncRow, len(pulled))
-		for index, row := range pulled {
-			rows[index] = row.row
-		}
-
-		bundle, err := e.exchange.SyncBundle(ctx, projectID, rows)
-		if err != nil {
-			return result, err
-		}
-		report, err := e.exchange.Import(ctx, bundle, Actor, false)
-		if err != nil {
-			return result, explainImport(err)
-		}
-		result.Import = &report
-	} else if clone {
+	pulled, next, received, err := e.pull(ctx, projectID, cursor, states, &result)
+	if err != nil {
+		return result, err
+	}
+	if clone && received == 0 {
 		return result, fmt.Errorf("the hub has no rows for project %s", projectID)
 	}
 
@@ -175,11 +163,17 @@ func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone
 		local[syncrepo.RowKey{Table: row.Table, Key: row.Key}] = localRow{row: row, tag: tag}
 	}
 
+	// A pulled row counts as in sync only when the local row now equals it.
+	// Otherwise the local version won the merge, or another process changed
+	// it since the import; an empty local tag makes the push consider it.
 	updates := make([]syncrepo.Update, 0, len(pulled))
 	for _, row := range pulled {
-		key := syncrepo.RowKey{Table: row.row.Table, Key: row.row.Key}
-		updates = append(updates, syncrepo.Update{RowKey: key, RowState: syncrepo.RowState{
-			Revision: row.row.Revision, HubTag: row.tag, LocalTag: local[key].tag,
+		localTag := ""
+		if local[row.key].tag == row.tag {
+			localTag = row.tag
+		}
+		updates = append(updates, syncrepo.Update{RowKey: row.key, RowState: syncrepo.RowState{
+			Revision: row.revision, HubTag: row.tag, LocalTag: localTag,
 		}})
 	}
 	if err := e.state.Record(ctx, projectID, updates, &next); err != nil {
@@ -193,9 +187,11 @@ func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone
 	return result, e.state.Touch(ctx, projectID)
 }
 
+// pulledRow is what the device remembers of a pulled row once it is merged.
 type pulledRow struct {
-	row exchangerepo.SyncRow
-	tag string
+	key      syncrepo.RowKey
+	revision int64
+	tag      string
 }
 
 type localRow struct {
@@ -203,27 +199,91 @@ type localRow struct {
 	tag string
 }
 
-func (e *Engine) pull(ctx context.Context, projectID string, cursor int64) ([]pulledRow, int64, error) {
-	var result []pulledRow
+// pull merges the hub's changes after cursor page by page, so memory stays
+// bounded by one page. Rows this device already holds are not merged again.
+func (e *Engine) pull(ctx context.Context, projectID string, cursor int64, states map[syncrepo.RowKey]syncrepo.RowState,
+	result *Result) ([]pulledRow, int64, int, error) {
+	var pulled []pulledRow
+	received := 0
+
 	for {
 		response, err := e.hub.Pull(ctx, projectID, cursor)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
+		}
+		if response.Next < cursor || (response.More && response.Next == cursor) {
+			return nil, 0, 0, fmt.Errorf("the hub answered a pull without moving forward (cursor %d, next %d)", cursor, response.Next)
 		}
 
+		page := make([]exchangerepo.SyncRow, 0, len(response.Rows))
 		for _, row := range response.Rows {
+			received++
+			key := syncrepo.RowKey{Table: row.Table, Key: row.Key}
+			pulled = append(pulled, pulledRow{key: key, revision: row.Revision, tag: row.Tag})
+
+			if state, known := states[key]; known && state.HubTag == row.Tag && state.LocalTag == row.Tag {
+				continue
+			}
+
 			value, err := e.decode(projectID, row)
 			if err != nil {
-				return nil, 0, err
+				return nil, 0, 0, err
 			}
-			result = append(result, pulledRow{row: value, tag: row.Tag})
+			page = append(page, value)
+		}
+
+		if err := e.merge(ctx, projectID, page, result); err != nil {
+			return nil, 0, 0, err
 		}
 
 		cursor = response.Next
 		if !response.More {
-			return result, cursor, nil
+			return pulled, cursor, received, nil
 		}
 	}
+}
+
+// merge imports one page of pulled rows.
+func (e *Engine) merge(ctx context.Context, projectID string, page []exchangerepo.SyncRow, result *Result) error {
+	if len(page) == 0 {
+		return nil
+	}
+
+	bundle, orphans, err := e.exchange.SyncBundle(ctx, projectID, page)
+	if err != nil {
+		return err
+	}
+
+	report, err := e.exchange.Import(ctx, bundle, Actor, false)
+	if err != nil {
+		return explainImport(err)
+	}
+	if _, err := e.exchange.AdoptGroups(ctx, orphans); err != nil {
+		return explainImport(err)
+	}
+
+	result.Pulled += len(page)
+	if result.Import == nil {
+		result.Import = &report
+		return nil
+	}
+
+	merged := result.Import
+	merged.Projects = report.Projects
+	merged.Conflicts = append(merged.Conflicts, report.Conflicts...)
+	merged.Renumbered = append(merged.Renumbered, report.Renumbered...)
+	merged.Warnings = append(merged.Warnings, report.Warnings...)
+	for name, counts := range report.Tables {
+		total := merged.Tables[name]
+		total.Created += counts.Created
+		total.Updated += counts.Updated
+		total.Unchanged += counts.Unchanged
+		total.KeptLocal += counts.KeptLocal
+		total.Skipped += counts.Skipped
+		merged.Tables[name] = total
+	}
+
+	return nil
 }
 
 // decode decrypts a pulled row and checks that its tag matches its content,
@@ -274,7 +334,11 @@ func shouldPush(row localRow, state syncrepo.RowState, known bool) bool {
 		return true
 	}
 
-	return row.row.Kind == exchangerepo.SyncMutable && row.row.Revision > state.Revision
+	// A newer parent revision carries its group too, so other devices can
+	// match the two.
+	newer := row.row.Kind == exchangerepo.SyncMutable || row.row.Kind == exchangerepo.SyncGroup
+
+	return newer && row.row.Revision > state.Revision
 }
 
 func (e *Engine) push(ctx context.Context, projectID string, schema int64, snapshot []exchangerepo.SyncRow,

@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 // Identity is a self-signed TLS certificate and its fingerprint.
@@ -53,6 +55,18 @@ func LoadOrCreate(dir, name string) (Identity, error) {
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Identity{}, fmt.Errorf("create identity directory: %w", err)
+	}
+
+	// Two processes may create the identity at once; the lock makes one of
+	// them write it and the other read it.
+	lock := flock.New(filepath.Join(dir, name+".lock"), flock.SetPermissions(0o600))
+	if err := lock.Lock(); err != nil {
+		return Identity{}, fmt.Errorf("lock %s identity: %w", name, err)
+	}
+	defer func() { _ = lock.Unlock() }()
+
+	if certificate, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+		return fromCertificate(certificate)
 	}
 
 	keyPEM, certPEM, err := generate(name)
@@ -122,10 +136,13 @@ func generate(name string) ([]byte, []byte, error) {
 	return keyPEM, certPEM, nil
 }
 
+// writePrivate writes through a temporary file, so a reader never sees half
+// a key.
 func writePrivate(path string, data []byte) error {
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
 
-	return nil
+	return os.Rename(temporary, path)
 }

@@ -101,13 +101,17 @@ func withEngine(ctx context.Context, flags syncFlags, output io.Writer, action f
 	services, app := syncApplication(flags.Database)
 
 	return runProjectApplication(ctx, flags.JSON, output, app, func() (any, error) {
-		hub, key, _, err := replica.Connect(flags.dir())
-		if err != nil {
-			return nil, err
-		}
-		defer hub.Close()
+		// The same lock as the UI service, MCP servers and hooks: one sync
+		// of this device's database at a time.
+		var value any
+		syncer := replica.NewSyncer(flags.dir(), services.exchange, services.state, nil)
+		err := syncer.WithEngine(ctx, func(engine *replica.Engine) error {
+			var err error
+			value, err = action(services, engine)
+			return err
+		})
 
-		return action(services, replica.NewEngine(services.exchange, services.state, hub, key))
+		return value, err
 	})
 }
 
@@ -166,6 +170,12 @@ func runSyncJoin(ctx context.Context, command SyncJoinCommand, output io.Writer)
 	services, app := syncApplication(command.Database)
 
 	return runProjectApplication(ctx, command.JSON, output, app, func() (any, error) {
+		unlock, err := replica.Lock(ctx, command.dir())
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
+
 		result, err := replica.Join(ctx, command.dir(), command.Code, command.Key, services.state.Reset)
 		if err != nil {
 			return nil, err

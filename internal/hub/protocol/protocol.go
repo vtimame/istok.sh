@@ -37,6 +37,7 @@ const (
 	CodeNotFound     = "not_found"
 	CodeConflict     = "conflict"
 	CodeUnsupported  = "unsupported_protocol"
+	CodeRateLimited  = "rate_limited"
 	CodeInternal     = "internal"
 )
 
@@ -103,8 +104,8 @@ type PushResponse struct {
 	Results []PushResult `json:"results"`
 }
 
-// PullResponse returns rows after a cursor. Next is the cursor to continue
-// from; it moves past rows the calling device wrote itself, which are left out.
+// PullResponse returns rows after a cursor, including rows the calling device
+// wrote. Next is the cursor to continue from; More asks for another page.
 type PullResponse struct {
 	Rows []Row `json:"rows"`
 	Next int64 `json:"next"`

@@ -10,7 +10,7 @@ import (
 
 // Projects lists synced projects.
 func (s *Store) Projects(ctx context.Context) ([]protocol.Project, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, meta FROM projects ORDER BY created_at")
+	rows, err := s.read.QueryContext(ctx, "SELECT id, meta FROM projects ORDER BY created_at")
 	if err != nil {
 		return nil, err
 	}
@@ -137,11 +137,16 @@ func decide(row protocol.Row, current storedRow, exists bool) string {
 	}
 }
 
-// Pull returns rows changed after the cursor, leaving out rows the calling
-// device wrote: it has them already.
-func (s *Store) Pull(ctx context.Context, deviceID, projectID string, after int64, limit int) (protocol.PullResponse, error) {
-	rows, err := s.db.QueryContext(ctx,
-		"SELECT table_name, row_key, kind, revision, tag, schema_version, body, seq, device_id FROM rows "+
+// pullPageBytes bounds the bodies of one pull page; a page always carries at
+// least one row, and rows are at most protocol.MaxRowBytes.
+const pullPageBytes = 16 << 20
+
+// Pull returns rows changed after the cursor. Rows the calling device wrote
+// are included: a device that lost its database restores from the hub, and
+// devices skip rows they already hold.
+func (s *Store) Pull(ctx context.Context, projectID string, after int64, limit int) (protocol.PullResponse, error) {
+	rows, err := s.read.QueryContext(ctx,
+		"SELECT table_name, row_key, kind, revision, tag, schema_version, body, seq FROM rows "+
 			"WHERE project_id = ? AND seq > ? ORDER BY seq LIMIT ?", projectID, after, limit+1)
 	if err != nil {
 		return protocol.PullResponse{}, err
@@ -149,25 +154,22 @@ func (s *Store) Pull(ctx context.Context, deviceID, projectID string, after int6
 	defer rows.Close()
 
 	response := protocol.PullResponse{Rows: []protocol.Row{}, Next: after}
-	count := 0
+	size := 0
 	for rows.Next() {
-		var value protocol.Row
-		var writer string
-		if err := rows.Scan(&value.Table, &value.Key, &value.Kind, &value.Revision, &value.Tag, &value.SchemaVersion,
-			&value.Body, &value.Seq, &writer); err != nil {
-			return protocol.PullResponse{}, err
-		}
-
-		count++
-		if count > limit {
+		if len(response.Rows) == limit || (len(response.Rows) > 0 && size >= pullPageBytes) {
 			response.More = true
 			break
 		}
 
-		response.Next = value.Seq
-		if writer != deviceID {
-			response.Rows = append(response.Rows, value)
+		var value protocol.Row
+		if err := rows.Scan(&value.Table, &value.Key, &value.Kind, &value.Revision, &value.Tag, &value.SchemaVersion,
+			&value.Body, &value.Seq); err != nil {
+			return protocol.PullResponse{}, err
 		}
+
+		size += len(value.Body)
+		response.Rows = append(response.Rows, value)
+		response.Next = value.Seq
 	}
 
 	return response, rows.Err()

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/vtimame/istok.sh/internal/hub/identity"
@@ -20,11 +20,12 @@ const metaKeyCheck = "key_check"
 // device is looked up from the client certificate.
 type handler struct {
 	store  *Store
+	guard  *guard
 	logger *slog.Logger
 }
 
-func newHandler(store *Store, logger *slog.Logger) http.Handler {
-	h := &handler{store: store, logger: logger}
+func newHandler(store *Store, guard *guard, logger *slog.Logger) http.Handler {
+	h := &handler{store: store, guard: guard, logger: logger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/enroll", h.enroll)
@@ -73,11 +74,27 @@ func (h *handler) device(next func(http.ResponseWriter, *http.Request, Device)) 
 			return
 		}
 
+		if !h.guard.allowRequest(device.ID) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusTooManyRequests, &protocol.Error{Code: protocol.CodeRateLimited, Message: "too many requests from this device; retry shortly"})
+			return
+		}
+
 		next(w, r, device)
 	})
 }
 
 func (h *handler) enroll(w http.ResponseWriter, r *http.Request) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if !h.guard.allowEnroll(host) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, &protocol.Error{Code: protocol.CodeRateLimited, Message: "too many join attempts; retry in a minute"})
+		return
+	}
+
 	var request protocol.EnrollRequest
 	if !h.decode(w, r, &request) {
 		return
@@ -85,8 +102,6 @@ func (h *handler) enroll(w http.ResponseWriter, r *http.Request) {
 
 	device, err := h.store.Enroll(r.Context(), fingerprintOf(r), request.Secret)
 	if err != nil {
-		// Slow down guessing; secrets are long enough that this is only hygiene.
-		time.Sleep(time.Second)
 		h.fail(w, r, err)
 		return
 	}
@@ -117,20 +132,14 @@ func (h *handler) putSpace(w http.ResponseWriter, r *http.Request, _ Device) {
 		return
 	}
 
-	current, err := h.store.Meta(r.Context(), metaKeyCheck)
+	current, err := h.store.SetMetaOnce(r.Context(), metaKeyCheck, request.KeyCheck)
 	if err != nil {
 		h.internal(w, r, err)
 		return
 	}
-	if current != "" && current != request.KeyCheck {
+	if current != request.KeyCheck {
 		writeError(w, http.StatusConflict, &protocol.Error{Code: protocol.CodeConflict, Message: "the hub already uses another encryption key"})
 		return
-	}
-	if current == "" {
-		if err := h.store.SetMeta(r.Context(), metaKeyCheck, request.KeyCheck); err != nil {
-			h.internal(w, r, err)
-			return
-		}
 	}
 
 	writeJSON(w, protocol.Space{KeyCheck: request.KeyCheck})
@@ -220,7 +229,7 @@ func validKey(value string) bool {
 	return value != "" && len(value) <= 512 && utf8.ValidString(value) && !strings.ContainsRune(value, 0)
 }
 
-func (h *handler) pull(w http.ResponseWriter, r *http.Request, device Device) {
+func (h *handler) pull(w http.ResponseWriter, r *http.Request, _ Device) {
 	query := r.URL.Query()
 
 	projectID := query.Get("project")
@@ -234,7 +243,7 @@ func (h *handler) pull(w http.ResponseWriter, r *http.Request, device Device) {
 		limit = protocol.MaxPullRows
 	}
 
-	response, err := h.store.Pull(r.Context(), device.ID, projectID, after, limit)
+	response, err := h.store.Pull(r.Context(), projectID, after, limit)
 	if err != nil {
 		h.internal(w, r, err)
 		return

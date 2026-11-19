@@ -84,25 +84,29 @@ func Join(ctx context.Context, dir, code, recovery string, reset func(context.Co
 	}
 
 	switch {
-	case space.KeyCheck == "" && recovery == "":
-		key, created, err := NewKey()
-		if err != nil {
-			return JoinResult{}, err
-		}
-		if err := hub.SetSpace(ctx, key.Check()); err != nil {
-			return JoinResult{}, err
-		}
-		config.Key = created
-		result.CreatedKey, result.Recovery = true, created
 	case space.KeyCheck == "":
-		key, err := ParseKey(recovery)
+		// The hub has no key yet: publish the one given, the one this
+		// device already holds, or a new one.
+		value := recovery
+		if value == "" {
+			value = config.Key
+		}
+
+		var key Key
+		if value == "" {
+			key, value, err = NewKey()
+			result.CreatedKey, result.Recovery = true, value
+		} else {
+			key, err = ParseKey(value)
+		}
 		if err != nil {
 			return JoinResult{}, err
 		}
+
 		if err := hub.SetSpace(ctx, key.Check()); err != nil {
 			return JoinResult{}, err
 		}
-		config.Key = recovery
+		config.Key = value
 	case recovery != "":
 		key, err := ParseKey(recovery)
 		if err != nil {
