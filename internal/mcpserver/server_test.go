@@ -63,23 +63,7 @@ func TestHealthToolReturnsTypedStatus(t *testing.T) {
 }
 
 func TestInitializeSendsInstructionsThatNameExistingTools(t *testing.T) {
-	// Argument and error names that look like tool names in the instructions.
-	notTools := map[string]bool{
-		"task_id":                true,
-		"run_id":                 true,
-		"validation_id":          true,
-		"expected_revision":      true,
-		"expected_task_revision": true,
-		"revision_conflict":      true,
-		"not_verified_reason":    true,
-	}
-
-	var named []string
-	for _, word := range regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`).FindAllString(instructions, -1) {
-		if !notTools[word] {
-			named = append(named, word)
-		}
-	}
+	named := instructionToolNames()
 	if len(named) == 0 {
 		t.Fatal("instructions name no tools")
 	}
@@ -111,6 +95,30 @@ func TestInitializeSendsInstructionsThatNameExistingTools(t *testing.T) {
 	}
 }
 
+// instructionToolNames returns the words of the instructions that look like
+// tool names.
+func instructionToolNames() []string {
+	// Argument and error names that look like tool names in the instructions.
+	notTools := map[string]bool{
+		"task_id":                true,
+		"run_id":                 true,
+		"validation_id":          true,
+		"expected_revision":      true,
+		"expected_task_revision": true,
+		"revision_conflict":      true,
+		"not_verified_reason":    true,
+	}
+
+	var named []string
+	for _, word := range regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`).FindAllString(instructions, -1) {
+		if !notTools[word] {
+			named = append(named, word)
+		}
+	}
+
+	return named
+}
+
 func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 	worker, workerSession := newSession(t, Worker, t.TempDir())
 	_ = worker
@@ -125,6 +133,7 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"task_ready":             {readOnly: true, destructive: false, idempotent: true},
 		"task_comment":           {readOnly: false, destructive: false, idempotent: true},
 		"task_progress":          {readOnly: false, destructive: false, idempotent: true},
+		"task_commit":            {readOnly: false, destructive: false, idempotent: true},
 		"task_block":             {readOnly: false, destructive: true, idempotent: true},
 		"task_unblock":           {readOnly: false, destructive: true, idempotent: true},
 		"task_dependency_add":    {readOnly: false, destructive: false, idempotent: true},
@@ -192,6 +201,7 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"task_ready":             {readOnly: true, destructive: false, idempotent: true},
 		"task_comment":           {readOnly: false, destructive: false, idempotent: true},
 		"task_progress":          {readOnly: false, destructive: false, idempotent: true},
+		"task_commit":            {readOnly: false, destructive: false, idempotent: true},
 		"task_block":             {readOnly: false, destructive: true, idempotent: true},
 		"task_unblock":           {readOnly: false, destructive: true, idempotent: true},
 		"task_dependency_add":    {readOnly: false, destructive: false, idempotent: true},
@@ -1433,6 +1443,13 @@ func newSessionAtDatabaseWithActor(t *testing.T, profile Profile, root, database
 
 func newSessionWithRecorder(t *testing.T, profile Profile, root, database, actorID string, calls CallRecorder) (*mcp.Server, *mcp.ClientSession) {
 	t.Helper()
+	return newSessionWithTools(t, profile, ToolsFull, root, database, actorID, calls)
+}
+
+// newSessionWithTools starts a server with the given tool set; most tests use
+// the full set to reach every tool.
+func newSessionWithTools(t *testing.T, profile Profile, tools ToolSet, root, database, actorID string, calls CallRecorder) (*mcp.Server, *mcp.ClientSession) {
+	t.Helper()
 	var server *mcp.Server
 	app := fx.New(
 		fx.NopLogger,
@@ -1467,7 +1484,7 @@ func newSessionWithRecorder(t *testing.T, profile Profile, root, database, actor
 		fx.Provide(runworkflow.NewService),
 		fx.Provide(func(db *sql.DB) HealthChecker { return db }),
 		fx.Provide(func(health HealthChecker, service *project.Service, tasks *taskapp.Service, contexts *contextapp.Service, knowledge *knowledgeapp.Service, indexes *indexingapp.Service, runs *runapp.Service, workflow *runworkflow.Service) (*mcp.Server, error) {
-			return New(health, service, tasks, contexts, knowledge, indexes, runs, workflow, calls, buildinfo.Info{Version: "test"}, Config{Profile: profile, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
+			return New(health, service, tasks, contexts, knowledge, indexes, runs, workflow, calls, buildinfo.Info{Version: "test"}, Config{Profile: profile, Tools: tools, Root: root, ActorID: actorID, ActorName: "MCP Agent"})
 		}),
 		fx.Invoke(func(value *mcp.Server) { server = value }),
 	)

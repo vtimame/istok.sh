@@ -34,7 +34,7 @@ func TestInstallKeepsOtherSettingsAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !change.Changed || change.Backup == "" || !slices.Equal(change.Events, []Event{EventSessionStart, EventPreCompact, EventStop}) {
+	if !change.Changed || change.Backup == "" || !slices.Equal(change.Events, []Event{EventSessionStart, EventPreCompact, EventPostToolUse, EventStop}) {
 		t.Fatalf("install = %+v", change)
 	}
 
@@ -49,6 +49,13 @@ func TestInstallKeepsOtherSettingsAndIsIdempotent(t *testing.T) {
 	}
 	if !(strings.Index(text, `"env"`) < strings.Index(text, `"hooks"`) && strings.Index(text, `"hooks"`) < strings.Index(text, `"statusLine"`)) {
 		t.Errorf("top-level key order changed:\n%s", text)
+	}
+	if !strings.Contains(text, `"matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/opt/my tools/istok' hook claude post-tool-use"`) {
+		t.Errorf("commit hook missing or without the Bash matcher:\n%s", text)
 	}
 	if !strings.Contains(text, `"command": "'/opt/my tools/istok' hook claude session-start"`) {
 		t.Errorf("istok hook missing:\n%s", text)
@@ -65,7 +72,7 @@ func TestInstallKeepsOtherSettingsAndIsIdempotent(t *testing.T) {
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Hooks["SessionStart"]) != 2 || len(parsed.Hooks["PostToolUse"]) != 1 {
+	if len(parsed.Hooks["SessionStart"]) != 2 || len(parsed.Hooks["PostToolUse"]) != 2 {
 		t.Errorf("hook groups = %+v", parsed.Hooks)
 	}
 

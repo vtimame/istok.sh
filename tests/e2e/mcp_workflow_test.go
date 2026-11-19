@@ -15,7 +15,7 @@ import (
 func TestMCPWorkflowOverStdio(t *testing.T) {
 	env := newEnvironment(t, true)
 	var stderr bytes.Buffer
-	command := exec.Command(istokBinary, "mcp", "--actor-id", "e2e-agent", "--actor-name", "E2E Agent")
+	command := exec.Command(istokBinary, "mcp", "--tools", "full", "--actor-id", "e2e-agent", "--actor-name", "E2E Agent")
 	command.Dir = env.root
 	command.Env = env.env
 	command.Stderr = &stderr

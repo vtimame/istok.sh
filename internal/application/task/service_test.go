@@ -51,6 +51,10 @@ func (r *fakeRepository) Handoff(context.Context, string, int64, string, task.Ac
 	r.unexpected()
 	return task.Task{}, nil
 }
+func (r *fakeRepository) Commit(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error) {
+	r.unexpected()
+	return task.Task{}, nil
+}
 func (r *fakeRepository) Block(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error) {
 	r.unexpected()
 	return task.Task{}, nil

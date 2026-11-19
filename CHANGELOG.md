@@ -4,6 +4,52 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`istok mcp` lists the core tools by default.** Agents see the short
+  workflow: `project_current`, `project_init`, `task_ready`, `task_list`,
+  `task_show`, `task_start`, `task_progress`, `task_block`, `task_handoff`,
+  `task_commit`, `task_evidence`, `run_validate`, `task_done`, `run_recover`,
+  `knowledge_search`, `knowledge_read` and `search`, plus the tools of the
+  supervisor and admin profiles. Every tool definition costs agent context,
+  so the rest moved behind `istok mcp --tools full` (or
+  `ISTOK_MCP_TOOLS=full`). A call to a hidden tool returns
+  `tool_unavailable` with that hint. The server instructions are shorter and
+  name only core tools.
+- `task_progress`, `task_comment` and `task_block` no longer need
+  `expected_revision`; without it they write to the current revision.
+- Your Istok calls keep the run lease alive, and the next call after a pause
+  resumes an expired lease instead of requiring `run_recover`.
+- Bundles exported by 0.4.0 do not import into this version: the database
+  schema gained the MCP call log. Update Istok on both devices.
+
+### Added
+
+- **Shorter workflow.** `task_start` creates or claims a task, or continues
+  your own run of it, and returns the context and the latest handoff in one
+  call. `task_evidence` records a check of any kind, including a CI run or a
+  manual test without a command. `task_done` finishes the run and completes
+  the task in one call, with `not_verified_reason` when the result cannot be
+  verified.
+- **Handoffs between sessions.** `task_handoff` records what is done, where
+  the work stopped and the next step; `task_start` returns it after a
+  restart or a compaction. `istok resume` prints the interrupted work of the
+  current project.
+- **Agent hooks.** `istok hooks install claude` (or `codex`) adds hooks that
+  print the interrupted work when a session starts and, for Claude Code, keep
+  the Istok state in compaction summaries and link a `git commit` to the task
+  of the only active run. `--stop` also asks the agent once for a handoff
+  when it stops. `istok hooks status` and `uninstall` manage them; other
+  settings and hooks are kept, with a backup.
+- **Commits on tasks.** `task_commit` links a git commit, read from the
+  repository, to a task; `repository` selects a nested repository of the
+  project. Linking the same commit twice changes nothing.
+- **Usage report.** `istok mcp` logs tool calls locally, and `istok usage`
+  shows which tools agents call, how often they fail and where they drop out
+  of the workflow.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added

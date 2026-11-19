@@ -33,6 +33,12 @@ type HookCommand struct {
 type hookInput struct {
 	CWD            string `json:"cwd"`
 	StopHookActive bool   `json:"stop_hook_active"`
+
+	// ToolName and ToolInput come with post-tool-use.
+	ToolName  string `json:"tool_name"`
+	ToolInput struct {
+		Command string `json:"command"`
+	} `json:"tool_input"`
 }
 
 // maxHookInput bounds the hook input read from stdin.
@@ -91,6 +97,9 @@ func hookOutput(ctx context.Context, command HookCommand, event agenthooks.Event
 	if event == agenthooks.EventStop && value.StopHookActive {
 		return "", nil
 	}
+	if event == agenthooks.EventPostToolUse {
+		return linkCommitHook(ctx, command.Database, cwd, value)
+	}
 
 	report, err := loadResume(ctx, command.Database, cwd, os.Getenv("ISTOK_AGENT_ID"))
 	if err != nil {
@@ -143,27 +152,41 @@ func stopDecision(report resumeReport) (string, error) {
 
 // loadResume builds the resume report of the project at cwd.
 func loadResume(ctx context.Context, database, cwd, actorID string) (resumeReport, error) {
+	var report resumeReport
+
+	err := withTaskServices(ctx, database, func(projects *project.Service, tasks *taskapp.Service, runs *runapp.Service) error {
+		value, err := resumeAt(ctx, projects, handoffapp.NewService(tasks, runs), cwd, actorID)
+		report = value
+
+		return err
+	})
+
+	return report, err
+}
+
+// withTaskServices runs action with the task services of the database.
+func withTaskServices(ctx context.Context, database string, action func(*project.Service, *taskapp.Service, *runapp.Service) error) error {
 	var projects *project.Service
-	var briefs *handoffapp.Service
+	var tasks *taskapp.Service
+	var runs *runapp.Service
 
 	app := fx.New(
 		fx.NopLogger,
 		bootstrap.TaskOptions(database),
-		fx.Invoke(func(projectService *project.Service, tasks *taskapp.Service, runs *runapp.Service) {
-			projects = projectService
-			briefs = handoffapp.NewService(tasks, runs)
+		fx.Invoke(func(projectService *project.Service, taskService *taskapp.Service, runService *runapp.Service) {
+			projects, tasks, runs = projectService, taskService, runService
 		}),
 	)
 	if err := app.Start(ctx); err != nil {
-		return resumeReport{}, err
+		return err
 	}
 
-	report, err := resumeAt(ctx, projects, briefs, cwd, actorID)
+	err := action(projects, tasks, runs)
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	return report, errors.Join(err, app.Stop(stopCtx))
+	return errors.Join(err, app.Stop(stopCtx))
 }
 
 // resumeAt is the resume report of the project at cwd; outside a registered

@@ -69,6 +69,14 @@ codex mcp add istok -- \
   istok mcp --actor-id codex --actor-name "Codex"
 ```
 
+To keep work across restarts and compactions, add the hooks once:
+
+```sh
+istok hooks install claude   # or: istok hooks install codex
+```
+
+The server lists the core workflow tools; start it with `istok mcp --tools full` for every tool.
+
 Cursor and other MCP clients are covered in the [quick start](https://istok.sh/docs/en/getting-started/quick-start), together with a short block of instructions that tells the agent when to use Istok.
 
 **3. Ask the agent to register your project.** Start it in the repository and say:

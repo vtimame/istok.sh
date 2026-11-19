@@ -30,6 +30,7 @@ const (
 
 type Config struct {
 	Profile   Profile
+	Tools     ToolSet
 	Root      string
 	ActorID   string
 	ActorName string
@@ -86,6 +87,12 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 	if config.Profile != Worker && config.Profile != Supervisor && config.Profile != Admin {
 		return nil, fmt.Errorf("unsupported MCP profile %q", config.Profile)
 	}
+	if config.Tools == "" {
+		config.Tools = ToolsCore
+	}
+	if config.Tools != ToolsCore && config.Tools != ToolsFull {
+		return nil, fmt.Errorf("unsupported MCP tool set %q", config.Tools)
+	}
 
 	actor, err := newActor(config.ActorID, config.ActorName)
 	if err != nil {
@@ -99,6 +106,9 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 			return nil, err
 		}
 		server.AddReceivingMiddleware(log.middleware)
+	}
+	if config.Tools == ToolsCore {
+		server.AddReceivingMiddleware(coreFilter(config.Profile))
 	}
 
 	mcp.AddTool(server, tool("health", "Check Istok and its SQLite storage.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, HealthStatus, error) {
@@ -130,6 +140,7 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 	addIndexTools(server, service, indexes, config.Root)
 	addRunTools(server, service, runs, workflow, config.Root, actor, config.Profile)
 	addShortcutTools(server, service, tasks, runs, config.Root, actor)
+	addCommitTools(server, service, tasks, runs, config.Root, actor)
 	if config.Profile == Admin {
 		addAdmin(server, service, tasks, contexts, config.Root, actor)
 	}

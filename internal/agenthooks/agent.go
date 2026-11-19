@@ -58,16 +58,23 @@ const (
 	// EventStop asks once for a handoff when the agent stops with an active
 	// run whose handoff is out of date.
 	EventStop Event = "stop"
+
+	// EventPostToolUse links a commit the agent just made to its task.
+	EventPostToolUse Event = "post-tool-use"
 )
+
+// allEvents lists every event Istok handles.
+var allEvents = []Event{EventSessionStart, EventPreCompact, EventPostToolUse, EventStop}
 
 // ParseEvent validates an event name.
 func ParseEvent(value string) (Event, error) {
-	switch Event(value) {
-	case EventSessionStart, EventPreCompact, EventStop:
-		return Event(value), nil
+	for _, event := range allEvents {
+		if string(event) == value {
+			return event, nil
+		}
 	}
 
-	return "", fmt.Errorf("unsupported hook event %q: use session-start, pre-compact or stop", value)
+	return "", fmt.Errorf("unsupported hook event %q: use session-start, pre-compact, stop or post-tool-use", value)
 }
 
 // Hook is one hook entry in an agent's settings.
@@ -87,11 +94,15 @@ const hookTimeoutSeconds = 10
 
 // Hooks returns the hooks Istok installs for the agent. Stop is opt-in.
 // Codex ignores the stdout of PreCompact, so it gets no compaction hook; its
-// SessionStart after a compaction carries the state instead.
+// SessionStart after a compaction carries the state instead. Commits are
+// linked after Claude Code's Bash tool; Codex gets no commit hook yet.
 func Hooks(agent Agent, withStop bool) []Hook {
 	hooks := []Hook{{Event: EventSessionStart, Name: "SessionStart"}}
 	if agent == Claude {
-		hooks = append(hooks, Hook{Event: EventPreCompact, Name: "PreCompact"})
+		hooks = append(hooks,
+			Hook{Event: EventPreCompact, Name: "PreCompact"},
+			Hook{Event: EventPostToolUse, Name: "PostToolUse", Matcher: "Bash"},
+		)
 	}
 	if withStop {
 		hooks = append(hooks, Hook{Event: EventStop, Name: "Stop"})

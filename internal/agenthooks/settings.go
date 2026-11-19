@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // The settings files belong to the user and to other tools. Istok edits only
@@ -426,6 +427,11 @@ func installedIn(data []byte, agent Agent) ([]Event, error) {
 		}
 	}
 
+	// Report events in Istok's order, whatever the order in the file.
+	slices.SortStableFunc(result, func(a, b Event) int {
+		return slices.Index(allEvents, a) - slices.Index(allEvents, b)
+	})
+
 	return result, nil
 }
 
@@ -435,7 +441,7 @@ func commandEvent(command string, agent Agent) (Event, bool) {
 		return "", false
 	}
 
-	for _, event := range []Event{EventSessionStart, EventPreCompact, EventStop} {
+	for _, event := range allEvents {
 		if bytes.HasSuffix([]byte(command), []byte(" "+string(event))) {
 			return event, true
 		}

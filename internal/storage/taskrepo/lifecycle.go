@@ -36,6 +36,10 @@ func (r *Repository) Handoff(ctx context.Context, id string, expected int64, bod
 	return r.textMutation(ctx, id, expected, body, actor, task.EventHandoff, false, false)
 }
 
+func (r *Repository) Commit(ctx context.Context, id string, expected int64, body string, actor task.ActorSnapshot) (task.Task, error) {
+	return r.textMutation(ctx, id, expected, body, actor, task.EventCommit, false, false)
+}
+
 func (r *Repository) Block(ctx context.Context, id string, expected int64, reason string, actor task.ActorSnapshot) (task.Task, error) {
 	return r.textMutation(ctx, id, expected, reason, actor, "blocked", true, false)
 }

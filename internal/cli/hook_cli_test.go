@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -116,7 +118,7 @@ func TestHooksInstallWritesTheAgentSettings(t *testing.T) {
 		Changed bool     `json:"changed"`
 		Events  []string `json:"events"`
 	}](t, installed.output)
-	if change.Path != filepath.Join(claudeHome, "settings.json") || !change.Changed || strings.Join(change.Events, ",") != "session-start,pre-compact,stop" {
+	if change.Path != filepath.Join(claudeHome, "settings.json") || !change.Changed || strings.Join(change.Events, ",") != "session-start,pre-compact,post-tool-use,stop" {
 		t.Fatalf("hooks install = %+v", change)
 	}
 
@@ -125,7 +127,7 @@ func TestHooksInstallWritesTheAgentSettings(t *testing.T) {
 	}
 
 	status := executeAt(t, t.TempDir(), database, "hooks", "status")
-	if status.err != nil || !strings.Contains(status.output, "session-start, pre-compact, stop") || !strings.Contains(status.output, filepath.Join(codexHome, "hooks.json")+": session-start") {
+	if status.err != nil || !strings.Contains(status.output, "session-start, pre-compact, post-tool-use, stop") || !strings.Contains(status.output, filepath.Join(codexHome, "hooks.json")+": session-start") {
 		t.Fatalf("hooks status = %q, %v", status.output, status.err)
 	}
 
@@ -136,4 +138,106 @@ func TestHooksInstallWritesTheAgentSettings(t *testing.T) {
 	if project := executeAt(t, t.TempDir(), database, "hooks", "install", "claude", "--scope", "project"); project.err == nil {
 		t.Fatalf("project scope outside a project succeeded: %q", project.output)
 	}
+}
+
+func TestCommitHookLinksTheCommitToTheOnlyActiveRun(t *testing.T) {
+	root := t.TempDir()
+	database := filepath.Join(t.TempDir(), "istok.db")
+	t.Setenv("ISTOK_AGENT_ID", "")
+
+	initialized := executeAt(t, root, database, "init", "--json")
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized.output).Project.ID
+
+	tasks, _ := newTaskRepositoryForTest(t, database)
+	actor := task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}
+	created, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "committed work"}, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed := executeAt(t, root, database, "task", "claim", "1", "--json"); claimed.err != nil {
+		t.Fatalf("task claim: %v", claimed.err)
+	}
+
+	gitCommitIn(t, filepath.Join(root, "web"), "feat: web change")
+
+	input := func(command string) *strings.Reader {
+		encoded, _ := json.Marshal(map[string]any{"cwd": root, "tool_name": "Bash", "tool_input": map[string]string{"command": command}})
+		return strings.NewReader(string(encoded))
+	}
+
+	other := executeAtWithInput(t, root, database, input("go test ./..."), "hook", "claude", "post-tool-use")
+	if other.err != nil || other.output != "" {
+		t.Fatalf("hook after another command = %q, %v", other.output, other.err)
+	}
+
+	linked := executeAtWithInput(t, root, database, input("git -C web commit -m 'feat: web change'"), "hook", "claude", "post-tool-use")
+	var output struct {
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(linked.output), &output); err != nil || output.HookSpecificOutput.HookEventName != "PostToolUse" || !strings.Contains(output.HookSpecificOutput.AdditionalContext, "task #1") {
+		t.Fatalf("commit hook = %q, %v", linked.output, linked.err)
+	}
+
+	again := executeAtWithInput(t, root, database, input("git commit --amend --no-edit"), "hook", "claude", "post-tool-use")
+	if again.err != nil || again.output != "" {
+		t.Fatalf("hook for a linked commit = %q, %v", again.output, again.err)
+	}
+
+	shown, err := tasks.Show(context.Background(), task.Selector{ProjectID: projectID, ID: created.ID}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var commits []task.Commit
+	for _, event := range shown.Events {
+		if commit, ok := task.CommitOf(event); ok {
+			commits = append(commits, commit)
+		}
+	}
+	if len(commits) != 1 || commits[0].Repository != "web" || commits[0].Subject != "feat: web change" {
+		t.Fatalf("linked commits = %+v", commits)
+	}
+}
+
+func TestGitCommitCommandPattern(t *testing.T) {
+	cases := map[string]bool{
+		"git commit -m x":                true,
+		"cd api && git commit -am 'x'":   true,
+		"git -C web commit -m x":         true,
+		"git -c user.name=x commit -m y": true,
+		"git status && git log":          false,
+		"echo git committee":             false,
+		"git show HEAD --format=commit":  false,
+	}
+	for command, want := range cases {
+		if got := gitCommitCommand.MatchString(command); got != want {
+			t.Errorf("gitCommitCommand(%q) = %v, want %v", command, got, want)
+		}
+	}
+}
+
+// gitCommitIn creates a git repository in directory with one commit.
+func gitCommitIn(t *testing.T, directory, subject string) {
+	t.Helper()
+
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(args ...string) {
+		command := exec.Command("git", append([]string{"-C", directory}, args...)...)
+		command.Env = append(command.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+
+	run("init", "-q")
+	run("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", subject)
 }

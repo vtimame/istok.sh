@@ -64,7 +64,7 @@ type taskHandoffInput struct {
 
 type taskBlockInput struct {
 	TaskID           string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
-	ExpectedRevision int64  `json:"expected_revision" jsonschema:"Positive current task revision required for compare-and-swap."`
+	ExpectedRevision int64  `json:"expected_revision,omitempty" jsonschema:"Optional current task revision for compare-and-swap; omit to block the current revision."`
 	Reason           string `json:"reason" jsonschema:"Non-blank reason for blocking the task."`
 }
 

@@ -130,7 +130,7 @@ func addTaskMutationTools(server *mcp.Server, projects *project.Service, tasks *
 			return keepRunAlive(ctx)(tasks.Handoff(ctx, selector, in.Note, actor.task()))
 		})
 	})
-	mcp.AddTool(server, tool("task_block", "Block a task.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskBlockInput) (*mcp.CallToolResult, TaskResult, error) {
+	mcp.AddTool(server, tool("task_block", "Block a task with the reason. Omit expected_revision to block the current revision. Keeps your run lease alive.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskBlockInput) (*mcp.CallToolResult, TaskResult, error) {
 		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {
 			return keepRunAlive(ctx)(tasks.Block(ctx, selector, in.ExpectedRevision, in.Reason, actor.task()))
 		})

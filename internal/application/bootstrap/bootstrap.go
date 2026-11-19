@@ -205,12 +205,12 @@ func usageProviders() fx.Option {
 	)
 }
 
-func MCPApp(path, root string, profile mcpserver.Profile, actorID, actorName string, server **mcp.Server) *fx.App {
+func MCPApp(path, root string, profile mcpserver.Profile, tools mcpserver.ToolSet, actorID, actorName string, server **mcp.Server) *fx.App {
 	return fx.New(
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
 		MCPOptions(path),
-		mcpserver.Module(mcpserver.Config{Profile: profile, Root: root, ActorID: actorID, ActorName: actorName}),
+		mcpserver.Module(mcpserver.Config{Profile: profile, Tools: tools, Root: root, ActorID: actorID, ActorName: actorName}),
 		fx.Invoke(func(value *mcp.Server) { *server = value }),
 	)
 }

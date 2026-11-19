@@ -73,6 +73,7 @@ type VersionCommand struct{}
 type MCPCommand struct {
 	Database  string            `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
 	Profile   mcpserver.Profile `name:"profile" enum:"worker,supervisor,admin" default:"worker" help:"MCP tool profile."`
+	Tools     mcpserver.ToolSet `name:"tools" enum:"core,full" default:"core" env:"ISTOK_MCP_TOOLS" help:"Tools to list: core (the short workflow) or full (every tool of the profile)."`
 	ActorID   string            `name:"actor-id" help:"Stable MCP agent ID; generated once at startup when omitted." env:"ISTOK_AGENT_ID"`
 	ActorName string            `name:"actor-name" default:"MCP Agent" help:"MCP agent display name." env:"ISTOK_AGENT_NAME"`
 }
@@ -202,7 +203,7 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 			return fmt.Errorf("resolve MCP root: %w", err)
 		}
 
-		return runMCP(ctx, command.MCP.Database, root.CanonicalPath, command.MCP.Profile, command.MCP.ActorID, command.MCP.ActorName)
+		return runMCP(ctx, command.MCP.Database, root.CanonicalPath, command.MCP.Profile, command.MCP.Tools, command.MCP.ActorID, command.MCP.ActorName)
 	case strings.HasPrefix(commandName, "init"):
 		return runInit(ctx, command.Init, cwd, output)
 	case strings.HasPrefix(commandName, "project show"):
@@ -326,9 +327,9 @@ func runVersion(ctx context.Context, output io.Writer) error {
 	return nil
 }
 
-func runMCP(ctx context.Context, database, root string, profile mcpserver.Profile, actorID, actorName string) error {
+func runMCP(ctx context.Context, database, root string, profile mcpserver.Profile, tools mcpserver.ToolSet, actorID, actorName string) error {
 	var server *mcp.Server
-	app := bootstrap.MCPApp(database, root, profile, actorID, actorName, &server)
+	app := bootstrap.MCPApp(database, root, profile, tools, actorID, actorName, &server)
 
 	if err := app.Start(ctx); err != nil {
 		return fmt.Errorf("start MCP application: %w", err)
