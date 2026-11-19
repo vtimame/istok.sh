@@ -1,5 +1,7 @@
 package cli
 
+import "time"
+
 // UICommand serves the web UI by default, so `istok ui --port N` keeps working,
 // and groups the background service helpers under `istok ui service`.
 type UICommand struct {
@@ -13,6 +15,8 @@ type UIServeCommand struct {
 	Port     int    `name:"port" default:"7700" help:"Loopback port; 0 picks a free port." env:"ISTOK_UI_PORT"`
 	NoOpen   bool   `name:"no-open" help:"Print the URL without opening a browser."`
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
+
+	SyncInterval time.Duration `name:"sync-interval" default:"2m" env:"ISTOK_SYNC_INTERVAL" help:"How often to sync projects with the hub, when this device joined one; 0 turns it off."`
 }
 
 type UIServiceCommand struct {

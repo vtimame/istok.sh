@@ -41,6 +41,14 @@ All notable changes to Istok are documented here. The format follows
   pulls and pushes changes, merging them with the same rules as
   `istok import`. `istok hub device list|revoke` and `istok hub backup`
   manage the hub. Nothing is written to the repository.
+- **Sync runs by itself once a device joined a hub.** The MCP server pulls
+  the project before `task_start`, so a handoff written on another device is
+  in the brief, and pushes a few seconds after each write and on exit. The
+  `SessionStart` and `Stop` hooks sync the current project, and the UI
+  service syncs every project every two minutes
+  (`istok ui --sync-interval`, `ISTOK_SYNC_INTERVAL`, `0` turns it off).
+  Processes take turns through a lock in the sync directory; an unreachable
+  hub delays `task_start` and hooks by at most a few seconds.
 - **Shorter workflow.** `task_start` creates or claims a task, or continues
   your own run of it, and returns the context and the latest handoff in one
   call. `task_evidence` records a check of any kind, including a CI run or a

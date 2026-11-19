@@ -18,6 +18,7 @@ import (
 	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/replica"
 )
 
 // HookCommand runs one Istok hook for an agent. Agents call it; people use
@@ -101,6 +102,12 @@ func hookOutput(ctx context.Context, command HookCommand, event agenthooks.Event
 		return linkCommitHook(ctx, command.Database, cwd, value)
 	}
 
+	// A session starts from what the other devices did, and a stopping one
+	// leaves its work on the hub.
+	if event == agenthooks.EventSessionStart || event == agenthooks.EventStop {
+		syncFromHook(ctx, command.Database, cwd)
+	}
+
 	report, err := loadResume(ctx, command.Database, cwd, os.Getenv("ISTOK_AGENT_ID"))
 	if err != nil {
 		return "", err
@@ -119,6 +126,38 @@ func hookOutput(ctx context.Context, command HookCommand, event agenthooks.Event
 	}
 
 	return "", nil
+}
+
+// hookSyncTimeout leaves the rest of hookTimeout for the hook's own output.
+const hookSyncTimeout = 3 * time.Second
+
+// syncFromHook syncs the project at cwd when this device joined a hub. A
+// hook must never break the agent, so failures are left to istok sync status.
+func syncFromHook(ctx context.Context, database, cwd string) {
+	if config, err := replica.LoadConfig(replica.Dir()); err != nil || config.Key == "" {
+		return
+	}
+
+	services, app := syncApplication(database)
+	if err := app.Start(ctx); err != nil {
+		return
+	}
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = app.Stop(stopCtx)
+	}()
+
+	current, err := services.projects.Current(ctx, cwd)
+	if err != nil {
+		return
+	}
+
+	syncCtx, cancel := context.WithTimeout(ctx, hookSyncTimeout)
+	defer cancel()
+
+	syncer := replica.NewSyncer(replica.Dir(), services.exchange, services.state, nil)
+	_, _ = syncer.SyncProject(syncCtx, current.ID)
 }
 
 // preCompactInstructions becomes part of the compaction prompt.

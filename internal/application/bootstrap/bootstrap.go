@@ -25,6 +25,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/buildinfo"
 	"github.com/vtimame/istok.sh/internal/mcpserver"
 	"github.com/vtimame/istok.sh/internal/project"
+	"github.com/vtimame/istok.sh/internal/replica"
 	"github.com/vtimame/istok.sh/internal/storage"
 	"github.com/vtimame/istok.sh/internal/storage/contextrepo"
 	"github.com/vtimame/istok.sh/internal/storage/exchangerepo"
@@ -222,12 +223,24 @@ func MCPApp(path, root string, profile mcpserver.Profile, tools mcpserver.ToolSe
 		fx.Supply(buildinfo.Current()),
 		MCPOptions(path),
 		mcpserver.Module(mcpserver.Config{Profile: profile, Tools: tools, Root: root, ActorID: actorID, ActorName: actorName}),
+		fx.Provide(exchangerepo.New),
+		fx.Provide(syncrepo.New),
+		fx.Invoke(func(value *mcp.Server, projects *project.Service, exchange *exchangerepo.Repository, state *syncrepo.Repository, lc fx.Lifecycle) {
+			// Agents on another device see this session's progress without
+			// anyone running istok sync. The last writes are pushed on exit.
+			syncer := replica.NewSyncer(replica.Dir(), exchange, state, replica.WarnTo(os.Stderr))
+			value.AddReceivingMiddleware(mcpserver.SyncFilter(syncer, projects, root))
+			lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
+				syncer.Flush(ctx)
+				return nil
+			}})
+		}),
 		fx.Invoke(func(value *mcp.Server) { *server = value }),
 	)
 }
 
 // UIApp wires the read-only services behind the embedded web UI.
-func UIApp(path string, services *webui.Services) *fx.App {
+func UIApp(path string, services *webui.Services, syncer **replica.Syncer) *fx.App {
 	return fx.New(
 		fx.NopLogger,
 		fx.Supply(buildinfo.Current()),
@@ -235,6 +248,10 @@ func UIApp(path string, services *webui.Services) *fx.App {
 		fx.Provide(uireadrepo.New),
 		fx.Provide(exchangerepo.New),
 		fx.Provide(exchangeapp.NewService),
+		fx.Provide(syncrepo.New),
+		fx.Invoke(func(exchange *exchangerepo.Repository, state *syncrepo.Repository) {
+			*syncer = replica.NewSyncer(replica.Dir(), exchange, state, replica.WarnTo(os.Stderr))
+		}),
 		fx.Invoke(func(info buildinfo.Info, readModel *uireadrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service, exchanges *exchangeapp.Service) {
 			*services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge, Exchange: exchanges}
 		}),

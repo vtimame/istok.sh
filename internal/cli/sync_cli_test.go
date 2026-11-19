@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vtimame/istok.sh/internal/hub/server"
+	"github.com/vtimame/istok.sh/internal/replica"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
@@ -212,4 +213,62 @@ func hubFiles(t *testing.T, hub *server.Hub) []byte {
 	}
 
 	return data
+}
+
+func TestSessionStartHookAndNudgesSyncThroughTheHub(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	hub, address := startHub(t)
+	arch, mac := newSyncDevice(t), newSyncDevice(t)
+
+	initialized := arch.must("init", "--name", "demo", "--json")
+	projectID := decodeJSONResult[struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}](t, initialized).Project.ID
+
+	tasks, _ := newTaskRepositoryForTest(t, arch.database)
+	actor := task.ActorSnapshot{ID: "test", Kind: "test", Name: "Test"}
+	if _, err := tasks.Create(context.Background(), task.CreateInput{ProjectID: projectID, Title: "evening work"}, actor); err != nil {
+		t.Fatal(err)
+	}
+
+	key := decodeJSONResult[struct {
+		Recovery string `json:"recovery"`
+	}](t, arch.must("sync", "join", invite(t, hub, "arch", address), "--json")).Recovery
+	arch.must("sync", "enable")
+	mac.must("sync", "join", invite(t, hub, "mac", address), "--key", key)
+	mac.must("sync", "enable", "--project", projectID)
+
+	// Arch claims the task; a nudge pushes it without istok sync.
+	arch.must("task", "claim", "1")
+	nudgeAndFlush(t, arch, projectID)
+
+	// A session starting on the mac sees the claimed task in its resume.
+	t.Setenv("ISTOK_SYNC_DIR", mac.syncDir)
+	hookInput := strings.NewReader(`{"cwd":"` + mac.root + `"}`)
+	started := executeAtWithInput(t, mac.root, mac.database, hookInput, "hook", "claude", "session-start")
+	if started.err != nil || !strings.Contains(started.output, "evening work") {
+		t.Fatalf("session-start hook = %q, %v; want the task claimed on arch", started.output, started.err)
+	}
+}
+
+// nudgeAndFlush does what an MCP server does after a write and on exit.
+func nudgeAndFlush(t *testing.T, device *syncDevice, projectID string) {
+	t.Helper()
+
+	services, app := syncApplication(device.database)
+	ctx := context.Background()
+	if err := app.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = app.Stop(ctx) }()
+
+	syncer := replica.NewSyncer(device.syncDir, services.exchange, services.state, func(err error) { t.Errorf("sync: %v", err) })
+	syncer.Nudge(projectID)
+	syncer.Nudge(projectID)
+
+	flushCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	syncer.Flush(flushCtx)
 }

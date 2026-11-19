@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	"github.com/vtimame/istok.sh/internal/replica"
 	"github.com/vtimame/istok.sh/internal/uiservice"
 	"github.com/vtimame/istok.sh/internal/webui"
 )
@@ -80,7 +81,8 @@ func runUIServiceInstall(ctx context.Context, command UIServiceInstallCommand, o
 
 func runUI(ctx context.Context, command UIServeCommand, output io.Writer) error {
 	var services webui.Services
-	app := bootstrap.UIApp(command.Database, &services)
+	var syncer *replica.Syncer
+	app := bootstrap.UIApp(command.Database, &services, &syncer)
 
 	if err := app.Start(ctx); err != nil {
 		return fmt.Errorf("start web UI application: %w", err)
@@ -102,6 +104,12 @@ func runUI(ctx context.Context, command UIServeCommand, output io.Writer) error 
 			fmt.Fprintf(output, "Could not open a browser (%v); open the URL above manually.\n", err)
 		}
 	}
+
+	// The UI service runs all day, so it keeps synced projects up to date
+	// between agent sessions.
+	syncCtx, stopSync := context.WithCancel(ctx)
+	defer stopSync()
+	go syncer.Run(syncCtx, command.SyncInterval)
 
 	return server.Serve(ctx)
 }
