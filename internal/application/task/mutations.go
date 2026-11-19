@@ -40,6 +40,13 @@ func (s *Service) Progress(ctx context.Context, selector task.Selector, expected
 	return s.appendText(ctx, selector, expected, body, actor, s.repository.Progress)
 }
 
+// Handoff records where the work stands for the next session: what is done,
+// where it stopped, decisions and the next step. The latest handoff is the
+// current one. It appends without compare-and-swap, as for Comment.
+func (s *Service) Handoff(ctx context.Context, selector task.Selector, body string, actor task.ActorSnapshot) (task.Task, error) {
+	return s.appendText(ctx, selector, 0, body, actor, s.repository.Handoff)
+}
+
 // appendAttempts bounds retries when another writer changes the task between
 // reading its revision and appending the event.
 const appendAttempts = 5

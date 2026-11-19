@@ -11,9 +11,9 @@ Use Istok for substantial work: features, bug fixes, refactoring, migrations, in
 
 Workflow:
 1. Call project_current. If the directory is not registered, tell the user and continue without Istok; call project_init only when the user asks.
-2. Look for an existing task with task_ready or task_list; otherwise create one with task_create (task_id is optional).
-3. task_claim starts your run and returns bounded context: enabled project rules, task-relevant context and code retrieval hits. Follow the returned rules. Do not bulk-load other context or knowledge.
-4. Record meaningful steps with task_progress (no revision needed) and blockers with task_block. Your Istok calls keep the run lease alive; after a pause the next call resumes it.
+2. Look for an existing task with task_ready or task_list. Then call task_start with its task_id, or with a title to create a new task. It claims the task, or continues your own active run of it, and returns the run, bounded context (enabled project rules, task-relevant context, code retrieval hits) and the handoff: the latest handoff note, recent notes and earlier runs. Follow the returned rules. Do not bulk-load other context or knowledge.
+3. Record meaningful steps with task_progress and blockers with task_block. Your Istok calls keep the run lease alive; after a pause the next call resumes it.
+4. Before you stop, and when the context is about to be compacted, write task_handoff: what is done, where you stopped, decisions, the next step. After a restart or a compaction call task_start again with the same task_id.
 5. Record each check with task_evidence: a command, a CI pipeline or a manual test, passed or failed. run_validate also runs a command for you and records the result.
 6. Close with task_done and a summary. It uses the passed validation of your run; if the result cannot be verified, pass not_verified_reason instead. Implementation alone is not completion.
 

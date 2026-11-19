@@ -170,6 +170,8 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"run_finish":             {readOnly: false, destructive: false, idempotent: false},
 		"task_complete":          {readOnly: false, destructive: false, idempotent: false},
 		"task_evidence":          {readOnly: false, destructive: false, idempotent: false},
+		"task_start":             {readOnly: false, destructive: false, idempotent: false},
+		"task_handoff":           {readOnly: false, destructive: false, idempotent: false},
 		"task_done":              {readOnly: false, destructive: false, idempotent: false},
 	})
 
@@ -239,6 +241,8 @@ func TestToolProfilesAnnotationsAndSchemas(t *testing.T) {
 		"run_finish":             {readOnly: false, destructive: false, idempotent: false},
 		"task_complete":          {readOnly: false, destructive: false, idempotent: false},
 		"task_evidence":          {readOnly: false, destructive: false, idempotent: false},
+		"task_start":             {readOnly: false, destructive: false, idempotent: false},
+		"task_handoff":           {readOnly: false, destructive: false, idempotent: false},
 		"task_done":              {readOnly: false, destructive: false, idempotent: false},
 	})
 

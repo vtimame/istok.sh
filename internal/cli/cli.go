@@ -45,6 +45,7 @@ type CLI struct {
 	Search     SearchCommand          `cmd:"" help:"Search the local code index."`
 	Graph      GraphCommand           `cmd:"" help:"Explore the local code graph."`
 	Usage      UsageCommand           `cmd:"" help:"Report how agents used Istok through MCP on this device."`
+	Resume     ResumeCommand          `cmd:"" help:"Print the interrupted work of the current project, for an agent hook."`
 	Completion CompletionCommand      `cmd:"" help:"Set up shell completion."`
 	Migrate    InternalMigrateCommand `cmd:"" hidden:""`
 	Cleanup    InternalCleanupCommand `cmd:"" hidden:""`
@@ -255,6 +256,8 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runKnowledge(ctx, command.Knowledge, commandName, cwd, output)
 	case commandName == "usage":
 		return runUsage(ctx, command.Usage, output)
+	case commandName == "resume":
+		return runResume(ctx, command.Resume, cwd, output)
 	case commandName == "export":
 		return runExport(ctx, command.Export, cwd, output)
 	case strings.HasPrefix(commandName, "import"):
@@ -483,6 +486,8 @@ func renderProjectValue(value any) string {
 		return renderImportReport(typed)
 	case usage.Report:
 		return renderUsageReport(typed)
+	case resumeReport:
+		return renderResumeReport(typed)
 	default:
 		return fmt.Sprint(value)
 	}

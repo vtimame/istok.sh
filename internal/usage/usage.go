@@ -62,9 +62,10 @@ type Step struct {
 // Funnel lists the workflow stages in order.
 var Funnel = []Step{
 	{Name: "project", Tools: []string{"project_current"}},
-	{Name: "find or create task", Tools: []string{"task_list", "task_ready", "task_show", "task_create"}},
-	{Name: "claim", Tools: []string{"task_claim"}},
-	{Name: "progress", Tools: []string{"task_progress", "task_comment", "task_block"}},
+	{Name: "find or create task", Tools: []string{"task_list", "task_ready", "task_show", "task_create", "task_start"}},
+	{Name: "claim", Tools: []string{"task_claim", "task_start"}},
+	{Name: "progress", Tools: []string{"task_progress", "task_comment", "task_block", "task_handoff"}},
+	{Name: "handoff", Tools: []string{"task_handoff"}},
 	{Name: "heartbeat", Tools: []string{"run_heartbeat"}},
 	{Name: "validate", Tools: []string{"run_validate", "validation_record", "task_evidence"}},
 	{Name: "finish run", Tools: []string{"run_finish", "task_done"}},

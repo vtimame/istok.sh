@@ -125,6 +125,11 @@ func addTaskMutationTools(server *mcp.Server, projects *project.Service, tasks *
 	addTaskTextTool(server, "task_progress", "Add a task progress update. Omit expected_revision to append without compare-and-swap. Keeps your run lease alive.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
 		return keepRunAlive(ctx)(tasks.Progress(ctx, selector, expected, body, actor.task()))
 	})
+	mcp.AddTool(server, tool("task_handoff", "Record where the work stands for the next session: done, where it stopped, decisions, next step. The latest handoff is current; task_start returns it. Keeps your run lease alive.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskHandoffInput) (*mcp.CallToolResult, TaskResult, error) {
+		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {
+			return keepRunAlive(ctx)(tasks.Handoff(ctx, selector, in.Note, actor.task()))
+		})
+	})
 	mcp.AddTool(server, tool("task_block", "Block a task.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskBlockInput) (*mcp.CallToolResult, TaskResult, error) {
 		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {
 			return keepRunAlive(ctx)(tasks.Block(ctx, selector, in.ExpectedRevision, in.Reason, actor.task()))

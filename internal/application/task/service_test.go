@@ -46,6 +46,11 @@ func (r *fakeRepository) Progress(context.Context, string, int64, string, task.A
 	r.unexpected()
 	return task.Task{}, nil
 }
+
+func (r *fakeRepository) Handoff(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error) {
+	r.unexpected()
+	return task.Task{}, nil
+}
 func (r *fakeRepository) Block(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error) {
 	r.unexpected()
 	return task.Task{}, nil

@@ -13,6 +13,7 @@ type Repository interface {
 	Update(context.Context, string, int64, task.Patch, task.ActorSnapshot) (task.Task, error)
 	Comment(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error)
 	Progress(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error)
+	Handoff(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error)
 	Block(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error)
 	Unblock(context.Context, string, int64, string, task.ActorSnapshot) (task.Task, error)
 	Delete(context.Context, string, int64, task.ActorSnapshot) (task.Task, error)

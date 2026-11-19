@@ -141,6 +141,39 @@ func (s *Service) DoneTask(ctx context.Context, selector task.Selector, input Ta
 	return TaskDone{Task: completed, Run: finished, Completion: completion}, nil
 }
 
+// StartTask claims the task or, when the actor already holds its active run,
+// continues that run: its lease is extended or revived and Resumed is true.
+// Calling it again after a restart or a context compaction is safe.
+func (s *Service) StartTask(ctx context.Context, selector task.Selector, input run.ClaimInput, actor run.ActorSnapshot) (run.Run, bool, error) {
+	if err := actor.Validate(); err != nil {
+		return run.Run{}, false, err
+	}
+
+	_, active, err := s.ownedActiveRun(ctx, selector, actor)
+	if err == nil {
+		s.touch(ctx, active.ID, active.LeaseID, actor)
+
+		current, err := s.repository.GetRun(ctx, active.ID)
+		if err != nil {
+			return run.Run{}, false, err
+		}
+
+		return current, true, nil
+	}
+
+	var runErr *run.Error
+	if !errors.As(err, &runErr) || runErr.Code != run.CodeInvalidTransition {
+		return run.Run{}, false, err
+	}
+
+	claimed, err := s.Claim(ctx, selector, input, actor)
+	if err != nil {
+		return run.Run{}, false, err
+	}
+
+	return claimed, false, nil
+}
+
 // ownedActiveRun returns the task and its active run when the actor owns the
 // run's lease.
 func (s *Service) ownedActiveRun(ctx context.Context, selector task.Selector, actor run.ActorSnapshot) (task.Task, run.Run, error) {

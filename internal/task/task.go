@@ -72,6 +72,14 @@ func (v CreateInput) Validate() error {
 	return nil
 }
 
+// Event types an agent writes to hand work over to the next session.
+const (
+	EventProgress = "progress"
+	EventHandoff  = "handoff"
+	EventBlocked  = "blocked"
+	EventComment  = "commented"
+)
+
 type Event struct {
 	ID           string        `json:"id"`
 	TaskID       string        `json:"task_id"`

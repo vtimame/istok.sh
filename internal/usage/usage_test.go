@@ -35,6 +35,7 @@ func TestSummarizeCountsSessionsFunnelErrorsAndTools(t *testing.T) {
 		{Step: "find or create task", Sessions: 1},
 		{Step: "claim", Sessions: 1},
 		{Step: "progress", Sessions: 1},
+		{Step: "handoff", Sessions: 0},
 		{Step: "heartbeat", Sessions: 0},
 		{Step: "validate", Sessions: 1},
 		{Step: "finish run", Sessions: 0},

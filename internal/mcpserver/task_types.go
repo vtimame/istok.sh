@@ -57,6 +57,11 @@ type taskTextInput struct {
 	Body             string `json:"body" jsonschema:"Non-blank comment or progress body."`
 }
 
+type taskHandoffInput struct {
+	TaskID string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
+	Note   string `json:"note" jsonschema:"Where the work stands: done, where it stopped, decisions, next step."`
+}
+
 type taskBlockInput struct {
 	TaskID           string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
 	ExpectedRevision int64  `json:"expected_revision" jsonschema:"Positive current task revision required for compare-and-swap."`
