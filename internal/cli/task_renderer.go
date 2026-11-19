@@ -139,14 +139,16 @@ func taskListBlockedBy(value task.TaskListItem) string {
 
 // RenderTaskShow remains available for renderers that do not have project context.
 func (humanTaskRenderer) RenderTaskShow(value task.Show) string {
-	return renderTaskShow("Task", value)
+	return renderTaskShow("Task", value, nil)
 }
 
-func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Show) string {
-	return renderTaskShow(projectName, value)
+// RenderProjectTaskShow marks the linked commits in lost as no longer on any
+// branch.
+func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Show, lost map[string]bool) string {
+	return renderTaskShow(projectName, value, lost)
 }
 
-func renderTaskShow(projectName string, value task.Show) string {
+func renderTaskShow(projectName string, value task.Show, lost map[string]bool) string {
 	var output strings.Builder
 	state := renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.Blockers))
 
@@ -176,7 +178,7 @@ func renderTaskShow(projectName string, value task.Show) string {
 
 	output.WriteString(presentation.SectionTitle("History"))
 	output.WriteString("\n")
-	writeHistory(&output, value.Events)
+	writeHistory(&output, value.Events, lost)
 
 	return output.String()
 }
@@ -314,7 +316,7 @@ func writeRelations(output *strings.Builder, label string, values []task.TaskSum
 	}
 }
 
-func writeHistory(output *strings.Builder, events []task.Event) {
+func writeHistory(output *strings.Builder, events []task.Event, lost map[string]bool) {
 	if len(events) == 0 {
 		output.WriteString(presentation.RailLine("—"))
 		output.WriteString("\n")
@@ -324,6 +326,9 @@ func writeHistory(output *strings.Builder, events []task.Event) {
 	bodies := make([]historyBody, len(events))
 	for index, event := range events {
 		bodies[index] = parseHistoryBody(event.Type, event.Body)
+		if commit, ok := task.CommitOf(event); ok && lost[commit.SHA] {
+			bodies[index].Text += "\nNot on any branch any more: the history was rewritten after linking."
+		}
 	}
 
 	for index, event := range events {

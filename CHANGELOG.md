@@ -39,13 +39,17 @@ All notable changes to Istok are documented here. The format follows
   current project.
 - **Agent hooks.** `istok hooks install claude` (or `codex`) adds hooks that
   print the interrupted work when a session starts and, for Claude Code, keep
-  the Istok state in compaction summaries and link a `git commit` to the task
+  the Istok state in compaction summaries and link new commits to the task
   of the only active run. `--stop` also asks the agent once for a handoff
   when it stops. `istok hooks status` and `uninstall` manage them; other
   settings and hooks are kept, with a backup.
 - **Commits on tasks.** `task_commit` links a git commit, read from the
   repository, to a task; `repository` selects a nested repository of the
-  project. Linking the same commit twice changes nothing.
+  project. Linking the same commit twice changes nothing. The Claude Code
+  hook links every new commit on HEAD, including several commits made by one
+  command and commits rebuilt by `commit-tree`, `reset`, `rebase`,
+  `cherry-pick` or `merge`. `istok task show` lists linked commits with their
+  subject and marks those no branch holds any more after a history rewrite.
 - **Usage report.** `istok mcp` logs tool calls locally, and `istok usage`
   shows which tools agents call, how often they fail and where they drop out
   of the workflow.

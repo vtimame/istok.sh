@@ -2,9 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/task"
 )
 
 // historyBody is a task event body split into the run it refers to and the
@@ -16,6 +18,7 @@ import (
 //	run_finished   "<run id>\n<result summary>"
 //	run_abandoned  "run_id=<run id>\n<reason>"
 //	completed      "<completion id>\n<note>" (the completion id is not shown)
+//	commit         JSON task.Commit, shown as "<short sha> <subject>" and the repository
 type historyBody struct {
 	RunID string
 	Text  string
@@ -43,6 +46,11 @@ func parseHistoryBody(kind, body string) historyBody {
 		first, rest := splitFirstLine(body)
 		if id := strings.TrimPrefix(first, "run_id="); run.IsUUIDv7(id) {
 			return historyBody{RunID: id, Text: rest}
+		}
+
+	case task.EventCommit:
+		if commit, ok := task.CommitOf(task.Event{Type: kind, Body: body}); ok {
+			return historyBody{Text: commitText(commit)}
 		}
 
 	case "completed":
@@ -80,4 +88,33 @@ func parseClaimBody(body string) historyBody {
 func splitFirstLine(body string) (string, string) {
 	first, rest, _ := strings.Cut(body, "\n")
 	return strings.TrimSpace(first), strings.TrimSpace(rest)
+}
+
+// shortSHA is how many characters of a commit sha history shows.
+const shortSHA = 12
+
+func commitText(commit task.Commit) string {
+	sha := commit.SHA
+	if len(sha) > shortSHA {
+		sha = sha[:shortSHA]
+	}
+
+	text := fmt.Sprintf("`%s` %s", sha, commit.Subject)
+	if commit.Repository != "" && commit.Repository != "." {
+		text += "\nRepository: " + commit.Repository
+	}
+
+	return text
+}
+
+// linkedCommits returns the commits linked to the task.
+func linkedCommits(events []task.Event) []task.Commit {
+	var commits []task.Commit
+	for _, event := range events {
+		if commit, ok := task.CommitOf(event); ok {
+			commits = append(commits, commit)
+		}
+	}
+
+	return commits
 }

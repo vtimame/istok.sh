@@ -32,36 +32,145 @@ func Inspect(ctx context.Context, root, repository, rev string) (task.Commit, er
 		return task.Commit{}, task.NewError(task.CodeInvalid, "commit revision must not start with '-'")
 	}
 
-	output, err := git(ctx, directory, "show", "-s", "--format=%H%x00%s%x00%cI", rev+"^{commit}", "--")
+	output, err := git(ctx, directory, "show", "-s", "--format="+commitFormat, rev+"^{commit}", "--")
 	if err != nil {
 		return task.Commit{}, task.NewError(task.CodeInvalid, "read commit %s in %s: %v", rev, relative, err)
 	}
 
-	fields := strings.SplitN(strings.TrimSpace(output), "\x00", 3)
-	if len(fields) != 3 {
-		return task.Commit{}, fmt.Errorf("unexpected git show output %q", output)
+	commit, err := parseCommit(strings.TrimSpace(output))
+	if err != nil {
+		return task.Commit{}, err
 	}
+
+	commit.Repository = relative
+	commit.Remote = remoteOf(ctx, directory)
+
+	return commit, nil
+}
+
+// commitFormat prints one commit per line: sha, subject and committer time
+// separated by NUL bytes.
+const commitFormat = "%H%x00%s%x00%cI"
+
+// maxRecentCommits bounds the commits Recent reads from one repository.
+const maxRecentCommits = 50
+
+func parseCommit(line string) (task.Commit, error) {
+	fields := strings.SplitN(line, "\x00", 3)
+	if len(fields) != 3 {
+		return task.Commit{}, fmt.Errorf("unexpected git output %q", line)
+	}
+
 	committedAt, err := time.Parse(time.RFC3339, fields[2])
 	if err != nil {
 		return task.Commit{}, fmt.Errorf("parse commit time %q: %w", fields[2], err)
 	}
 
-	remote, _ := git(ctx, directory, "remote", "get-url", "origin")
-
-	return task.Commit{
-		Repository:  relative,
-		SHA:         fields[0],
-		Subject:     fields[1],
-		CommittedAt: committedAt.UTC(),
-		Remote:      strings.TrimSpace(remote),
-	}, nil
+	return task.Commit{SHA: fields[0], Subject: fields[1], CommittedAt: committedAt.UTC()}, nil
 }
 
-// Recent returns the HEAD commits made after since in the project root and
-// in the repositories directly inside it, for projects that hold several
-// repositories.
+func remoteOf(ctx context.Context, directory string) string {
+	remote, _ := git(ctx, directory, "remote", "get-url", "origin")
+	return strings.TrimSpace(remote)
+}
+
+// Recent returns the commits on HEAD made after since, oldest first, in the
+// project root and in the repositories directly inside it, for projects
+// that hold several repositories. A command may make several commits, so
+// Recent reads all of them, not only HEAD.
 func Recent(ctx context.Context, root string, since time.Time) ([]task.Commit, error) {
-	repositories := []string{"."}
+	repositories, err := repositories(root)
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []task.Commit
+	for _, repository := range repositories {
+		values, err := recentIn(ctx, root, repository, since)
+		if err != nil {
+			// A folder that is not a repository or has no commits yet has
+			// nothing to link.
+			continue
+		}
+		commits = append(commits, values...)
+	}
+
+	return commits, nil
+}
+
+func recentIn(ctx context.Context, root, repository string, since time.Time) ([]task.Commit, error) {
+	relative, directory, err := repositoryPath(root, repository)
+	if err != nil {
+		return nil, err
+	}
+
+	output, err := git(ctx, directory, "log",
+		fmt.Sprintf("-n%d", maxRecentCommits),
+		fmt.Sprintf("--since=@%d", since.Unix()),
+		"--format="+commitFormat,
+		"HEAD", "--",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	remote := ""
+	commits := make([]task.Commit, 0, len(lines))
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+
+		commit, err := parseCommit(lines[i])
+		if err != nil {
+			return nil, err
+		}
+		if !commit.CommittedAt.After(since) {
+			continue
+		}
+
+		if remote == "" {
+			remote = remoteOf(ctx, directory)
+		}
+		commit.Repository = relative
+		commit.Remote = remote
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// Lost reports the linked commits that no branch, tag or remote branch holds
+// any more, usually because the history was rewritten after linking. Commits
+// of repositories that cannot be read are left out: their state is unknown.
+func Lost(ctx context.Context, root string, commits []task.Commit) map[string]bool {
+	lost := map[string]bool{}
+
+	for _, commit := range commits {
+		_, directory, err := repositoryPath(root, commit.Repository)
+		if err != nil {
+			continue
+		}
+
+		if _, err := git(ctx, directory, "cat-file", "-e", commit.SHA+"^{commit}"); err != nil {
+			lost[commit.SHA] = true
+			continue
+		}
+
+		refs, err := git(ctx, directory, "for-each-ref", "--count=1", "--contains", commit.SHA, "--format=%(refname)")
+		if err == nil && strings.TrimSpace(refs) == "" {
+			lost[commit.SHA] = true
+		}
+	}
+
+	return lost
+}
+
+// repositories lists the project root and the folders directly inside it
+// that are git repositories.
+func repositories(root string) ([]string, error) {
+	values := []string{"."}
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -72,24 +181,11 @@ func Recent(ctx context.Context, root string, since time.Time) ([]task.Commit, e
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(root, entry.Name(), ".git")); err == nil {
-			repositories = append(repositories, entry.Name())
+			values = append(values, entry.Name())
 		}
 	}
 
-	var commits []task.Commit
-	for _, repository := range repositories {
-		commit, err := Inspect(ctx, root, repository, "HEAD")
-		if err != nil {
-			// A folder that is not a repository or has no commits yet has
-			// nothing to link.
-			continue
-		}
-		if commit.CommittedAt.After(since) {
-			commits = append(commits, commit)
-		}
-	}
-
-	return commits, nil
+	return values, nil
 }
 
 // repositoryPath resolves the repository folder and rejects folders outside

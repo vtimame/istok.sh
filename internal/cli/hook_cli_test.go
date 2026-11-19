@@ -162,7 +162,9 @@ func TestCommitHookLinksTheCommitToTheOnlyActiveRun(t *testing.T) {
 		t.Fatalf("task claim: %v", claimed.err)
 	}
 
-	gitCommitIn(t, filepath.Join(root, "web"), "feat: web change")
+	web := filepath.Join(root, "web")
+	gitCommitIn(t, web, "chore: start over")
+	gitIn(t, web, "commit", "-q", "--allow-empty", "-m", "feat: web change")
 
 	input := func(command string) *strings.Reader {
 		encoded, _ := json.Marshal(map[string]any{"cwd": root, "tool_name": "Bash", "tool_input": map[string]string{"command": command}})
@@ -200,8 +202,16 @@ func TestCommitHookLinksTheCommitToTheOnlyActiveRun(t *testing.T) {
 			commits = append(commits, commit)
 		}
 	}
-	if len(commits) != 1 || commits[0].Repository != "web" || commits[0].Subject != "feat: web change" {
+	if len(commits) != 2 || commits[0].Subject != "chore: start over" || commits[1].Subject != "feat: web change" || commits[1].Repository != "web" {
 		t.Fatalf("linked commits = %+v", commits)
+	}
+
+	gitIn(t, web, "commit", "-q", "--amend", "--allow-empty", "-m", "feat: web change, reworded")
+	gitIn(t, web, "reflog", "expire", "--expire=now", "--all")
+
+	shownText := executeAt(t, root, database, "task", "show", "1")
+	if shownText.err != nil || !strings.Contains(shownText.output, commits[0].SHA[:12]) || strings.Count(shownText.output, "Not on any branch any more") != 1 {
+		t.Fatalf("task show after a rewrite = %q, %v", shownText.output, shownText.err)
 	}
 }
 
@@ -240,4 +250,15 @@ func gitCommitIn(t *testing.T, directory, subject string) {
 
 	run("init", "-q")
 	run("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", subject)
+}
+
+// gitIn runs git in directory as a test user.
+func gitIn(t *testing.T, directory string, args ...string) {
+	t.Helper()
+
+	command := exec.Command("git", append([]string{"-C", directory, "-c", "user.name=Test", "-c", "user.email=test@example.com"}, args...)...)
+	command.Env = append(command.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, output)
+	}
 }

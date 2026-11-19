@@ -17,9 +17,10 @@ import (
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
-// gitCommitCommand matches `git commit`, also with global options such as
-// `git -C repo commit`.
-var gitCommitCommand = regexp.MustCompile(`\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*commit\b`)
+// gitCommitCommand matches git commands that make or rewrite commits, also
+// with global options such as `git -C repo commit`: commit, commit-tree with
+// reset, rebase, cherry-pick, merge, am, pull and revert.
+var gitCommitCommand = regexp.MustCompile(`\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(?:commit|commit-tree|reset|rebase|cherry-pick|merge|am|pull|revert)(?:$|[\s;&|)])`)
 
 // commitWindow is how recent a HEAD commit must be to count as the one the
 // agent just made.

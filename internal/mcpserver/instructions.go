@@ -8,7 +8,7 @@ package mcpserver
 // in every session.
 const instructions = `Istok keeps this project's tasks, runs, checks and knowledge outside the chat, so work survives the session and another agent can continue it.
 
-Use it for substantial work: features, fixes, refactoring, migrations, investigations. Skip it for questions, quick reading and tiny edits.
+Use it for substantial work: features, fixes, refactoring, migrations and investigations. An investigation counts even when the user wants no code changes: debugging a report, explaining production data, tracing a bug. Start a task as soon as the work takes several steps or turns, and record hypotheses, what was ruled out and the conclusion with task_progress. Skip Istok only for one-off questions, quick reading and tiny edits.
 
 1. Call project_current. If the directory is not registered, tell the user and continue without Istok; call project_init only when the user asks.
 2. Find an existing task with task_ready or task_list, then call task_start with its task_id, or with a title to create one. It claims the task or continues your own run, and returns project rules, task context, code hits and the latest handoff. Follow the rules; do not bulk-load other context.

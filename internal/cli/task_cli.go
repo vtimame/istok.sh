@@ -13,6 +13,7 @@ import (
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
+	"github.com/vtimame/istok.sh/internal/gitcommit"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/task"
 )
@@ -36,6 +37,9 @@ type taskCommandResult struct {
 	Tasks   []task.TaskListItem
 	Show    task.Show
 	Action  string
+
+	// LostCommits are linked commits that no ref holds any more.
+	LostCommits map[string]bool
 }
 
 type taskListItemJSON struct {
@@ -115,7 +119,12 @@ func runTaskShow(ctx context.Context, command TaskShowCommand, cwd string, outpu
 			return taskCommandResult{}, err
 		}
 
-		return taskCommandResult{kind: taskCommandResultShow, Project: current, Show: value}, nil
+		var lost map[string]bool
+		if current.Root != nil && !command.JSON {
+			lost = gitcommit.Lost(ctx, current.Root.CanonicalPath, linkedCommits(value.Events))
+		}
+
+		return taskCommandResult{kind: taskCommandResultShow, Project: current, Show: value, LostCommits: lost}, nil
 	})
 }
 
@@ -323,7 +332,7 @@ func renderTaskCommandResult(value taskCommandResult) string {
 		}
 		return humanTaskRenderer{}.RenderProjectTaskList(value.Project.Name, value.Tasks)
 	case taskCommandResultShow:
-		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show)
+		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show, value.LostCommits)
 	default:
 		return ""
 	}
