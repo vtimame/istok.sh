@@ -44,7 +44,9 @@ All notable changes to Istok are documented here. The format follows
   open connections, new connections and requests per address and device,
   bans an address for ten minutes after repeated failed handshakes and
   answers `rate_limited` when a device sends too much. A device that lost
-  its database gets its own rows back from the hub.
+  its database gets its own rows back from the hub. Releases publish the
+  hub image `ghcr.io/vtimame/istok-hub` (x86-64 and ARM64, unprivileged,
+  data in `/data`); `docker/hub/compose.yml` runs it.
 - **Sync runs by itself once a device joined a hub.** The MCP server pulls
   the project before `task_start`, so a handoff written on another device is
   in the brief, and pushes a few seconds after each write and on exit. The

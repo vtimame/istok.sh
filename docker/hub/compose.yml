@@ -1,0 +1,21 @@
+# An Istok sync hub. Set ISTOK_HUB_ADVERTISE to the HOST:PORT your devices
+# reach; invite a device with
+#   docker compose exec hub istok hub device add NAME
+services:
+  hub:
+    image: ghcr.io/vtimame/istok-hub:${ISTOK_HUB_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ISTOK_HUB_ADVERTISE: ${ISTOK_HUB_ADVERTISE:?set HOST:PORT devices use to reach the hub}
+    ports:
+      - "${ISTOK_HUB_PORT:-7443}:7443"
+    volumes:
+      - hub-data:/data
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  hub-data:

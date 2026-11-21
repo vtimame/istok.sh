@@ -104,6 +104,17 @@ The web UI opens on `http://127.0.0.1:7700` with every project, task, run and ch
 
 The documentation is also available [in Russian](https://istok.sh/docs/ru/getting-started/introduction), and as [`llms.txt`](https://istok.sh/llms.txt) for agents.
 
+## Sync between your devices
+
+To continue the same project on another machine, run a sync hub on any server your devices reach — a VPS or a home server, no domain or certificate needed. The hub stores only rows encrypted on your devices. With Docker, take [`docker/hub/compose.yml`](./docker/hub/compose.yml):
+
+```sh
+ISTOK_HUB_ADVERTISE=203.0.113.10:7443 docker compose up -d
+docker compose exec hub istok hub device add laptop   # prints a one-time invitation
+```
+
+On the device, `istok sync join CODE` registers it and `istok sync enable` in a project folder starts syncing; the second device joins with `--key` from `istok sync key`. The image `ghcr.io/vtimame/istok-hub` is published with every release for x86-64 and ARM64.
+
 ## Platforms
 
 Releases are built for Linux (x86-64, ARM64) and macOS (Intel, Apple Silicon). Windows is not supported yet.
