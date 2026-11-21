@@ -136,9 +136,12 @@ func (h *Hub) Serve(ctx context.Context, config ServeConfig) error {
 	guarded := newGuardedListener(ctx, listener, tlsConfig, guard)
 
 	server := &http.Server{
-		Handler:           newHandler(h.Store, guard, logger),
-		ConnState:         guarded.connState,
-		TLSConfig:         tlsConfig,
+		Handler:   newHandler(h.Store, guard, logger),
+		ConnState: guarded.connState,
+		// The listener does the handshakes with tlsConfig; the server gets a
+		// copy because it adds its HTTP/2 settings to its config when it
+		// starts, while handshakes already read the original.
+		TLSConfig:         tlsConfig.Clone(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute,
 		WriteTimeout:      2 * time.Minute,
