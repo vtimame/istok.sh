@@ -374,3 +374,27 @@ func TestDeviceRestoresItsOwnRowsFromTheHub(t *testing.T) {
 		t.Fatalf("restored task list = %q, want the task", list)
 	}
 }
+
+// A hub advertised under several addresses is reached through whichever
+// answers: here a closed port and an address that drops packets come first.
+func TestSyncReachesTheHubThroughAnyOfItsAddresses(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	hub, address := startHub(t)
+	arch := newSyncDevice(t)
+
+	arch.must("init", "--name", "demo")
+	arch.must("task", "create", "--title", "made on arch")
+
+	addresses := "127.0.0.1:1, 192.0.2.1:7443," + address
+	arch.must("sync", "join", invite(t, hub, "arch", addresses))
+
+	started := time.Now()
+	arch.must("sync", "enable")
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("sync enable took %s, want the reachable address used at once", elapsed)
+	}
+
+	if status := arch.must("sync", "status"); !strings.Contains(status, address) {
+		t.Fatalf("sync status = %q, want the hub addresses", status)
+	}
+}

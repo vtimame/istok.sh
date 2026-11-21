@@ -51,7 +51,10 @@ All notable changes to Istok are documented here. The format follows
   `--project ID` fetches a hub project into the current folder; `istok sync`
   pulls and pushes changes, merging them with the same rules as
   `istok import`. `istok hub device list|revoke` and `istok hub backup`
-  manage the hub. Nothing is written to the repository. The hub limits
+  manage the hub. A hub reached differently from different networks, say a
+  LAN address at home and a VPN address away, is advertised under several
+  addresses separated by commas; devices try them all at once and use the
+  first that proves to be the hub. Nothing is written to the repository. The hub limits
   open connections, new connections and requests per address and device,
   bans an address for ten minutes after repeated failed handshakes and
   answers `rate_limited` when a device sends too much. A device that lost

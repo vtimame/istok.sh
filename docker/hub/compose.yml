@@ -1,5 +1,6 @@
 # An Istok sync hub. Set ISTOK_HUB_ADVERTISE to the HOST:PORT your devices
-# reach; invite a device with
+# reach (several separated by commas, say a LAN and a VPN address; devices
+# use whichever answers); invite a device with
 #   docker compose exec hub istok hub device add NAME
 services:
   hub:

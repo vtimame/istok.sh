@@ -23,18 +23,24 @@ type Client struct {
 	http *http.Client
 }
 
-// New connects to address (HOST:PORT) and trusts only the hub with the
-// pinned fingerprint.
+// New connects to address (HOST:PORT, or several separated by commas, raced
+// at every new connection) and trusts only the hub with the pinned
+// fingerprint.
 func New(address, hubFingerprint string, device identity.Identity) *Client {
+	tlsConfig := identity.ClientConfig(device, hubFingerprint)
+	dialer := raceDialer{addresses: SplitAddresses(address), config: tlsConfig}
+
 	transport := &http.Transport{
-		TLSClientConfig:     identity.ClientConfig(device, hubFingerprint),
+		DialTLSContext:      dialer.DialTLSContext,
+		TLSClientConfig:     tlsConfig,
 		ForceAttemptHTTP2:   true,
 		TLSHandshakeTimeout: 10 * time.Second,
 		IdleConnTimeout:     time.Minute,
 	}
 
+	// The dialer picks the address; the URL host only names the hub.
 	return &Client{
-		base: "https://" + address,
+		base: "https://istok-hub",
 		http: &http.Client{Transport: transport, Timeout: 2 * time.Minute},
 	}
 }

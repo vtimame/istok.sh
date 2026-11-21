@@ -25,7 +25,7 @@ type HubCommand struct {
 
 type HubServeCommand struct {
 	Listen    string `name:"listen" default:":7443" env:"ISTOK_HUB_LISTEN" help:"Address to listen on."`
-	Advertise string `name:"advertise" env:"ISTOK_HUB_ADVERTISE" help:"HOST:PORT devices use to reach the hub; put into invitations."`
+	Advertise string `name:"advertise" env:"ISTOK_HUB_ADVERTISE" help:"HOST:PORT devices use to reach the hub, put into invitations; several separated by commas when devices reach it differently from different networks."`
 	Data      string `name:"data" env:"ISTOK_HUB_DATA" help:"Hub data directory. Defaults to ~/.local/share/istok-hub."`
 }
 
@@ -37,7 +37,7 @@ type HubDeviceCommand struct {
 
 type HubDeviceAddCommand struct {
 	Name    string        `arg:"" help:"Device name, for example macbook."`
-	Address string        `name:"address" help:"HOST:PORT for the invitation; defaults to the --advertise address of hub serve."`
+	Address string        `name:"address" help:"HOST:PORT for the invitation, or several separated by commas; defaults to the --advertise address of hub serve."`
 	Expires time.Duration `name:"expires" default:"15m" help:"How long the invitation stays valid."`
 	Data    string        `name:"data" env:"ISTOK_HUB_DATA" help:"Hub data directory."`
 	JSON    bool          `name:"json" help:"Write a versioned JSON response."`
