@@ -30,12 +30,7 @@
   </a>
 </p>
 
-Istok keeps your coding agent's work with your project instead of inside one conversation: the tasks, every attempt, the checks that prove the result, and the rules your project lives by. A new session — or a different agent — picks up where the last one stopped, and you can see all of it in your browser.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/ui-runs-dark.webp">
-  <img src=".github/assets/ui-runs-light.webp" alt="The Istok web UI: a feed of runs by Claude and Codex across projects, with their status and checks">
-</picture>
+Istok keeps your coding agent's work with your project instead of inside one conversation: the tasks, every attempt, the checks that prove the result, and the rules your project lives by. A new session — or a different agent, or another of your machines — picks up where the last one stopped.
 
 ## Why
 
@@ -45,7 +40,7 @@ If you work with Claude Code, Codex or Cursor, three things keep getting in the 
 - **Work is invisible.** With several agents in several repositories, it is hard to tell who did what and what quietly stalled.
 - **"Done" is a claim.** The agent says the tests pass; nothing shows that it ran them.
 
-Istok is a local CLI, MCP server and web UI. Your agent records its work through MCP while it goes; you keep talking to it as before. Everything stays on your machine in one SQLite file: no account, no cloud, and nothing written into your repository.
+Istok is a local CLI and MCP server. Your agent records its work through MCP while it goes; you keep talking to it as before. Everything stays on your machine in one SQLite file: no account, no cloud, and nothing written into your repository. To work on several machines, run your own sync hub.
 
 ## Quick start
 
@@ -88,19 +83,20 @@ Then give it real work as usual. It creates a task, claims it, runs the checks t
 **4. See what happened:**
 
 ```sh
-istok ui
+istok task list
+istok task show 1
 ```
 
-The web UI opens on `http://127.0.0.1:7700` with every project, task, run and check, and updates live while agents work.
+Each task shows its history, with every run and the linked commits.
 
 ## Learn more
 
 - [What is Istok](https://istok.sh/docs/en/getting-started/introduction) — the problem and what you get.
 - [Working with your agent](https://istok.sh/docs/en/guides/working-with-agents) — what to say to continue work, remember a rule or hand over to another agent.
-- [Web UI](https://istok.sh/docs/en/guides/web-ui) and [running it as a service](https://istok.sh/docs/en/guides/updates-and-service).
-- [How Istok works](https://istok.sh/docs/en/how-istok-works/projects) — projects, tasks and runs, validation, context and knowledge.
-- [CLI](https://istok.sh/docs/en/reference/cli-overview) and [MCP tools](https://istok.sh/docs/en/reference/mcp) reference.
-- [Troubleshooting](https://istok.sh/docs/en/help/troubleshooting) and [FAQ](https://istok.sh/docs/en/help/faq).
+- [Sync between devices](https://istok.sh/docs/en/guides/another-device) — run a hub and continue the same project on another machine.
+- [How Istok works](https://istok.sh/docs/en/how-istok-works/overview) — projects, tasks and runs, validation, context and knowledge.
+- [CLI](https://istok.sh/docs/en/reference/cli) and [MCP tools](https://istok.sh/docs/en/reference/mcp) reference.
+- [FAQ and troubleshooting](https://istok.sh/docs/en/help/faq).
 
 The documentation is also available [in Russian](https://istok.sh/docs/ru/getting-started/introduction), and as [`llms.txt`](https://istok.sh/llms.txt) for agents.
 
@@ -123,7 +119,7 @@ Releases are signed. `istok update` checks for a newer stable release, verifies 
 
 ## Build from source
 
-Istok is written in Go with an embedded React web UI. Building needs Go with cgo (for SQLite) and pnpm:
+Istok is written in Go. Building needs Go with cgo (for SQLite):
 
 ```sh
 make build      # writes bin/istok

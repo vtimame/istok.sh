@@ -25,8 +25,8 @@ const nudgeMaxDelay = 30 * time.Second
 // nudgeTimeout bounds a background sync started by a nudge.
 const nudgeTimeout = time.Minute
 
-// Syncer runs syncs for long-lived processes and hooks: the UI service, MCP
-// servers and agent hooks. Processes share the database, so a file lock in
+// Syncer runs syncs for long-lived processes and hooks: MCP servers and agent
+// hooks. Processes share the database, so a file lock in
 // the sync directory lets one sync run at a time. A device that has not
 // joined a hub, or a project that does not sync, is not an error: nothing
 // happens.
@@ -84,29 +84,6 @@ func (s *Syncer) SyncProject(ctx context.Context, projectID string) (bool, error
 	return true, s.locked(ctx, func(engine *Engine) error {
 		_, err := engine.Sync(ctx, projectID)
 		return err
-	})
-}
-
-// SyncAll syncs every project this device syncs.
-func (s *Syncer) SyncAll(ctx context.Context) error {
-	if !s.Joined() {
-		return nil
-	}
-
-	projects, err := s.state.Projects(ctx)
-	if err != nil || len(projects) == 0 {
-		return err
-	}
-
-	return s.locked(ctx, func(engine *Engine) error {
-		var failures []error
-		for _, value := range projects {
-			if _, err := engine.Sync(ctx, value.ID); err != nil {
-				failures = append(failures, fmt.Errorf("sync project %s: %w", value.ID, err))
-			}
-		}
-
-		return errors.Join(failures...)
 	})
 }
 
@@ -246,30 +223,5 @@ func (s *Syncer) report(err error) {
 func WarnTo(output io.Writer) func(error) {
 	return func(err error) {
 		fmt.Fprintf(output, "%s istok sync: %v\n", time.Now().Format(time.RFC3339), err)
-	}
-}
-
-// Run syncs every project at the interval until ctx ends.
-func (s *Syncer) Run(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		return
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		syncCtx, cancel := context.WithTimeout(ctx, interval)
-		err := s.SyncAll(syncCtx)
-		cancel()
-		if ctx.Err() == nil {
-			s.report(err)
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
 	}
 }

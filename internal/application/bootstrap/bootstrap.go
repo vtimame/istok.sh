@@ -34,11 +34,8 @@ import (
 	"github.com/vtimame/istok.sh/internal/storage/runrepo"
 	"github.com/vtimame/istok.sh/internal/storage/syncrepo"
 	"github.com/vtimame/istok.sh/internal/storage/taskrepo"
-	"github.com/vtimame/istok.sh/internal/storage/uireadrepo"
 	"github.com/vtimame/istok.sh/internal/storage/usagerepo"
-	"github.com/vtimame/istok.sh/internal/uiservice"
 	"github.com/vtimame/istok.sh/internal/updater"
-	"github.com/vtimame/istok.sh/internal/webui"
 )
 
 func VersionApp(output io.Writer) *fx.App {
@@ -60,11 +57,10 @@ func UpdateApp(ctx context.Context, command updateapp.Command, input io.Reader, 
 		fx.Provide(func(info buildinfo.Info) (*updater.Service, error) { return updater.New(info) }),
 		fx.Invoke(func(info buildinfo.Info, service *updater.Service) {
 			*result = updateapp.Application{
-				Service:        service,
-				Version:        info.Version,
-				Input:          input,
-				Output:         output,
-				RestartService: uiservice.RestartIfActive,
+				Service: service,
+				Version: info.Version,
+				Input:   input,
+				Output:  output,
 			}.Run(ctx, command)
 		}),
 	)
@@ -245,25 +241,6 @@ func MCPApp(path, root string, profile mcpserver.Profile, tools mcpserver.ToolSe
 			}})
 		}),
 		fx.Invoke(func(value *mcp.Server) { *server = value }),
-	)
-}
-
-// UIApp wires the read-only services behind the embedded web UI.
-func UIApp(path string, services *webui.Services, syncer **replica.Syncer) *fx.App {
-	return fx.New(
-		fx.NopLogger,
-		fx.Supply(buildinfo.Current()),
-		kernelOptions(path),
-		fx.Provide(uireadrepo.New),
-		fx.Provide(exchangerepo.New),
-		fx.Provide(exchangeapp.NewService),
-		fx.Provide(syncrepo.New),
-		fx.Invoke(func(exchange *exchangerepo.Repository, state *syncrepo.Repository) {
-			*syncer = replica.NewSyncer(replica.Dir(), exchange, state, replica.WarnTo(os.Stderr))
-		}),
-		fx.Invoke(func(info buildinfo.Info, readModel *uireadrepo.Repository, projects *project.Service, tasks *taskapp.Service, runs *runapp.Service, knowledge *knowledgeapp.Service, exchanges *exchangeapp.Service) {
-			*services = webui.Services{Build: info, ReadModel: readModel, Projects: projects, Tasks: tasks, Runs: runs, Knowledge: knowledge, Exchange: exchanges}
-		}),
 	)
 }
 

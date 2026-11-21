@@ -26,6 +26,16 @@ All notable changes to Istok are documented here. The format follows
   schema gained the MCP call log and the sync state. Update Istok on both
   devices.
 
+### Removed
+
+- **The web UI.** `istok ui` and `istok ui service` are gone, and the binary
+  no longer embeds a frontend; tasks, runs and checks are in
+  `istok task list`, `istok task show` and `istok run`. Before you update,
+  run `istok ui service uninstall` if you installed the service, since it
+  would keep trying to start a command that no longer exists. Agents sync
+  through the MCP server and hooks, so nothing replaces the UI service's
+  periodic sync. `istok update` no longer restarts a service.
+
 ### Added
 
 - **Sync between devices through a hub.** `istok hub serve` runs a hub on any
@@ -68,10 +78,8 @@ All notable changes to Istok are documented here. The format follows
 - **Sync runs by itself once a device joined a hub.** The MCP server pulls
   the project before `task_start`, so a handoff written on another device is
   in the brief, and pushes a few seconds after each write and on exit. The
-  `SessionStart` and `Stop` hooks sync the current project, and the UI
-  service syncs every project every two minutes
-  (`istok ui --sync-interval`, `ISTOK_SYNC_INTERVAL`, `0` turns it off).
-  Processes take turns through a lock in the sync directory; an unreachable
+  `SessionStart` and `Stop` hooks sync the current project. Processes take
+  turns through a lock in the sync directory; an unreachable
   hub delays `task_start` and hooks by at most a few seconds.
 - **Shorter workflow.** `task_start` creates or claims a task, or continues
   your own run of it, and returns the context and the latest handoff in one

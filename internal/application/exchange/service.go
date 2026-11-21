@@ -1,5 +1,5 @@
 // Package exchange exports projects to a bundle and imports bundles from
-// other devices. Transports (CLI and web UI) call this service; the storage
+// other devices. The CLI calls this service; the storage
 // work happens in exchangerepo.
 package exchange
 

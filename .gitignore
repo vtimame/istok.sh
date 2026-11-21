@@ -34,7 +34,3 @@ go.work.sum
 /bin/
 tmp
 
-# Embedded web UI build output and frontend dependencies
-/internal/webui/dist/*
-!/internal/webui/dist/.gitkeep
-/web/node_modules/

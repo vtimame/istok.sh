@@ -32,7 +32,6 @@ type CLI struct {
 	Version    VersionCommand         `cmd:"" help:"Print version information."`
 	MCP        MCPCommand             `cmd:"" help:"Run the MCP server over standard input/output."`
 	Update     UpdateCommand          `cmd:"" help:"Check for and securely install a new CLI release."`
-	UI         UICommand              `cmd:"" name:"ui" help:"Open the local web UI or manage it as a service."`
 	Init       InitCommand            `cmd:"" help:"Initialize the current directory or PATH as a local project."`
 	Project    ProjectCommand         `cmd:"" help:"Show and manage local projects."`
 	Task       TaskCommand            `cmd:"" help:"Inspect tasks in the current project."`
@@ -197,8 +196,6 @@ func ExecuteAt(ctx context.Context, args []string, input io.Reader, output, erro
 		return runVersion(ctx, output)
 	case strings.HasPrefix(commandName, "completion"):
 		return command.Completion.Run(parsed)
-	case commandName == "ui" || strings.HasPrefix(commandName, "ui "):
-		return runUICommand(ctx, command.UI, commandName, output)
 	case commandName == "mcp":
 		root, err := project.Canonicalize(cwd)
 		if err != nil {

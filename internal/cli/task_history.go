@@ -11,8 +11,7 @@ import (
 
 // historyBody is a task event body split into the run it refers to and the
 // text meant for people. Run events store machine references in their body
-// (see internal/storage/runrepo); the web UI parses them the same way in
-// web/src/lib/task-events.ts.
+// (see internal/storage/runrepo).
 //
 //	claimed        "<run id>" or JSON {run_id, without_retrieval, override_reason, context_override_reason, ...}
 //	run_finished   "<run id>\n<result summary>"

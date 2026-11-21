@@ -19,10 +19,6 @@ RUN go mod download
 
 COPY . ./
 
-# The hub does not serve the web UI: embed the placeholder whatever the
-# build context holds.
-RUN find internal/webui/dist -mindepth 1 ! -name .gitkeep -delete
-
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown

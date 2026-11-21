@@ -103,7 +103,7 @@ func withEngine(ctx context.Context, flags syncFlags, output io.Writer, action f
 	services, app := syncApplication(flags.Database)
 
 	return runProjectApplication(ctx, flags.JSON, output, app, func() (any, error) {
-		// The same lock as the UI service, MCP servers and hooks: one sync
+		// The same lock as MCP servers and hooks: one sync
 		// of this device's database at a time.
 		var value any
 		syncer := replica.NewSyncer(flags.dir(), services.exchange, services.state, nil)
