@@ -259,3 +259,23 @@ func mustContain(t *testing.T, got, want string) {
 		t.Fatalf("show output %q does not contain %q", got, want)
 	}
 }
+
+// A long title gives way so the worker stays whole within the row length.
+func TestTaskListShortensTheTitleToKeepTheWorker(t *testing.T) {
+	items := []task.TaskListItem{{
+		Task:         task.Task{Number: 7, Status: task.StatusOpen, Title: strings.Repeat("very long title ", 10)},
+		HasActiveRun: true,
+		Worker:       "Claude Code",
+		WorkerDevice: "macbook",
+	}}
+
+	rendered := stripANSI(humanTaskRenderer{}.RenderProjectTaskList("demo", items))
+	if !strings.Contains(rendered, "Claude Code · macbook") || !strings.Contains(rendered, "…") {
+		t.Fatalf("task list = %q, want the whole worker and a shortened title", rendered)
+	}
+	for _, line := range strings.Split(rendered, "\n") {
+		if width := len([]rune(line)); width > 100 {
+			t.Fatalf("line is %d wide, want at most 100: %q", width, line)
+		}
+	}
+}

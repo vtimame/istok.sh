@@ -98,7 +98,8 @@ func renderTaskListWithSummary(projectName string, values []task.TaskListItem, s
 		rows = append(rows, row)
 	}
 
-	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(projectName), presentation.Divider(), presentation.Warning(summary), presentation.RenderTable(headers, rows))
+	// The title gives way when the row is too long, so WORKER and BLOCKED BY stay whole.
+	return fmt.Sprintf("%s %s %s\n\n%s\n", presentation.Brand(projectName), presentation.Divider(), presentation.Warning(summary), presentation.RenderTableFitting(headers, rows, 2))
 }
 
 func openTaskCount(count int) string {
