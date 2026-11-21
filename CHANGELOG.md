@@ -47,6 +47,15 @@ All notable changes to Istok are documented here. The format follows
   its database gets its own rows back from the hub. Releases publish the
   hub image `ghcr.io/vtimame/istok-hub` (x86-64 and ARM64, unprivileged,
   data in `/data`); `docker/hub/compose.yml` runs it.
+- **A clone finds its hub project.** `istok sync enable` in a fresh clone of
+  a repository fetches the hub project of that repository and binds the
+  folder, without `--project ID`, whatever the folder is called and whether
+  the remote is written as HTTPS or SSH. The remotes are stored encrypted with
+  the project name, and `istok sync projects` shows them. Publishing a new
+  local project is refused when the hub already has another project of the
+  same repository; `--new` publishes it anyway. Projects published by an
+  earlier version get their remotes the next time `istok sync enable` runs in
+  their folder.
 - **The hub hands out task numbers and keeps one device on a task.** A new
   task takes its number from the hub, so tasks created on two devices never
   share a number; a task created while the hub is out of reach gets a local

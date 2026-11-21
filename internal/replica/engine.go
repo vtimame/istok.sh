@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/vtimame/istok.sh/internal/exchange"
+	"github.com/vtimame/istok.sh/internal/gitremote"
 	"github.com/vtimame/istok.sh/internal/hub/protocol"
 	"github.com/vtimame/istok.sh/internal/storage/exchangerepo"
 	"github.com/vtimame/istok.sh/internal/storage/syncrepo"
@@ -44,10 +45,16 @@ func NewEngine(exchange *exchangerepo.Repository, state *syncrepo.Repository, hu
 type RemoteProject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+
+	// Repository identifies the project folder by its git remotes, so a
+	// clone of the repository finds the project. Projects published before
+	// it was recorded have none.
+	Repository gitremote.Identity `json:"repository"`
 }
 
 type projectMeta struct {
-	Name string `json:"name"`
+	Name       string             `json:"name"`
+	Repository gitremote.Identity `json:"repository,omitzero"`
 }
 
 // Result reports one project sync.
@@ -86,15 +93,16 @@ func (e *Engine) RemoteProjects(ctx context.Context) ([]RemoteProject, error) {
 		if err := json.Unmarshal(plaintext, &meta); err != nil {
 			return nil, fmt.Errorf("read project metadata: %w", err)
 		}
-		result = append(result, RemoteProject{ID: value.ID, Name: meta.Name})
+		result = append(result, RemoteProject{ID: value.ID, Name: meta.Name, Repository: meta.Repository})
 	}
 
 	return result, nil
 }
 
-// Register publishes a local project on the hub and starts syncing it.
-func (e *Engine) Register(ctx context.Context, projectID, name string) error {
-	plaintext, err := json.Marshal(projectMeta{Name: name})
+// Register publishes a local project on the hub and starts syncing it. The
+// repository identity is stored encrypted with the name.
+func (e *Engine) Register(ctx context.Context, projectID, name string, repository gitremote.Identity) error {
+	plaintext, err := json.Marshal(projectMeta{Name: name, Repository: repository})
 	if err != nil {
 		return err
 	}

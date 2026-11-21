@@ -113,7 +113,7 @@ ISTOK_HUB_ADVERTISE=203.0.113.10:7443 docker compose up -d
 docker compose exec hub istok hub device add laptop   # prints a one-time invitation
 ```
 
-On the device, `istok sync join CODE` registers it and `istok sync enable` in a project folder starts syncing; the second device joins with `--key` from `istok sync key`. The image `ghcr.io/vtimame/istok-hub` is published with every release for x86-64 and ARM64.
+On the device, `istok sync join CODE` registers it and `istok sync enable` in a project folder starts syncing; the second device joins with `--key` from `istok sync key`, and `istok sync enable` in its clone of the repository fetches the same project. The image `ghcr.io/vtimame/istok-hub` is published with every release for x86-64 and ARM64.
 
 ## Platforms
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	"github.com/vtimame/istok.sh/internal/gitremote"
 	"github.com/vtimame/istok.sh/internal/project"
 	"github.com/vtimame/istok.sh/internal/replica"
 	"github.com/vtimame/istok.sh/internal/storage/exchangerepo"
@@ -61,7 +62,8 @@ type SyncKeyCommand struct {
 
 type SyncEnableCommand struct {
 	syncFlags
-	Project string `name:"project" short:"p" help:"Hub project ID to fetch into the current folder (see istok sync projects)."`
+	Project string `name:"project" short:"p" help:"Hub project ID to fetch into the current folder (see istok sync projects). Without it, the hub project of this folder's git repository is fetched."`
+	New     bool   `name:"new" help:"Publish the current project even though the hub has another project of the same repository."`
 }
 
 type SyncDisableCommand struct {
@@ -128,7 +130,7 @@ func runSync(ctx context.Context, command SyncCommand, commandName, cwd string, 
 		return printResult(command.Key.JSON, output, syncKey{Key: config.Key}, err)
 	case strings.HasPrefix(commandName, "sync enable"):
 		return withEngine(ctx, command.Enable.syncFlags, output, func(services *syncServices, engine *replica.Engine) (any, error) {
-			return enableSync(ctx, services, engine, cwd, command.Enable.Project)
+			return enableSync(ctx, services, engine, cwd, command.Enable.Project, command.Enable.New)
 		})
 	case strings.HasPrefix(commandName, "sync disable"):
 		services, app := syncApplication(command.Disable.Database)
@@ -185,7 +187,7 @@ func runSyncJoin(ctx context.Context, command SyncJoinCommand, output io.Writer)
 	})
 }
 
-func enableSync(ctx context.Context, services *syncServices, engine *replica.Engine, cwd, hubProject string) (any, error) {
+func enableSync(ctx context.Context, services *syncServices, engine *replica.Engine, cwd, hubProject string, publishNew bool) (any, error) {
 	current, currentErr := services.projects.Current(ctx, cwd)
 	if currentErr != nil && project.ErrorCode(currentErr) != project.CodeNotFound {
 		return nil, currentErr
@@ -193,15 +195,15 @@ func enableSync(ctx context.Context, services *syncServices, engine *replica.Eng
 
 	switch {
 	case currentErr == nil && (hubProject == "" || hubProject == current.ID):
-		if err := engine.Register(ctx, current.ID, current.Name); err != nil {
-			return nil, err
-		}
-		result, err := engine.Sync(ctx, current.ID)
-		return syncResults{{Name: current.Name, Result: result}}, err
+		return publishProject(ctx, services, engine, current, hubProject == "" && !publishNew)
 	case currentErr == nil:
 		return nil, fmt.Errorf("this folder already belongs to project %s (%s); run the command in the folder of the hub project", current.Name, current.ID)
 	case hubProject == "":
-		return nil, errors.New("this folder is not an Istok project: run istok init to sync a new one, or pass --project with an ID from istok sync projects")
+		found, err := hubProjectOf(ctx, engine, cwd)
+		if err != nil {
+			return nil, err
+		}
+		hubProject = found
 	}
 
 	result, err := engine.Clone(ctx, hubProject)
@@ -215,6 +217,79 @@ func enableSync(ctx context.Context, services *syncServices, engine *replica.Eng
 	}
 
 	return syncResults{{Name: bound.Name, Result: result}}, nil
+}
+
+// publishProject starts syncing a local project. Publishing it for the first
+// time is refused when checkDuplicate is set and the hub already has another
+// project of the same repository: the folder most likely belongs to that one.
+func publishProject(ctx context.Context, services *syncServices, engine *replica.Engine, current project.Project, checkDuplicate bool) (any, error) {
+	var repository gitremote.Identity
+	if current.Root != nil {
+		repository = gitremote.Of(ctx, current.Root.CanonicalPath)
+	}
+
+	synced, err := services.state.Synced(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if checkDuplicate && !synced && repository.Known() {
+		remote, err := engine.RemoteProjects(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, value := range remote {
+			if value.ID != current.ID && value.Repository.Matches(repository) {
+				return nil, fmt.Errorf("the hub already has project %s (%s) of this repository, and this folder belongs to the local project %s. "+
+					"To work on the hub project here, run istok project delete %s and istok sync enable again; to publish %s as a separate project, pass --new",
+					value.Name, value.ID, current.Name, current.ID, current.Name)
+			}
+		}
+	}
+
+	if err := engine.Register(ctx, current.ID, current.Name, repository); err != nil {
+		return nil, err
+	}
+
+	result, err := engine.Sync(ctx, current.ID)
+
+	return syncResults{{Name: current.Name, Result: result}}, err
+}
+
+// hubProjectOf finds the hub project of a folder that is not an Istok project
+// yet by its git repository.
+func hubProjectOf(ctx context.Context, engine *replica.Engine, cwd string) (string, error) {
+	repository := gitremote.Of(ctx, cwd)
+	if !repository.Known() {
+		return "", errors.New("this folder is not an Istok project: run istok init to sync a new one, or pass --project with an ID from istok sync projects")
+	}
+
+	remote, err := engine.RemoteProjects(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var matches []replica.RemoteProject
+	for _, value := range remote {
+		if value.Repository.Matches(repository) {
+			matches = append(matches, value)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("the hub has no project of repository %s: run istok init to sync a new one, or pass --project with an ID from istok sync projects", repository.Remotes[0])
+	case 1:
+		return matches[0].ID, nil
+	}
+
+	names := make([]string, 0, len(matches))
+	for _, value := range matches {
+		names = append(names, fmt.Sprintf("%s (%s)", value.Name, value.ID))
+	}
+
+	return "", fmt.Errorf("the hub has several projects of this repository: %s; pass --project with one of the IDs", strings.Join(names, ", "))
 }
 
 func syncProjects(ctx context.Context, services *syncServices, engine *replica.Engine, selector string) (any, error) {
@@ -390,11 +465,15 @@ func (p syncRemoteProjects) String() string {
 
 	rows := make([][]string, 0, len(p))
 	for _, value := range p {
-		rows = append(rows, []string{value.Name, value.ID})
+		repository := strings.Join(value.Repository.Remotes, ", ")
+		if value.Repository.Subdir != "" {
+			repository += " · " + value.Repository.Subdir
+		}
+		rows = append(rows, []string{value.Name, repository, value.ID})
 	}
 
-	return presentation.RenderTable([]string{"NAME", "ID"}, rows) + "\n" +
-		presentation.Metadata("Fetch one into a folder: istok sync enable --project ID")
+	return presentation.RenderTable([]string{"NAME", "REPOSITORY", "ID"}, rows) + "\n" +
+		presentation.Metadata("Fetch one into a clone of its repository with istok sync enable, or into any folder with --project ID")
 }
 
 type syncStatusProject struct {
