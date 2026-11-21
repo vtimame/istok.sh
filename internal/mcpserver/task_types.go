@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
@@ -58,8 +59,18 @@ type taskTextInput struct {
 }
 
 type taskHandoffInput struct {
-	TaskID string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
-	Note   string `json:"note" jsonschema:"Where the work stands: done, where it stopped, decisions, next step."`
+	TaskID  string `json:"task_id" jsonschema:"Canonical UUIDv7 task identifier."`
+	Note    string `json:"note" jsonschema:"Where the work stands: done, where it stopped, decisions, next step."`
+	Release bool   `json:"release,omitempty" jsonschema:"Also end your run and leave the task open, so another agent can task_start it now. Use it when the user hands the task to another agent."`
+}
+
+// TaskHandoffResult is the response of task_handoff: the task and, with
+// release, the run that ended.
+type TaskHandoffResult struct {
+	SchemaVersion string     `json:"schema_version"`
+	Task          *task.Task `json:"task,omitempty"`
+	Released      *run.Run   `json:"released_run,omitempty"`
+	Error         *ToolError `json:"error,omitempty"`
 }
 
 type taskBlockInput struct {

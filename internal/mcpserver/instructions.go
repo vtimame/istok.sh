@@ -13,12 +13,12 @@ Use it for substantial work: features, fixes, refactoring, migrations and invest
 1. Call project_current. If the directory is not registered, tell the user and continue without Istok; call project_init only when the user asks.
 2. Find an existing task with task_ready or task_list, then call task_start with its task_id, or with a title to create one. It claims the task or continues your own run, and returns project rules, task context, code hits and the latest handoff. Follow the rules; do not bulk-load other context.
 3. Record meaningful steps with task_progress, blockers with task_block and commits with task_commit. Your calls keep the run lease alive.
-4. Before you stop or the context is compacted, write task_handoff: what is done, where you stopped, decisions, the next step. Afterwards call task_start again with the same task_id.
+4. Before you stop or the context is compacted, write task_handoff: what is done, where you stopped, decisions, the next step. Afterwards call task_start again with the same task_id. When the user hands the task to another agent ("stop, someone else will continue"), call task_handoff with release: true; it ends your run and leaves the task open for them.
 5. Record each check with task_evidence (a command, CI or a manual test), or run a command with run_validate.
 6. Close with task_done and a summary; pass not_verified_reason if the result cannot be verified. Implementation alone is not completion.
 
 If a lease cannot be resumed, call run_recover with a reason. On revision_conflict, read the task with task_show and retry.
 
-Find knowledge with knowledge_search and read only relevant items with knowledge_read. Locate code with search, then verify it in the source.
+When the user asks to remember a rule for the project, save it with context_add; find and change saved rules with context_list and context_update. Find knowledge with knowledge_search and read only relevant items with knowledge_read. Locate code with search, then verify it in the source.
 
 This server lists the core tools. Knowledge writing, the code graph, dependencies and run internals need Istok started with --tools full.`

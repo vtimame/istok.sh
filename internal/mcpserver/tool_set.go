@@ -19,7 +19,8 @@ const (
 )
 
 // coreTools is the short workflow: find or start a task, record progress,
-// commits, handoffs and checks, close it, and read knowledge and code.
+// commits, handoffs and checks, close it, save project rules, and read
+// knowledge and code.
 var coreTools = map[string]bool{
 	"project_current":  true,
 	"project_init":     true,
@@ -35,6 +36,9 @@ var coreTools = map[string]bool{
 	"run_validate":     true,
 	"task_done":        true,
 	"run_recover":      true,
+	"context_add":      true,
+	"context_list":     true,
+	"context_update":   true,
 	"knowledge_search": true,
 	"knowledge_read":   true,
 	"search":           true,

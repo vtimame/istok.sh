@@ -86,3 +86,64 @@ func startTask(t *testing.T, session *mcp.ClientSession, arguments map[string]an
 
 	return started
 }
+
+// "Stop, another agent will continue": the handoff with release ends the
+// run, so the other agent starts the task at once and reads the note.
+func TestMCPTaskHandoffReleasesTheTaskForAnotherAgent(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "release.db")
+	root := t.TempDir()
+	_, owner := newSessionAtDatabaseWithActor(t, Worker, root, database, "owner-agent")
+	initProject(t, owner, "release")
+	_, other := newSessionAtDatabaseWithActor(t, Worker, root, database, "other-agent")
+
+	started := startTask(t, owner, map[string]any{"title": "shared work"})
+
+	result := callTool(t, owner, "task_handoff", map[string]any{"task_id": started.Task.ID, "note": "done: parser\nnext: tests", "release": true})
+	var handoff TaskHandoffResult
+	decodeStructured(t, result, &handoff)
+	if result.IsError || handoff.Released == nil || handoff.Released.ID != started.Run.ID || handoff.Released.Status != "cancelled" {
+		t.Fatalf("task_handoff with release = %+v", handoff)
+	}
+	if handoff.Task == nil || handoff.Task.Status != task.StatusOpen {
+		t.Fatalf("task after release = %+v, want it open", handoff.Task)
+	}
+
+	taken := startTask(t, other, map[string]any{"task_id": started.Task.ID})
+	if taken.Resumed || taken.Run.ID == started.Run.ID {
+		t.Fatalf("other agent did not get a new run: %+v", taken.Run)
+	}
+	if taken.Handoff.Handoff == nil || taken.Handoff.Handoff.Body != "done: parser\nnext: tests" {
+		t.Fatalf("other agent's handoff = %+v", taken.Handoff.Handoff)
+	}
+
+	// Once the other agent works on the task, a release has nothing to end
+	// and still records the note.
+	again := callTool(t, owner, "task_handoff", map[string]any{"task_id": started.Task.ID, "note": "nothing more", "release": true})
+	var second TaskHandoffResult
+	decodeStructured(t, again, &second)
+	if again.IsError || second.Released != nil {
+		t.Fatalf("second release = %+v %+v", second, second.Error)
+	}
+}
+
+// Project rules are saved from the core tool set.
+func TestMCPCoreToolsSaveProjectRules(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "rules.db")
+	root := t.TempDir()
+	_, session := newSessionWithTools(t, Worker, ToolsCore, root, database, "rules-agent", nil)
+	initProject(t, session, "rules")
+
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, value := range listed.Tools {
+		names[value.Name] = true
+	}
+	for _, name := range []string{"context_add", "context_list", "context_update"} {
+		if !names[name] {
+			t.Fatalf("core tools lack %s", name)
+		}
+	}
+}

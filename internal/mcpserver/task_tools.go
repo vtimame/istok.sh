@@ -125,10 +125,42 @@ func addTaskMutationTools(server *mcp.Server, projects *project.Service, tasks *
 	addTaskTextTool(server, "task_progress", "Add a task progress update. Omit expected_revision to append without compare-and-swap. Keeps your run lease alive.", projects, tasks, root, func(ctx context.Context, selector task.Selector, expected int64, body string) (task.Task, error) {
 		return keepRunAlive(ctx)(tasks.Progress(ctx, selector, expected, body, actor.task()))
 	})
-	mcp.AddTool(server, tool("task_handoff", "Record where the work stands for the next session: done, where it stopped, decisions, next step. The latest handoff is current; task_start returns it. Keeps your run lease alive.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskHandoffInput) (*mcp.CallToolResult, TaskResult, error) {
-		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {
-			return keepRunAlive(ctx)(tasks.Handoff(ctx, selector, in.Note, actor.task()))
-		})
+	mcp.AddTool(server, tool("task_handoff", "Record where the work stands for the next session: done, where it stopped, decisions, next step. The latest handoff is current; task_start returns it. Keeps your run lease alive; with release, ends your run instead and leaves the task open for another agent.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskHandoffInput) (*mcp.CallToolResult, TaskHandoffResult, error) {
+		failed := func(err error) (*mcp.CallToolResult, TaskHandoffResult, error) {
+			return errorTool(err), TaskHandoffResult{SchemaVersion: taskSchemaVersion, Error: toolError(err)}, nil
+		}
+
+		current, err := currentTaskProject(ctx, projects, root)
+		if err != nil {
+			return failed(err)
+		}
+		selector, err := taskSelector(current.ID, in.TaskID)
+		if err != nil {
+			return failed(err)
+		}
+
+		value, err := tasks.Handoff(ctx, selector, in.Note, actor.task())
+		if err != nil {
+			return failed(err)
+		}
+		if !in.Release {
+			runs.TouchTask(ctx, value.ID, actor.run())
+			return nil, TaskHandoffResult{SchemaVersion: taskSchemaVersion, Task: &value}, nil
+		}
+
+		released, err := runs.ReleaseTask(ctx, selector, "handed over: see the latest handoff", actor.run())
+		if err != nil {
+			return failed(err)
+		}
+
+		// Ending the run changed the task's revision.
+		if released != nil {
+			if refreshed, err := tasks.Show(ctx, selector, false); err == nil {
+				value = refreshed.Task
+			}
+		}
+
+		return nil, TaskHandoffResult{SchemaVersion: taskSchemaVersion, Task: &value, Released: released}, nil
 	})
 	mcp.AddTool(server, tool("task_block", "Block a task with the reason. Omit expected_revision to block the current revision. Keeps your run lease alive.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskBlockInput) (*mcp.CallToolResult, TaskResult, error) {
 		return mutateTask(ctx, projects, root, in.TaskID, func(selector task.Selector) (task.Task, error) {

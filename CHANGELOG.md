@@ -12,7 +12,8 @@ All notable changes to Istok are documented here. The format follows
   workflow: `project_current`, `project_init`, `task_ready`, `task_list`,
   `task_show`, `task_start`, `task_progress`, `task_block`, `task_handoff`,
   `task_commit`, `task_evidence`, `run_validate`, `task_done`, `run_recover`,
-  `knowledge_search`, `knowledge_read` and `search`, plus the tools of the
+  `context_add`, `context_list`, `context_update`, `knowledge_search`,
+  `knowledge_read` and `search`, plus the tools of the
   supervisor and admin profiles. Every tool definition costs agent context,
   so the rest moved behind `istok mcp --tools full` (or
   `ISTOK_MCP_TOOLS=full`). A call to a hidden tool returns
@@ -90,7 +91,13 @@ All notable changes to Istok are documented here. The format follows
 - **Handoffs between sessions.** `task_handoff` records what is done, where
   the work stopped and the next step; `task_start` returns it after a
   restart or a compaction. `istok resume` prints the interrupted work of the
-  current project.
+  current project. Tell the agent "stop, another agent will continue" and it
+  calls `task_handoff` with `release`: its run ends, the task stays open, and
+  the other agent's `task_start` takes it at once with the note, instead of
+  waiting for the lease to expire.
+- **Project rules from the default tools.** `context_add`, `context_list`
+  and `context_update` are in the core MCP tool set, so "remember for this
+  project: …" works without `--tools full`.
 - **Agent hooks.** `istok hooks install claude` (or `codex`) adds hooks that
   print the interrupted work when a session starts and, for Claude Code, keep
   the Istok state in compaction summaries and link new commits to the task
