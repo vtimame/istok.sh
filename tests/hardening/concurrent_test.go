@@ -23,7 +23,7 @@ func TestConcurrentCLIAndMCP(t *testing.T) {
 	e.runJSON(t, "init", "--json")
 
 	var stderr bytes.Buffer
-	command := exec.Command(os.Getenv("ISTOK_HARDENING_BINARY"), "mcp", "--actor-id", "hardening-agent", "--actor-name", "Hardening Agent")
+	command := exec.Command(os.Getenv("ISTOK_HARDENING_BINARY"), "mcp", "--tools", "full", "--actor-id", "hardening-agent", "--actor-name", "Hardening Agent")
 	command.Dir, command.Env, command.Stderr = e.root, e.env, &stderr
 	ctx, cancel := context.WithTimeout(context.Background(), hardeningTimeout)
 	defer cancel()
