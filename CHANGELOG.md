@@ -4,7 +4,7 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-21
 
 ### Changed
 
@@ -275,6 +275,7 @@ durable tasks, runs and evidence.
 - Signed releases for Linux and macOS (amd64 and arm64) and secure self-update
   with `istok update`.
 
+[0.5.0]: https://github.com/vtimame/istok.sh/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/vtimame/istok.sh/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vtimame/istok.sh/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/vtimame/istok.sh/compare/v0.2.0...v0.2.1
