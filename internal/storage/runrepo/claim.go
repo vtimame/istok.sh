@@ -134,9 +134,9 @@ func (r *Repository) Claim(ctx context.Context, input runmodel.ClaimRecord) (run
 		}
 
 		_, err = conn.ExecContext(ctx, `
-			INSERT INTO run_leases (run_id,lease_id,owner_id,owner_kind,owner_name,heartbeat_at,expires_at,updated_at)
-			VALUES (?,?,?,?,?,?,?,?)
-		`, input.RunID, input.LeaseID, input.Actor.ID, input.Actor.Kind, input.Actor.Name, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now))
+			INSERT INTO run_leases (run_id,lease_id,owner_id,owner_kind,owner_name,owner_device,heartbeat_at,expires_at,updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?)
+		`, input.RunID, input.LeaseID, input.Actor.ID, input.Actor.Kind, input.Actor.Name, r.device, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now))
 		if err != nil {
 			return mapSQLError(err, "run lease conflicts with existing data")
 		}

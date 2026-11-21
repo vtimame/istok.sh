@@ -47,6 +47,7 @@ type taskListItemJSON struct {
 	HasActiveRun   bool              `json:"has_active_run"`
 	HasExpiredRun  bool              `json:"has_expired_run"`
 	Worker         string            `json:"worker,omitempty"`
+	WorkerDevice   string            `json:"worker_device,omitempty"`
 	ActiveBlockers []taskSummaryJSON `json:"active_blockers"`
 }
 
@@ -354,6 +355,7 @@ func taskListJSON(values []task.TaskListItem) []taskListItemJSON {
 			HasActiveRun:   value.HasActiveRun,
 			HasExpiredRun:  value.HasExpiredRun,
 			Worker:         value.Worker,
+			WorkerDevice:   value.WorkerDevice,
 			ActiveBlockers: taskSummariesJSON(value.ActiveBlockers),
 		})
 	}

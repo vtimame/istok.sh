@@ -161,6 +161,7 @@ type TaskListItem struct {
 	HasActiveRun   bool             `json:"has_active_run"`
 	HasExpiredRun  bool             `json:"has_expired_run"`
 	Worker         string           `json:"worker,omitempty"`
+	WorkerDevice   string           `json:"worker_device,omitempty"`
 	ActiveBlockers []BlockerSummary `json:"active_blockers,omitempty"`
 }
 

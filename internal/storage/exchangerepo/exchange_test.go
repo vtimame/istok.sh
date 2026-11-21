@@ -359,3 +359,25 @@ func containsConflict(conflicts []exchange.Conflict, table, id string) bool {
 
 	return false
 }
+
+// A row of the previous schema lacks a column added later with a default; it
+// imports with that default instead of failing.
+func TestImportFillsColumnsAddedWithADefault(t *testing.T) {
+	source := newDevice(t)
+	source.seedProject("acme-api")
+	target := newDevice(t)
+
+	bundle := source.export(projectID)
+	if len(bundle.Tables["run_leases"]) == 0 {
+		t.Fatal("seeded project has no run leases")
+	}
+	for _, row := range bundle.Tables["run_leases"] {
+		delete(row, "owner_device")
+	}
+
+	target.importBundle(bundle, false)
+
+	if got, want := target.count("SELECT COUNT(*) FROM run_leases WHERE owner_device = ''"), source.count("SELECT COUNT(*) FROM run_leases"); got != want {
+		t.Errorf("leases with the default device = %d, want %d", got, want)
+	}
+}

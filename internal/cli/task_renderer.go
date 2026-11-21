@@ -121,13 +121,17 @@ func taskListState(value task.TaskListItem) string {
 	return renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.ActiveBlockers))
 }
 
-// taskListWorker names who holds the task: the agent of its active run.
+// taskListWorker names who holds the task: the agent of its active run and
+// the device it works on.
 func taskListWorker(value task.TaskListItem) string {
-	if value.Worker == "" {
+	switch {
+	case value.Worker == "":
 		return "—"
+	case value.WorkerDevice == "":
+		return value.Worker
+	default:
+		return value.Worker + " · " + value.WorkerDevice
 	}
-
-	return value.Worker
 }
 
 func taskListBlockedBy(value task.TaskListItem) string {

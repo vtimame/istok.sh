@@ -153,11 +153,18 @@ func kernelOptions(path string) fx.Option {
 }
 
 // coordinateWithHub takes task numbers and leases from the sync hub for
-// projects that sync. It steps aside when the device has not joined a hub.
-func coordinateWithHub(db *sql.DB, tasks *taskapp.Service, runs *runapp.Service) {
-	coordinator := replica.NewCoordinator(replica.Dir(), exchangerepo.New(db), syncrepo.New(db))
+// projects that sync, and names this device on the leases it writes. It
+// steps aside when the device has not joined a hub.
+func coordinateWithHub(db *sql.DB, tasks *taskapp.Service, runs *runapp.Service, leases *runrepo.Repository) {
+	dir := replica.Dir()
+
+	coordinator := replica.NewCoordinator(dir, exchangerepo.New(db), syncrepo.New(db))
 	tasks.UseNumbers(coordinator)
 	runs.UseLeases(coordinator)
+
+	if config, err := replica.LoadConfig(dir); err == nil {
+		leases.UseDevice(config.DeviceName)
+	}
 }
 
 // ExchangeOptions wires export and import of project bundles.

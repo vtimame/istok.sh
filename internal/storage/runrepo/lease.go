@@ -34,10 +34,10 @@ func (r *Repository) Heartbeat(ctx context.Context, input runmodel.HeartbeatInpu
 
 		result, err := conn.ExecContext(ctx, `
 			UPDATE run_leases
-			SET heartbeat_at=?, expires_at=?, updated_at=?
+			SET heartbeat_at=?, expires_at=?, updated_at=?, owner_device=?
 			WHERE run_id=? AND lease_id=? AND owner_id=?
 			  AND EXISTS (SELECT 1 FROM runs WHERE id=run_leases.run_id AND status='active')
-		`, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now), input.RunID, input.LeaseID, actor.ID)
+		`, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now), r.device, input.RunID, input.LeaseID, actor.ID)
 		if err != nil {
 			return fmt.Errorf("heartbeat lease: %w", err)
 		}
@@ -115,7 +115,7 @@ func (r *Repository) Recover(ctx context.Context, input runmodel.RecoverInput, a
 		if _, err := conn.ExecContext(ctx, `UPDATE executions SET revision=revision+1,status='cancelled',signal='recovered',updated_at=?,finished_at=? WHERE run_id=? AND status='running'`, stamp(now), stamp(now), input.RunID); err != nil {
 			return fmt.Errorf("cancel recovered executions: %w", err)
 		}
-		if _, err := conn.ExecContext(ctx, `UPDATE run_leases SET lease_id=?,owner_id=?,owner_kind=?,owner_name=?,heartbeat_at=?,expires_at=?,updated_at=? WHERE run_id=?`, input.LeaseID, actor.ID, actor.Kind, actor.Name, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now), input.RunID); err != nil {
+		if _, err := conn.ExecContext(ctx, `UPDATE run_leases SET lease_id=?,owner_id=?,owner_kind=?,owner_name=?,owner_device=?,heartbeat_at=?,expires_at=?,updated_at=? WHERE run_id=?`, input.LeaseID, actor.ID, actor.Kind, actor.Name, r.device, stamp(now), stamp(now.Add(input.LeaseDuration)), stamp(now), input.RunID); err != nil {
 			return fmt.Errorf("rotate run lease: %w", err)
 		}
 		result, err := conn.ExecContext(ctx, `UPDATE runs SET revision=revision+1,updated_at=? WHERE id=? AND status='active'`, stamp(now), input.RunID)

@@ -115,7 +115,16 @@ func (s *importer) importTable(ctx context.Context, spec table, rows []exchange.
 	if err != nil {
 		return err
 	}
+	defaults, err := addedDefaults(ctx, s.conn, spec)
+	if err != nil {
+		return err
+	}
 	for _, row := range rows {
+		for name, value := range defaults {
+			if _, ok := row[name]; !ok {
+				row[name] = value
+			}
+		}
 		if err := checkRow(spec, names, row); err != nil {
 			return err
 		}
@@ -142,7 +151,8 @@ func (s *importer) importTable(ctx context.Context, spec table, rows []exchange.
 }
 
 // checkRow requires exactly the local columns, so a bundle from a different
-// schema cannot be applied partially.
+// schema cannot be applied partially. Columns added later with a default are
+// filled in before the check.
 func checkRow(spec table, names []string, row exchange.Row) error {
 	for _, name := range names {
 		if _, ok := row[name]; !ok {

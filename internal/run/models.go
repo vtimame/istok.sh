@@ -192,8 +192,10 @@ type TaskRunState struct {
 	HasActiveRun  bool
 	HasExpiredRun bool
 
-	// Worker names the lease owner of the active run, empty without one.
-	Worker string
+	// Worker names the lease owner of the active run, empty without one;
+	// WorkerDevice is the hub device it works on, empty when unknown.
+	Worker       string
+	WorkerDevice string
 }
 
 type ListOptions struct {

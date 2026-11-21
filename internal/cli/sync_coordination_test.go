@@ -163,8 +163,8 @@ func TestTaskListShowsWhatAnotherDeviceDid(t *testing.T) {
 	}
 }
 
-// The task list shows who works on a task, on the device that claimed it
-// and on the other one after a sync.
+// The task list shows who works on a task and on which device, on the
+// device that claimed it and on the other one after a sync.
 func TestTaskListShowsWhoWorksOnATask(t *testing.T) {
 	t.Setenv("ISTOK_AGENT_ID", "")
 	arch, mac, _ := joinedPair(t)
@@ -178,20 +178,21 @@ func TestTaskListShowsWhoWorksOnATask(t *testing.T) {
 	for _, device := range []*syncDevice{arch, mac} {
 		listed := decodeJSONResult[struct {
 			Tasks []struct {
-				Number int64  `json:"number"`
-				Worker string `json:"worker"`
+				Number       int64  `json:"number"`
+				Worker       string `json:"worker"`
+				WorkerDevice string `json:"worker_device"`
 			} `json:"tasks"`
 		}](t, device.must("task", "list", "--json"))
 		workers := map[int64]string{}
 		for _, value := range listed.Tasks {
-			workers[value.Number] = value.Worker
+			workers[value.Number] = value.Worker + "@" + value.WorkerDevice
 		}
-		if workers[1] == "" || workers[2] != "" {
-			t.Fatalf("workers = %v, want task 1 held and task 2 free", workers)
+		if workers[1] != "CLI@arch" || workers[2] != "@" {
+			t.Fatalf("workers = %v, want task 1 held by the CLI on arch and task 2 free", workers)
 		}
 
-		if table := stripANSI(device.must("task", "list")); !strings.Contains(table, "WORKER") || !strings.Contains(table, workers[1]) {
-			t.Fatalf("task list = %q, want a WORKER column with %q", table, workers[1])
+		if table := stripANSI(device.must("task", "list")); !strings.Contains(table, "WORKER") || !strings.Contains(table, "CLI · arch") {
+			t.Fatalf("task list = %q, want a WORKER column with CLI · arch", table)
 		}
 	}
 }

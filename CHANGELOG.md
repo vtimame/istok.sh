@@ -8,10 +8,15 @@ All notable changes to Istok are documented here. The format follows
 
 ### Changed
 
-- **The task list shows who works on a task.** `istok task list` and
-  `task ready` gain a WORKER column with the agent of the task's active run,
-  including runs started on another device; the JSON and the MCP
-  `task_list` and `task_ready` results carry it as `worker`.
+- **The task list shows who works on a task, and where.** `istok task list`
+  and `task ready` gain a WORKER column with the agent of the task's active
+  run and the hub device it works on (`Claude · macbook`), including runs on
+  another device; the JSON and the MCP `task_list` and `task_ready` results
+  carry them as `worker` and `worker_device`. A device without a hub shows
+  only the agent.
+- Rows of the previous schema import into a newer one when the only missing
+  columns were added with a default: they take the default instead of
+  failing, so a hub keeps working across such an update.
 - **`istok mcp` lists the core tools by default.** Agents see the short
   workflow: `project_current`, `project_init`, `task_ready`, `task_list`,
   `task_show`, `task_start`, `task_progress`, `task_block`, `task_handoff`,

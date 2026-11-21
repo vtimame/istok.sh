@@ -44,6 +44,46 @@ func columns(ctx context.Context, q querier, spec table) ([]string, error) {
 	return names, nil
 }
 
+// addedDefaults returns the columns of a table that have a constant default,
+// with that default. A row written before such a column was added lacks it
+// and takes the default on import, so adding a column with a default does
+// not break bundles and hub rows of the previous schema.
+func addedDefaults(ctx context.Context, q querier, spec table) (map[string]any, error) {
+	rows, err := q.QueryContext(ctx, "SELECT name, dflt_value FROM pragma_table_info(?) WHERE dflt_value IS NOT NULL", spec.name)
+	if err != nil {
+		return nil, fmt.Errorf("read column defaults of %s: %w", spec.name, err)
+	}
+	defer rows.Close()
+
+	defaults := map[string]any{}
+	for rows.Next() {
+		var name, literal string
+		if err := rows.Scan(&name, &literal); err != nil {
+			return nil, err
+		}
+		if value, ok := sqlLiteral(literal); ok {
+			defaults[name] = value
+		}
+	}
+
+	return defaults, rows.Err()
+}
+
+// sqlLiteral reads a constant default: a quoted string or an integer.
+// Expressions such as CURRENT_TIMESTAMP are not constants and are skipped.
+func sqlLiteral(literal string) (any, bool) {
+	if len(literal) >= 2 && literal[0] == '\'' && literal[len(literal)-1] == '\'' {
+		return strings.ReplaceAll(literal[1:len(literal)-1], "''", "'"), true
+	}
+
+	var number int64
+	if _, err := fmt.Sscan(literal, &number); err == nil && fmt.Sprint(number) == literal {
+		return number, true
+	}
+
+	return nil, false
+}
+
 // scanRows reads every row of a query into column-keyed maps.
 func scanRows(rows *sql.Rows, names []string) ([]exchange.Row, error) {
 	defer rows.Close()
