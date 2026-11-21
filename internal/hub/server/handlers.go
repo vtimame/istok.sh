@@ -35,6 +35,8 @@ func newHandler(store *Store, guard *guard, logger *slog.Logger) http.Handler {
 	mux.Handle("PUT /v1/projects/{id}", h.device(h.putProject))
 	mux.Handle("POST /v1/push", h.device(h.push))
 	mux.Handle("GET /v1/pull", h.device(h.pull))
+	mux.Handle("POST /v1/numbers", h.device(h.numbers))
+	mux.Handle("POST /v1/leases", h.device(h.leases))
 
 	return h.common(mux)
 }
@@ -250,6 +252,59 @@ func (h *handler) pull(w http.ResponseWriter, r *http.Request, _ Device) {
 	}
 
 	writeJSON(w, response)
+}
+
+func (h *handler) numbers(w http.ResponseWriter, r *http.Request, _ Device) {
+	var request protocol.NumbersRequest
+	if !h.decode(w, r, &request) {
+		return
+	}
+
+	valid := validKey(request.ProjectID) && len(request.Claims) > 0 && len(request.Claims) <= protocol.MaxNumberClaims
+	for _, claim := range request.Claims {
+		valid = valid && validKey(claim.TaskID) && claim.Number >= 0
+	}
+	if !valid {
+		writeError(w, http.StatusBadRequest, &protocol.Error{Code: protocol.CodeInvalid,
+			Message: "a number request carries a project and 1 to " + strconv.Itoa(protocol.MaxNumberClaims) + " task claims"})
+		return
+	}
+
+	numbers, err := h.store.Numbers(r.Context(), request)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+
+	writeJSON(w, protocol.NumbersResponse{Numbers: numbers})
+}
+
+func (h *handler) leases(w http.ResponseWriter, r *http.Request, device Device) {
+	var request protocol.LeasesRequest
+	if !h.decode(w, r, &request) {
+		return
+	}
+
+	valid := validKey(request.ProjectID) && len(request.Acquire)+len(request.Release) > 0 &&
+		len(request.Acquire) <= protocol.MaxLeaseClaims && len(request.Release) <= protocol.MaxLeaseClaims
+	for _, claim := range request.Acquire {
+		valid = valid && validKey(claim.TaskID) && validKey(claim.RunID) && claim.TTLSeconds > 0 && claim.TTLSeconds <= protocol.MaxLeaseTTL
+	}
+	for _, taskID := range request.Release {
+		valid = valid && validKey(taskID)
+	}
+	if !valid {
+		writeError(w, http.StatusBadRequest, &protocol.Error{Code: protocol.CodeInvalid, Message: "lease request is invalid"})
+		return
+	}
+
+	results, err := h.store.Leases(r.Context(), device, request)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+
+	writeJSON(w, protocol.LeasesResponse{Results: results})
 }
 
 func (h *handler) decode(w http.ResponseWriter, r *http.Request, target any) bool {

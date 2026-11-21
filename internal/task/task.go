@@ -54,6 +54,9 @@ type CreateInput struct {
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Notes              string `json:"notes"`
+
+	// Number is a number reserved on the sync hub; 0 takes the next local one.
+	Number int64 `json:"-"`
 }
 
 func (v CreateInput) Validate() error {

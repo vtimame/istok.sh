@@ -40,3 +40,10 @@ func (NoActiveRuns) HasActiveRun(context.Context, string) (bool, error) {
 func (NoActiveRuns) TaskRunState(context.Context, string) (run.TaskRunState, error) {
 	return run.TaskRunState{}, nil
 }
+
+// NumberSource hands out task numbers shared with other devices. It returns 0
+// when the project does not sync or the hub is out of reach; the task then
+// takes the next local number.
+type NumberSource interface {
+	ReserveNumber(ctx context.Context, projectID, taskID string) (int64, error)
+}

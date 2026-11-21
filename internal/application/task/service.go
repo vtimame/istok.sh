@@ -12,6 +12,7 @@ import (
 type Service struct {
 	repository Repository
 	runs       ActiveRunInspector
+	numbers    NumberSource
 }
 
 func NewService(repository Repository, runs ActiveRunInspector) *Service {
@@ -20,6 +21,12 @@ func NewService(repository Repository, runs ActiveRunInspector) *Service {
 	}
 
 	return &Service{repository: repository, runs: runs}
+}
+
+// UseNumbers makes new tasks take their numbers from a source shared with
+// other devices.
+func (s *Service) UseNumbers(numbers NumberSource) {
+	s.numbers = numbers
 }
 
 func (s *Service) Create(ctx context.Context, input task.CreateInput, actor task.ActorSnapshot) (task.Task, error) {
@@ -35,6 +42,14 @@ func (s *Service) Create(ctx context.Context, input task.CreateInput, actor task
 			return task.Task{}, err
 		}
 		input.ID = id
+	}
+
+	if s.numbers != nil && input.Number == 0 {
+		number, err := s.numbers.ReserveNumber(ctx, input.ProjectID, input.ID)
+		if err != nil {
+			return task.Task{}, err
+		}
+		input.Number = number
 	}
 
 	return s.repository.Create(ctx, input, actor)

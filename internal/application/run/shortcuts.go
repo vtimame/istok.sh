@@ -149,8 +149,13 @@ func (s *Service) StartTask(ctx context.Context, selector task.Selector, input r
 		return run.Run{}, false, err
 	}
 
-	_, active, err := s.ownedActiveRun(ctx, selector, actor)
+	taskValue, active, err := s.ownedActiveRun(ctx, selector, actor)
 	if err == nil {
+		// The run may have been claimed on another device by the same agent:
+		// continue it here only when that device no longer works on it.
+		if err := s.acquireLease(ctx, taskValue.ProjectID, taskValue.ID, active.ID); err != nil {
+			return run.Run{}, false, err
+		}
 		s.touch(ctx, active.ID, active.LeaseID, actor)
 
 		current, err := s.repository.GetRun(ctx, active.ID)

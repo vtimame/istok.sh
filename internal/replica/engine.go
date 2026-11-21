@@ -18,6 +18,8 @@ type Hub interface {
 	PutProject(ctx context.Context, value protocol.Project) error
 	Push(ctx context.Context, request protocol.PushRequest) ([]protocol.PushResult, error)
 	Pull(ctx context.Context, projectID string, after int64) (protocol.PullResponse, error)
+	Numbers(ctx context.Context, request protocol.NumbersRequest) ([]protocol.NumberClaim, error)
+	Leases(ctx context.Context, request protocol.LeasesRequest) ([]protocol.LeaseResult, error)
 }
 
 // Actor attributes history the sync import writes, such as renumbering.
@@ -56,6 +58,14 @@ type Result struct {
 	Stale     int              `json:"stale"`
 	Conflicts int              `json:"conflicts"`
 	Import    *exchange.Report `json:"import,omitempty"`
+
+	// Renumbered lists tasks whose number the hub changed: tasks created
+	// while the hub was out of reach.
+	Renumbered []exchange.Renumbering `json:"renumbered,omitempty"`
+
+	// LostLeases lists tasks another device works on although a run of
+	// this device claimed them while the hub was out of reach.
+	LostLeases []LostLease `json:"lost_leases,omitempty"`
 }
 
 // RemoteProjects lists the hub's projects with their names decrypted.
@@ -130,6 +140,14 @@ func (e *Engine) Clone(ctx context.Context, projectID string) (Result, error) {
 func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone bool) (Result, error) {
 	result := Result{ProjectID: projectID}
 
+	// Tasks created while the hub was out of reach claim their numbers
+	// before rows move, so pulled tasks never collide with them.
+	if !clone {
+		if _, err := e.reconcileNumbers(ctx, projectID, "", &result); err != nil {
+			return result, err
+		}
+	}
+
 	states, err := e.state.Rows(ctx, projectID)
 	if err != nil {
 		return result, err
@@ -147,6 +165,12 @@ func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone
 		if err := e.state.Enable(ctx, projectID); err != nil {
 			return result, err
 		}
+	}
+
+	// Pulled tasks confirm their numbers too; the hub answers with the ones
+	// they hold.
+	if _, err := e.reconcileNumbers(ctx, projectID, "", &result); err != nil {
+		return result, err
 	}
 
 	schema, snapshot, err := e.exchange.Snapshot(ctx, projectID)
@@ -181,6 +205,10 @@ func (e *Engine) sync(ctx context.Context, projectID string, cursor int64, clone
 	}
 
 	if err := e.push(ctx, projectID, schema, snapshot, local, &result); err != nil {
+		return result, err
+	}
+
+	if err := e.renewLeases(ctx, projectID, &result); err != nil {
 		return result, err
 	}
 

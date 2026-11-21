@@ -44,7 +44,13 @@ func (r *Repository) Create(ctx context.Context, input task.CreateInput, actor t
 			return task.Task{}, err
 		}
 
-		number, err := allocateNumber(ctx, conn, value.ProjectID)
+		number, err := reservedNumber(ctx, conn, value.ProjectID, input.Number)
+		if err != nil {
+			return task.Task{}, err
+		}
+		if number == 0 {
+			number, err = allocateNumber(ctx, conn, value.ProjectID)
+		}
 		if err != nil {
 			return task.Task{}, err
 		}
@@ -82,6 +88,30 @@ func requireActiveProject(ctx context.Context, conn *sql.Conn, projectID string)
 	}
 
 	return nil
+}
+
+// reservedNumber takes a number reserved on the sync hub when no local task
+// holds it, and moves the local counter past it. It returns 0 otherwise.
+func reservedNumber(ctx context.Context, conn *sql.Conn, projectID string, number int64) (int64, error) {
+	if number <= 0 {
+		return 0, nil
+	}
+
+	var taken int
+	err := conn.QueryRowContext(ctx, `SELECT 1 FROM tasks WHERE project_id=? AND number=?`, projectID, number).Scan(&taken)
+	if err == nil {
+		return 0, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("check reserved task number: %w", err)
+	}
+
+	_, err = conn.ExecContext(ctx, `INSERT INTO project_task_counters(project_id,next_number) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET next_number=MAX(next_number,excluded.next_number)`, projectID, number+1)
+	if err != nil {
+		return 0, fmt.Errorf("advance task counter: %w", mapSQLError(err))
+	}
+
+	return number, nil
 }
 
 func allocateNumber(ctx context.Context, conn *sql.Conn, projectID string) (int64, error) {

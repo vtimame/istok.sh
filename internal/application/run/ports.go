@@ -2,6 +2,7 @@ package runapp
 
 import (
 	"context"
+	"time"
 
 	contextpack "github.com/vtimame/istok.sh/internal/contextpack"
 	run "github.com/vtimame/istok.sh/internal/run"
@@ -35,4 +36,13 @@ type Repository interface {
 	RecordEvidence(context.Context, run.RecordEvidenceInput, run.ActorSnapshot) (run.Evidence, error)
 	FinishRun(context.Context, run.FinishRunInput, run.ActorSnapshot) (run.Run, error)
 	CompleteTask(context.Context, run.CompletionRecord) (task.Task, run.Completion, error)
+}
+
+// LeaseArbiter keeps one device on a task at a time. AcquireLease returns an
+// active_run_exists error when another device holds the task, and nil when it
+// is free, the project does not sync or the hub is out of reach.
+// ReleaseLease gives up a lease acquired for a claim that failed.
+type LeaseArbiter interface {
+	AcquireLease(ctx context.Context, projectID, taskID, runID string, ttl time.Duration) error
+	ReleaseLease(ctx context.Context, projectID, taskID, runID string)
 }

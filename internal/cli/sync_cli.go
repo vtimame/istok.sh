@@ -356,6 +356,15 @@ func (r syncResults) String() string {
 		}
 		output.WriteString(presentation.RailLine(value.Name + "  " + presentation.Metadata(strings.Join(parts, " · "))))
 
+		for _, renumbered := range value.Renumbered {
+			output.WriteString("\n")
+			output.WriteString(presentation.RailLine(presentation.Metadata(fmt.Sprintf("renumbered #%d → #%d %s", renumbered.From, renumbered.To, renumbered.Title))))
+		}
+		for _, lost := range value.LostLeases {
+			output.WriteString("\n")
+			output.WriteString(presentation.RailLine(presentation.Metadata(fmt.Sprintf("run %s: device %s works on this task now", lost.RunID, lost.DeviceName))))
+		}
+
 		if value.Import == nil {
 			continue
 		}

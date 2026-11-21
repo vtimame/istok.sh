@@ -47,6 +47,15 @@ All notable changes to Istok are documented here. The format follows
   its database gets its own rows back from the hub. Releases publish the
   hub image `ghcr.io/vtimame/istok-hub` (x86-64 and ARM64, unprivileged,
   data in `/data`); `docker/hub/compose.yml` runs it.
+- **The hub hands out task numbers and keeps one device on a task.** A new
+  task takes its number from the hub, so tasks created on two devices never
+  share a number; a task created while the hub is out of reach gets a local
+  number and, if another device took it meanwhile, moves to a free one on the
+  next sync with a note in its history. Claiming a task, or continuing your
+  run of it on another device, first asks the hub: while another device works
+  on the task, the claim is refused with that device's name. Without the hub
+  the claim goes through locally as before. Each step waits for the hub at
+  most two seconds.
 - **Sync runs by itself once a device joined a hub.** The MCP server pulls
   the project before `task_start`, so a handoff written on another device is
   in the brief, and pushes a few seconds after each write and on exit. The

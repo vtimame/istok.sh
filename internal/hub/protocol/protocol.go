@@ -112,8 +112,64 @@ type PullResponse struct {
 	More bool  `json:"more"`
 }
 
+// NumberClaim asks for the number of a task. Number is the one the device
+// would like, 0 for any. The hub answers with the task's number: the one it
+// already holds, the requested one when free, or the next free one.
+type NumberClaim struct {
+	TaskID string `json:"task_id"`
+	Number int64  `json:"number"`
+}
+
+type NumbersRequest struct {
+	ProjectID string        `json:"project_id"`
+	Claims    []NumberClaim `json:"claims"`
+}
+
+// NumbersResponse answers the claims in request order.
+type NumbersResponse struct {
+	Numbers []NumberClaim `json:"numbers"`
+}
+
+// LeaseClaim acquires or renews the lease of a task for a run of the calling
+// device for TTLSeconds, measured by the hub's clock.
+type LeaseClaim struct {
+	TaskID     string `json:"task_id"`
+	RunID      string `json:"run_id"`
+	TTLSeconds int64  `json:"ttl_seconds"`
+}
+
+type LeasesRequest struct {
+	ProjectID string       `json:"project_id"`
+	Acquire   []LeaseClaim `json:"acquire,omitempty"`
+
+	// Release lists tasks whose lease the calling device gives up.
+	Release []string `json:"release,omitempty"`
+}
+
+// LeaseResult answers one acquire. A refused lease names its holder.
+type LeaseResult struct {
+	TaskID  string       `json:"task_id"`
+	Granted bool         `json:"granted"`
+	Holder  *LeaseHolder `json:"holder,omitempty"`
+}
+
+type LeaseHolder struct {
+	DeviceID   string `json:"device_id"`
+	DeviceName string `json:"device_name"`
+	RunID      string `json:"run_id"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
+type LeasesResponse struct {
+	Results []LeaseResult `json:"results"`
+}
+
 // Limits.
 const (
+	MaxNumberClaims = 1000
+	MaxLeaseClaims  = 500
+	MaxLeaseTTL     = 24 * 60 * 60
+
 	MaxPushRows   = 500
 	MaxPullRows   = 1000
 	MaxBodyBytes  = 64 << 20

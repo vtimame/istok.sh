@@ -14,6 +14,7 @@ type Service struct {
 	repository     Repository
 	taskResolver   TaskResolver
 	contextBuilder ContextPackageBuilder
+	leases         LeaseArbiter
 }
 
 const defaultLeaseDuration = 15 * time.Minute
@@ -24,6 +25,21 @@ func NewService(repository Repository, taskResolver TaskResolver, contextBuilder
 		taskResolver:   taskResolver,
 		contextBuilder: contextBuilder,
 	}
+}
+
+// UseLeases makes claims check with other devices first.
+func (s *Service) UseLeases(leases LeaseArbiter) {
+	s.leases = leases
+}
+
+// acquireLease asks the arbiter for the task's lease before a local claim or
+// resume.
+func (s *Service) acquireLease(ctx context.Context, projectID, taskID, runID string) error {
+	if s.leases == nil {
+		return nil
+	}
+
+	return s.leases.AcquireLease(ctx, projectID, taskID, runID, defaultLeaseDuration)
 }
 
 func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.ClaimInput, actor run.ActorSnapshot) (run.Run, error) {
@@ -101,7 +117,16 @@ func (s *Service) Claim(ctx context.Context, selector task.Selector, input run.C
 		LeaseDuration:  defaultLeaseDuration,
 	}
 
-	return s.repository.Claim(ctx, record)
+	if err := s.acquireLease(ctx, taskValue.ProjectID, taskValue.ID, runID); err != nil {
+		return run.Run{}, err
+	}
+
+	claimed, err := s.repository.Claim(ctx, record)
+	if err != nil && s.leases != nil {
+		s.leases.ReleaseLease(ctx, taskValue.ProjectID, taskValue.ID, runID)
+	}
+
+	return claimed, err
 }
 
 func (s *Service) PreviewContext(ctx context.Context, selector task.Selector, input run.ClaimInput) (contextpack.Package, error) {

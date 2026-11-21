@@ -96,6 +96,32 @@ func (c *Client) Pull(ctx context.Context, projectID string, after int64) (proto
 	return response, err
 }
 
+// Numbers claims task numbers; the answer follows the claims' order.
+func (c *Client) Numbers(ctx context.Context, request protocol.NumbersRequest) ([]protocol.NumberClaim, error) {
+	var response protocol.NumbersResponse
+	if err := c.call(ctx, http.MethodPost, "/v1/numbers", request, &response); err != nil {
+		return nil, err
+	}
+	if len(response.Numbers) != len(request.Claims) {
+		return nil, fmt.Errorf("hub answered %d of %d number claims", len(response.Numbers), len(request.Claims))
+	}
+
+	return response.Numbers, nil
+}
+
+// Leases releases and acquires task leases; results follow request.Acquire.
+func (c *Client) Leases(ctx context.Context, request protocol.LeasesRequest) ([]protocol.LeaseResult, error) {
+	var response protocol.LeasesResponse
+	if err := c.call(ctx, http.MethodPost, "/v1/leases", request, &response); err != nil {
+		return nil, err
+	}
+	if len(response.Results) != len(request.Acquire) {
+		return nil, fmt.Errorf("hub answered %d of %d lease claims", len(response.Results), len(request.Acquire))
+	}
+
+	return response.Results, nil
+}
+
 func (c *Client) call(ctx context.Context, method, path string, body, target any) error {
 	var reader io.Reader
 	if body != nil {

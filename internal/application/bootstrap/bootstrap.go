@@ -152,7 +152,16 @@ func kernelOptions(path string) fx.Option {
 		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),
 		fx.Provide(runapp.NewService),
 		fx.Provide(taskapp.NewService),
+		fx.Invoke(coordinateWithHub),
 	)
+}
+
+// coordinateWithHub takes task numbers and leases from the sync hub for
+// projects that sync. It steps aside when the device has not joined a hub.
+func coordinateWithHub(db *sql.DB, tasks *taskapp.Service, runs *runapp.Service) {
+	coordinator := replica.NewCoordinator(replica.Dir(), exchangerepo.New(db), syncrepo.New(db))
+	tasks.UseNumbers(coordinator)
+	runs.UseLeases(coordinator)
 }
 
 // ExchangeOptions wires export and import of project bundles.
