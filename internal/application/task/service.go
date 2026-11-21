@@ -91,6 +91,7 @@ func (s *Service) List(ctx context.Context, projectID string, options task.ListO
 		}
 		values[i].HasActiveRun = state.HasActiveRun
 		values[i].HasExpiredRun = state.HasExpiredRun
+		values[i].Worker = state.Worker
 	}
 
 	return values, nil
@@ -134,6 +135,7 @@ func (s *Service) Ready(ctx context.Context, projectID string) ([]task.TaskListI
 		}
 		value.HasActiveRun = state.HasActiveRun
 		value.HasExpiredRun = state.HasExpiredRun
+		value.Worker = state.Worker
 		if state.HasActiveRun && !state.HasExpiredRun {
 			continue
 		}

@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/vtimame/istok.sh/internal/replica"
 )
 
 // joinedPair returns two devices syncing one project through a hub.
@@ -123,4 +127,71 @@ func TestHubRefusesATaskAnotherDeviceWorksOn(t *testing.T) {
 	arch.must("sync")
 	mac.must("sync")
 	mac.must("task", "claim", "1")
+}
+
+// Reading tasks syncs first, so a device sees what another one did without
+// istok sync; a hub out of reach is skipped quickly.
+func TestTaskListShowsWhatAnotherDeviceDid(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	arch, mac, _ := joinedPair(t)
+
+	previous := replica.RefreshAge
+	replica.RefreshAge = 0
+	t.Cleanup(func() { replica.RefreshAge = previous })
+
+	arch.must("task", "create", "--title", "made on arch")
+	arch.must("sync")
+
+	if list := mac.must("task", "list"); !strings.Contains(list, "made on arch") {
+		t.Fatalf("mac task list = %q, want the arch task without istok sync", list)
+	}
+
+	// The hub goes away: the read still answers and marks the hub as out of
+	// reach, so the next read does not wait for it.
+	config, err := replica.LoadConfig(mac.syncDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.HubAddress = "127.0.0.1:1"
+	if err := replica.SaveConfig(mac.syncDir, config); err != nil {
+		t.Fatal(err)
+	}
+
+	mac.must("task", "list")
+	if _, err := os.Stat(filepath.Join(mac.syncDir, "hub-unreachable")); err != nil {
+		t.Fatalf("unreachable hub not remembered: %v", err)
+	}
+}
+
+// The task list shows who works on a task, on the device that claimed it
+// and on the other one after a sync.
+func TestTaskListShowsWhoWorksOnATask(t *testing.T) {
+	t.Setenv("ISTOK_AGENT_ID", "")
+	arch, mac, _ := joinedPair(t)
+
+	arch.must("task", "create", "--title", "shared work")
+	arch.must("task", "create", "--title", "nobody's work")
+	arch.must("task", "claim", "1")
+	arch.must("sync")
+	mac.must("sync")
+
+	for _, device := range []*syncDevice{arch, mac} {
+		listed := decodeJSONResult[struct {
+			Tasks []struct {
+				Number int64  `json:"number"`
+				Worker string `json:"worker"`
+			} `json:"tasks"`
+		}](t, device.must("task", "list", "--json"))
+		workers := map[int64]string{}
+		for _, value := range listed.Tasks {
+			workers[value.Number] = value.Worker
+		}
+		if workers[1] == "" || workers[2] != "" {
+			t.Fatalf("workers = %v, want task 1 held and task 2 free", workers)
+		}
+
+		if table := stripANSI(device.must("task", "list")); !strings.Contains(table, "WORKER") || !strings.Contains(table, workers[1]) {
+			t.Fatalf("task list = %q, want a WORKER column with %q", table, workers[1])
+		}
+	}
 }

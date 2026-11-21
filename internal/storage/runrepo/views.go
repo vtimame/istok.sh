@@ -38,8 +38,8 @@ func (r *Repository) TaskRunState(ctx context.Context, taskID string) (runmodel.
 	if !runmodel.IsUUIDv7(taskID) {
 		return runmodel.TaskRunState{}, runmodel.NewError(runmodel.CodeInvalid, "task id must be a canonical UUIDv7")
 	}
-	var expiresAt string
-	err := r.db.QueryRowContext(ctx, `SELECT l.expires_at FROM runs r JOIN run_leases l ON l.run_id=r.id WHERE r.task_id=? AND r.status='active'`, taskID).Scan(&expiresAt)
+	var expiresAt, owner string
+	err := r.db.QueryRowContext(ctx, `SELECT l.expires_at, l.owner_name FROM runs r JOIN run_leases l ON l.run_id=r.id WHERE r.task_id=? AND r.status='active'`, taskID).Scan(&expiresAt, &owner)
 	if err == sql.ErrNoRows {
 		return runmodel.TaskRunState{}, nil
 	}
@@ -50,7 +50,7 @@ func (r *Repository) TaskRunState(ctx context.Context, taskID string) (runmodel.
 	if err != nil {
 		return runmodel.TaskRunState{}, fmt.Errorf("parse task run expiry: %w", err)
 	}
-	return runmodel.TaskRunState{HasActiveRun: true, HasExpiredRun: !expires.After(r.now().UTC())}, nil
+	return runmodel.TaskRunState{HasActiveRun: true, HasExpiredRun: !expires.After(r.now().UTC()), Worker: owner}, nil
 }
 
 func (r *Repository) ListRuns(ctx context.Context, options runmodel.ListOptions) ([]runmodel.Run, error) {

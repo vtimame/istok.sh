@@ -46,6 +46,7 @@ type taskListItemJSON struct {
 	taskValueJSON
 	HasActiveRun   bool              `json:"has_active_run"`
 	HasExpiredRun  bool              `json:"has_expired_run"`
+	Worker         string            `json:"worker,omitempty"`
 	ActiveBlockers []taskSummaryJSON `json:"active_blockers"`
 }
 
@@ -133,10 +134,13 @@ func runTaskCommand(ctx context.Context, command TaskCommand, commandName, cwd s
 	case strings.HasPrefix(commandName, "task create"):
 		return runTaskCreate(ctx, command.Create, cwd, output)
 	case commandName == "task list":
+		refreshBeforeRead(ctx, command.List.Database, cwd)
 		return runTaskListCommand(ctx, command.List, cwd, output)
 	case strings.HasPrefix(commandName, "task show"):
+		refreshBeforeRead(ctx, command.Show.Database, cwd)
 		return runTaskShow(ctx, command.Show, cwd, output)
 	case commandName == "task ready":
+		refreshBeforeRead(ctx, command.Ready.Database, cwd)
 		return runTaskReady(ctx, command.Ready, cwd, output)
 	case strings.HasPrefix(commandName, "task comment"):
 		return runTaskText(ctx, command.Comment.ID, command.Comment.Body, command.Comment.Database, command.Comment.JSON, cwd, output, "comment", (*taskapp.Service).Comment)
@@ -349,6 +353,7 @@ func taskListJSON(values []task.TaskListItem) []taskListItemJSON {
 			taskValueJSON:  taskJSONValue(value.Task),
 			HasActiveRun:   value.HasActiveRun,
 			HasExpiredRun:  value.HasExpiredRun,
+			Worker:         value.Worker,
 			ActiveBlockers: taskSummariesJSON(value.ActiveBlockers),
 		})
 	}

@@ -33,8 +33,9 @@ func (r *recordingSyncer) SyncProject(context.Context, string) (bool, error) {
 	return true, nil
 }
 
-func (r *recordingSyncer) Nudge(string)          { r.add("nudge") }
-func (r *recordingSyncer) Flush(context.Context) {}
+func (r *recordingSyncer) Refresh(context.Context, string) { r.add("refresh") }
+func (r *recordingSyncer) Nudge(string)                    { r.add("nudge") }
+func (r *recordingSyncer) Flush(context.Context)           {}
 func (r *recordingSyncer) take() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -43,7 +44,7 @@ func (r *recordingSyncer) take() []string {
 	return s
 }
 
-func TestSyncFilterPullsBeforeTaskStartAndPushesAfterWrites(t *testing.T) {
+func TestSyncFilterPullsBeforeTaskStartAndReadsAndPushesAfterWrites(t *testing.T) {
 	var db *sql.DB
 	app := fx.New(fx.NopLogger,
 		storage.Module(storage.Config{Path: filepath.Join(t.TempDir(), "istok.db")}),
@@ -77,7 +78,9 @@ func TestSyncFilterPullsBeforeTaskStartAndPushesAfterWrites(t *testing.T) {
 	for name, want := range map[string][]string{
 		"task_start":    {"sync", "call", "nudge"},
 		"task_progress": {"call", "nudge"},
-		"task_show":     {"call"},
+		"task_show":     {"refresh", "call"},
+		"task_list":     {"refresh", "call"},
+		"search":        {"call"},
 		"run_heartbeat": {"call"},
 	} {
 		if got := call(name); !slices.Equal(got, want) {

@@ -191,6 +191,9 @@ type Show struct {
 type TaskRunState struct {
 	HasActiveRun  bool
 	HasExpiredRun bool
+
+	// Worker names the lease owner of the active run, empty without one.
+	Worker string
 }
 
 type ListOptions struct {

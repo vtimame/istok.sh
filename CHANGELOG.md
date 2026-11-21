@@ -8,6 +8,10 @@ All notable changes to Istok are documented here. The format follows
 
 ### Changed
 
+- **The task list shows who works on a task.** `istok task list` and
+  `task ready` gain a WORKER column with the agent of the task's active run,
+  including runs started on another device; the JSON and the MCP
+  `task_list` and `task_ready` results carry it as `worker`.
 - **`istok mcp` lists the core tools by default.** Agents see the short
   workflow: `project_current`, `project_init`, `task_ready`, `task_list`,
   `task_show`, `task_start`, `task_progress`, `task_block`, `task_handoff`,
@@ -82,9 +86,14 @@ All notable changes to Istok are documented here. The format follows
 - **Sync runs by itself once a device joined a hub.** The MCP server pulls
   the project before `task_start`, so a handoff written on another device is
   in the brief, and pushes a few seconds after each write and on exit. The
-  `SessionStart` and `Stop` hooks sync the current project. Processes take
-  turns through a lock in the sync directory; an unreachable
-  hub delays `task_start` and hooks by at most a few seconds.
+  `SessionStart` and `Stop` hooks sync the current project. Reading tasks
+  syncs too: `istok task list`, `task show` and `task ready`, and the MCP
+  tools that list or show tasks, runs and rules, first sync the project
+  unless it synced within the last 30 seconds, so they show what other
+  devices did without `istok sync`. Processes take turns through a lock in
+  the sync directory; an unreachable hub delays `task_start` and hooks by at
+  most a few seconds and reads by at most two, and reads skip it for 30
+  seconds after.
 - **Shorter workflow.** `task_start` creates or claims a task, or continues
   your own run of it, and returns the context and the latest handoff in one
   call. `task_evidence` records a check of any kind, including a CI run or a

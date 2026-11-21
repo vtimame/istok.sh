@@ -68,15 +68,16 @@ func renderTaskListWithSummary(projectName string, values []task.TaskListItem, s
 		return fmt.Sprintf("%s %s %s\n", presentation.Brand(projectName), presentation.Divider(), presentation.Warning("no open tasks"))
 	}
 
-	hasBlockers := false
+	hasBlockers, hasWorkers := false, false
 	for _, value := range values {
-		if len(value.ActiveBlockers) > 0 {
-			hasBlockers = true
-			break
-		}
+		hasBlockers = hasBlockers || len(value.ActiveBlockers) > 0
+		hasWorkers = hasWorkers || value.Worker != ""
 	}
 
 	headers := []string{"#", "STATE", "TITLE"}
+	if hasWorkers {
+		headers = append(headers, "WORKER")
+	}
 	if hasBlockers {
 		headers = append(headers, "BLOCKED BY")
 	}
@@ -87,6 +88,9 @@ func renderTaskListWithSummary(projectName string, values []task.TaskListItem, s
 			presentation.StyledNumber(fmt.Sprintf("#%d", value.Number)),
 			presentation.StyledStatus(taskListState(value)),
 			value.Title,
+		}
+		if hasWorkers {
+			row = append(row, taskListWorker(value))
 		}
 		if hasBlockers {
 			row = append(row, taskListBlockedBy(value))
@@ -115,6 +119,15 @@ func readyTaskCount(count int) string {
 
 func taskListState(value task.TaskListItem) string {
 	return renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.ActiveBlockers))
+}
+
+// taskListWorker names who holds the task: the agent of its active run.
+func taskListWorker(value task.TaskListItem) string {
+	if value.Worker == "" {
+		return "—"
+	}
+
+	return value.Worker
 }
 
 func taskListBlockedBy(value task.TaskListItem) string {

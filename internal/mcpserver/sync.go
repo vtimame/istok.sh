@@ -13,6 +13,7 @@ import (
 // not an error; the syncer does nothing.
 type ProjectSyncer interface {
 	SyncProject(ctx context.Context, projectID string) (bool, error)
+	Refresh(ctx context.Context, projectID string)
 	Nudge(projectID string)
 	Flush(ctx context.Context)
 }
@@ -35,7 +36,14 @@ var readTools = map[string]bool{
 	"index_status": true, "index_rebuild": true,
 }
 
-// SyncFilter pulls the project before task_start, so a handoff written on
+// freshTools show tasks and runs, so they read what other devices did: the
+// project is synced first unless it synced moments ago.
+var freshTools = map[string]bool{
+	"task_ready": true, "task_list": true, "task_show": true,
+	"run_list": true, "run_show": true, "context_list": true,
+}
+
+// SyncFilter pulls the project before task_start and before reading tasks, so a handoff written on
 // another device is in the brief, and pushes shortly after every write.
 func SyncFilter(syncer ProjectSyncer, projects *project.Service, root string) mcp.Middleware {
 	projectID := func(ctx context.Context) string {
@@ -60,6 +68,11 @@ func SyncFilter(syncer ProjectSyncer, projects *project.Service, root string) mc
 					pullCtx, cancel := context.WithTimeout(ctx, startSyncTimeout)
 					_, _ = syncer.SyncProject(pullCtx, id)
 					cancel()
+				}
+			}
+			if freshTools[name] {
+				if id := projectID(ctx); id != "" {
+					syncer.Refresh(ctx, id)
 				}
 			}
 
