@@ -223,9 +223,9 @@ jobs:
           fi
           gh api "${args[@]}" >/dev/null
 
-  # The Homebrew formula in vtimame/homebrew-tap. It needs the secret
-  # HOMEBREW_TAP_TOKEN, a token that can write the contents of the tap
-  # repository; without it the job only renders the formula.
+  # The Homebrew formula in vtimame/homebrew-tap. It is pushed with the
+  # deploy key HOMEBREW_TAP_DEPLOY_KEY, which can write only to the tap;
+  # without the secret the job only renders the formula.
   homebrew-tap:
     needs: release
     runs-on: ubuntu-24.04
@@ -245,22 +245,30 @@ jobs:
           cat "$RUNNER_TEMP/istok.rb"
       - name: Publish the formula to the tap
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP: vtimame/homebrew-tap
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN is not set; the formula was not published."
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::notice::HOMEBREW_TAP_DEPLOY_KEY is not set; the formula was not published."
             exit 0
           fi
 
-          path=Formula/istok.rb
-          content="$(base64 -w0 "$RUNNER_TEMP/istok.rb")"
-          existing_sha="$(gh api "repos/$TAP/contents/$path" --jq .sha 2>/dev/null || true)"
-          args=(--method PUT "repos/$TAP/contents/$path" -f "message=istok ${GITHUB_REF_NAME#v}" -f "content=$content")
-          if [ -n "$existing_sha" ]; then
-            args+=(-f "sha=$existing_sha")
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/tap-key"
+          # GitHub's published host key, from https://api.github.com/meta.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$RUNNER_TEMP/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/tap-key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts -o StrictHostKeyChecking=yes"
+
+          git clone --depth 1 git@github.com:vtimame/homebrew-tap.git "$RUNNER_TEMP/tap"
+          cp "$RUNNER_TEMP/istok.rb" "$RUNNER_TEMP/tap/Formula/istok.rb"
+          cd "$RUNNER_TEMP/tap"
+          if git diff --quiet; then
+            echo "The formula is already up to date."
+            exit 0
           fi
-          gh api "${args[@]}" >/dev/null
+
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "istok ${GITHUB_REF_NAME#v}"
+          git push origin HEAD:main
 
   # The sync hub image. Built after the release, so an image tag always has
   # a published release with the same version.
