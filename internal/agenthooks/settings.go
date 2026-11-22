@@ -209,6 +209,40 @@ func Installed(path string, agent Agent) ([]Event, error) {
 	return events, nil
 }
 
+// InstalledInSettings tells whether the agent's own settings already run the
+// Istok hook for event: the user settings, or the project settings of cwd or
+// any folder above it. Unreadable files count as not having the hook.
+func InstalledInSettings(agent Agent, event Event, cwd string) bool {
+	paths := []string{}
+	if user, err := SettingsPath(agent, ScopeUser, ""); err == nil {
+		paths = append(paths, user)
+	}
+
+	directory, files := ".claude", []string{"settings.json", "settings.local.json"}
+	if agent == Codex {
+		directory, files = ".codex", []string{"hooks.json"}
+	}
+	if cwd != "" {
+		for folder := filepath.Clean(cwd); ; folder = filepath.Dir(folder) {
+			for _, file := range files {
+				paths = append(paths, filepath.Join(folder, directory, file))
+			}
+			if filepath.Dir(folder) == folder {
+				break
+			}
+		}
+	}
+
+	for _, path := range paths {
+		events, err := Installed(path, agent)
+		if err == nil && slices.Contains(events, event) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Snippet is the settings content Istok would write into an empty file.
 func Snippet(agent Agent, hooks []Hook, executable string) ([]byte, error) {
 	formatted, _, err := transform(nil, agent, installChange(agent, hooks, executable))

@@ -27,6 +27,11 @@ type HookCommand struct {
 	Agent    string `arg:"" help:"Agent: claude or codex."`
 	Event    string `arg:"" help:"Event: session-start, pre-compact or stop."`
 	Database string `name:"database" help:"Path to the SQLite database." env:"ISTOK_DATABASE"`
+
+	// FromPlugin marks a hook run by the Claude Code plugin. It steps aside
+	// when `istok hooks install` put the same hook into the settings, so the
+	// agent does not get its output twice.
+	FromPlugin bool `name:"from-plugin" hidden:"" help:"The hook runs from the Claude Code plugin."`
 }
 
 // hookInput is the part of the agent's hook input Istok reads. Claude Code
@@ -58,6 +63,10 @@ func runHook(ctx context.Context, command HookCommand, cwd string, input io.Read
 	event, err := agenthooks.ParseEvent(command.Event)
 	if err != nil {
 		return err
+	}
+
+	if command.FromPlugin && agenthooks.InstalledInSettings(agent, event, cwd) {
+		return nil
 	}
 
 	text, err := hookOutput(ctx, command, event, cwd, input)

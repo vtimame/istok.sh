@@ -57,6 +57,7 @@ func (a Application) Run(ctx context.Context, command Command) error {
 	if command.Check {
 		return nil
 	}
+
 	if !command.Yes {
 		_, _ = fmt.Fprint(a.Output, "Install update? [y/yes] ")
 		answer, readErr := bufio.NewReader(a.Input).ReadString('\n')
@@ -70,6 +71,14 @@ func (a Application) Run(ctx context.Context, command Command) error {
 		}
 	}
 
+	target, err := a.Service.Executable()
+	if err != nil {
+		return fmt.Errorf("locate executable: %w", err)
+	}
+	if manager := PackageManager(target); manager != "" {
+		return fmt.Errorf("istok at %s was installed with %s; update it with: %s", target, manager, upgradeCommand[manager])
+	}
+
 	database := command.Database
 	if database == "" {
 		database = storage.DefaultPath()
@@ -80,10 +89,6 @@ func (a Application) Run(ctx context.Context, command Command) error {
 	backup, existed, err := storage.Backup(ctx, database)
 	if err != nil {
 		return err
-	}
-	target, err := a.Service.Executable()
-	if err != nil {
-		return cleanupBackupError(fmt.Errorf("locate executable: %w", err), backup)
 	}
 	old, err := uniquePath(target, ".istok-update-old-*")
 	if err != nil {
@@ -112,6 +117,24 @@ func (a Application) Run(ctx context.Context, command Command) error {
 	}
 
 	return nil
+}
+
+// upgradeCommand is how each package manager updates istok.
+var upgradeCommand = map[string]string{"Homebrew": "brew upgrade istok"}
+
+// PackageManager names the package manager that owns the executable, or
+// returns "" for a binary istok may replace itself, such as one from
+// get.istok.sh or the Claude Code plugin.
+func PackageManager(executable string) string {
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		resolved = executable
+	}
+	if strings.Contains(filepath.ToSlash(resolved), "/Cellar/istok/") {
+		return "Homebrew"
+	}
+
+	return ""
 }
 
 func cleanupBackupError(original error, backup string) error {
