@@ -22,7 +22,6 @@ printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
 }
 
 repo="${ISTOK_REPO:-vtimame/istok.sh}"
-version="${tag#v}"
 base="https://github.com/$repo/releases/download/$tag"
 
 checksum() {
@@ -45,7 +44,6 @@ cat <<EOF
 class Istok < Formula
   desc "Local tasks, runs and checks for coding agents, with an MCP server"
   homepage "https://istok.sh"
-  version "$version"
   license "Apache-2.0"
 
   on_macos do
