@@ -94,8 +94,9 @@ type runShowInput struct {
 }
 
 type managedExecutionInput struct {
-	RunID              string   `json:"run_id" jsonschema:"Canonical UUIDv7 run identifier."`
-	LeaseID            string   `json:"lease_id" jsonschema:"Current run lease UUIDv7."`
+	TaskID             string   `json:"task_id,omitempty" jsonschema:"Canonical UUIDv7 task identifier of a task you claimed; runs the command in your active run of it. Use it or run_id with lease_id."`
+	RunID              string   `json:"run_id,omitempty" jsonschema:"Canonical UUIDv7 run identifier; with lease_id instead of task_id."`
+	LeaseID            string   `json:"lease_id,omitempty" jsonschema:"Current run lease UUIDv7; with run_id."`
 	Argv               []string `json:"argv" jsonschema:"Managed command argv without a shell."`
 	CWD                string   `json:"cwd,omitempty" jsonschema:"Optional relative working directory inside the fixed project directory."`
 	TimeoutMS          *int64   `json:"timeout_ms,omitempty" jsonschema:"Positive command timeout in milliseconds."`
@@ -108,8 +109,9 @@ type managedExecutionInput struct {
 const maxDurationMilliseconds = int64((1<<63 - 1) / int64(time.Millisecond))
 
 func (v managedExecutionInput) validate() error {
-	if !run.IsUUIDv7(v.RunID) || !run.IsUUIDv7(v.LeaseID) || len(v.Argv) == 0 {
-		return run.NewError(run.CodeInvalid, "run_id, lease_id, and argv are required")
+	byRun := run.IsUUIDv7(v.RunID) && run.IsUUIDv7(v.LeaseID)
+	if (!byRun && v.TaskID == "") || len(v.Argv) == 0 {
+		return run.NewError(run.CodeInvalid, "argv and either task_id or run_id with lease_id are required")
 	}
 	if !validDurationMilliseconds(v.TimeoutMS) || !validDurationMilliseconds(v.TerminationGraceMS) {
 		return run.NewError(run.CodeInvalid, "managed execution durations must be positive and representable")

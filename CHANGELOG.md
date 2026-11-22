@@ -14,6 +14,13 @@ All notable changes to Istok are documented here. The format follows
   (`run by Istok`) or the agent only reported it (`reported by Claude`).
   `istok run show` lists the checks of the run the same way, before its
   artifacts. The JSON output is unchanged.
+- **Agents run their checks through Istok.** The server instructions and the
+  descriptions of `run_validate`, `task_evidence` and `task_done` now lead to
+  `run_validate` for commands such as tests and builds, and keep
+  `task_evidence` for checks Istok cannot run, like CI or a manual test.
+  Agents used to run tests in their own shell and only report them.
+- `run_validate` and `run_exec` take `task_id` of a task you claimed instead of
+  `run_id` and `lease_id`, like `task_evidence`.
 
 ### Fixed
 

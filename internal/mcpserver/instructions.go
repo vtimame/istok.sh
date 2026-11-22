@@ -14,7 +14,7 @@ Use it for substantial work: features, fixes, refactoring, migrations and invest
 2. Find an existing task with task_ready or task_list, then call task_start with its task_id, or with a title to create one. It claims the task or continues your own run, and returns project rules, task context, code hits and the latest handoff. Follow the rules; do not bulk-load other context.
 3. Record meaningful steps with task_progress, blockers with task_block and commits with task_commit. Your calls keep the run lease alive.
 4. Before you stop or the context is compacted, write task_handoff: what is done, where you stopped, decisions, the next step. Afterwards call task_start again with the same task_id. When the user hands the task to another agent ("stop, someone else will continue"), call task_handoff with release: true; it ends your run and leaves the task open for them.
-5. Record each check with task_evidence (a command, CI or a manual test), or run a command with run_validate.
+5. Run each check (tests, build, lint) with run_validate and the task_id instead of your own shell: Istok executes it and keeps the exit code and output as evidence. Use task_evidence only for checks Istok cannot run, such as CI or a manual test.
 6. Close with task_done and a summary; pass not_verified_reason if the result cannot be verified. Implementation alone is not completion.
 
 If a lease cannot be resumed, call run_recover with a reason. On revision_conflict, read the task with task_show and retry.

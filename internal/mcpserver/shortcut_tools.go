@@ -120,7 +120,7 @@ func addShortcutTools(server *mcp.Server, projects *project.Service, tasks *task
 		return nil, result, nil
 	})
 
-	mcp.AddTool(server, tool("task_evidence", "Record a check made outside Istok (a command, a CI pipeline or a manual test) as an attested validation of your run of the task, in one call.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskEvidenceInput) (*mcp.CallToolResult, EvidenceResult, error) {
+	mcp.AddTool(server, tool("task_evidence", "Record a check Istok cannot run itself (a CI pipeline, a manual test, a command that needs your own environment) as an attested validation of your run of the task: Istok stores your word for it. For a command Istok can run, use run_validate instead.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskEvidenceInput) (*mcp.CallToolResult, EvidenceResult, error) {
 		selector, err := currentTaskSelector(ctx, projects, root, in.TaskID)
 		if err != nil {
 			return runErrorTool(err), EvidenceResult{SchemaVersion: runSchemaVersion, Error: toolError(err)}, nil
@@ -142,7 +142,7 @@ func addShortcutTools(server *mcp.Server, projects *project.Service, tasks *task
 		return nil, EvidenceResult{SchemaVersion: runSchemaVersion, Execution: &evidence.Execution, Validation: &evidence.Validation}, nil
 	})
 
-	mcp.AddTool(server, tool("task_done", "Finish your run of the task and complete the task in one call. Uses a passed validation of the run, or closes it unverified with not_verified_reason.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskDoneInput) (*mcp.CallToolResult, TaskDoneResult, error) {
+	mcp.AddTool(server, tool("task_done", "Finish your run of the task and complete the task in one call. Uses a passed validation of the run, preferably one run with run_validate, or closes it unverified with not_verified_reason.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskDoneInput) (*mcp.CallToolResult, TaskDoneResult, error) {
 		selector, err := currentTaskSelector(ctx, projects, root, in.TaskID)
 		if err != nil {
 			return runErrorTool(err), TaskDoneResult{SchemaVersion: runSchemaVersion, Error: toolError(err)}, nil

@@ -223,6 +223,17 @@ func (s *Service) StartTask(ctx context.Context, selector task.Selector, input r
 	return claimed, false, nil
 }
 
+// OwnedActiveRun returns the actor's active run of the task, with its lease,
+// so a call can name the task instead of the run and its lease.
+func (s *Service) OwnedActiveRun(ctx context.Context, selector task.Selector, actor run.ActorSnapshot) (run.Run, error) {
+	if err := actor.Validate(); err != nil {
+		return run.Run{}, err
+	}
+
+	_, active, err := s.ownedActiveRun(ctx, selector, actor)
+	return active, err
+}
+
 // ownedActiveRun returns the task and its active run when the actor owns the
 // run's lease.
 func (s *Service) ownedActiveRun(ctx context.Context, selector task.Selector, actor run.ActorSnapshot) (task.Task, run.Run, error) {
@@ -288,5 +299,5 @@ func (s *Service) latestPassedValidation(ctx context.Context, runID string) (str
 		}
 	}
 
-	return "", run.NewError(run.CodeEvidenceRequired, "the run has no passed validation: record one with task_evidence or run_validate, or pass not_verified_reason")
+	return "", run.NewError(run.CodeEvidenceRequired, "the run has no passed validation: run the check with run_validate (or record one Istok cannot run with task_evidence), or pass not_verified_reason")
 }
