@@ -76,6 +76,25 @@ func (v ValidationSource) Valid() bool {
 	return v == ValidationSourceExecuted || v == ValidationSourceAttested
 }
 
+// TreeState tells whether an executed validation is tied to the code it
+// checked. A bound validation carries the commit and the digest of the
+// working tree after the check; task completion refuses it when the tree has
+// changed since. Empty for attested validations and for validations recorded
+// before Istok fingerprinted the tree.
+type TreeState string
+
+const (
+	// TreeStateBound ties the validation to TreeCommit and TreeDigest.
+	TreeStateBound TreeState = "bound"
+
+	// TreeStateNoGit means the project is not a Git working tree, so nothing
+	// ties the validation to the code.
+	TreeStateNoGit TreeState = "no_git"
+
+	// TreeStateUnavailable means Git failed to fingerprint the tree.
+	TreeStateUnavailable TreeState = "unavailable"
+)
+
 type ValidationStatus string
 
 const (
@@ -165,6 +184,9 @@ type Validation struct {
 	ExitCode    *int             `json:"exit_code,omitempty"`
 	DurationMS  *int64           `json:"duration_ms,omitempty"`
 	Summary     string           `json:"summary"`
+	TreeState   TreeState        `json:"tree_state,omitempty"`
+	TreeCommit  string           `json:"tree_commit,omitempty"`
+	TreeDigest  string           `json:"tree_digest,omitempty"`
 	Actor       ActorSnapshot    `json:"actor"`
 	CreatedAt   time.Time        `json:"created_at"`
 }

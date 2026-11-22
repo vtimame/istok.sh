@@ -171,7 +171,7 @@ func scanExecution(row scanner) (runmodel.Execution, error) {
 
 const validationQuery = `
 SELECT v.id,v.execution_id,v.source,v.status,v.command,v.exit_code,v.duration_ms,v.summary,
-       v.actor_id,v.actor_kind,v.actor_name,v.created_at
+       v.tree_state,v.tree_commit,v.tree_digest,v.actor_id,v.actor_kind,v.actor_name,v.created_at
 FROM validations v `
 
 func scanValidation(row scanner) (runmodel.Validation, error) {
@@ -188,6 +188,9 @@ func scanValidation(row scanner) (runmodel.Validation, error) {
 		&exitCode,
 		&durationMS,
 		&value.Summary,
+		&value.TreeState,
+		&value.TreeCommit,
+		&value.TreeDigest,
 		&value.Actor.ID,
 		&value.Actor.Kind,
 		&value.Actor.Name,

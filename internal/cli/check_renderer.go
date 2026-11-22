@@ -59,6 +59,15 @@ func checkResult(check runmodel.Validation) string {
 
 func checkSource(check runmodel.Validation) string {
 	if check.Source == runmodel.ValidationSourceExecuted {
+		switch check.TreeState {
+		case runmodel.TreeStateBound:
+			return presentation.Brand("run by Istok") + presentation.Metadata(" · tied to code (base "+shortCommit(check.TreeCommit)+")")
+		case runmodel.TreeStateNoGit:
+			return presentation.Brand("run by Istok") + presentation.Warning(" · not tied to code: no Git")
+		case runmodel.TreeStateUnavailable:
+			return presentation.Brand("run by Istok") + presentation.Warning(" · not tied to code: Git failed")
+		}
+
 		return presentation.Brand("run by Istok")
 	}
 
@@ -68,4 +77,13 @@ func checkSource(check runmodel.Validation) string {
 	}
 
 	return presentation.Warning("reported by " + reporter)
+}
+
+// shortCommit abbreviates a commit for display.
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+
+	return commit
 }

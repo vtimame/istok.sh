@@ -17,6 +17,7 @@ import (
 	"github.com/vtimame/istok.sh/internal/executor"
 	"github.com/vtimame/istok.sh/internal/project"
 	runmodel "github.com/vtimame/istok.sh/internal/run"
+	"github.com/vtimame/istok.sh/internal/worktree"
 )
 
 const defaultLeaseDuration = 15 * time.Minute
@@ -141,6 +142,12 @@ func (service *Service) Execute(ctx context.Context, input ExecuteInput, actor r
 	}
 
 	finish := processFinish(execution, processResult, processStarted, processErr)
+
+	var tree treeFingerprint
+	if input.Validate {
+		tree = captureTree(input.ProjectRoot)
+	}
+
 	finishCtx, cancelFinish := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelFinish()
 
@@ -157,7 +164,7 @@ func (service *Service) Execute(ctx context.Context, input ExecuteInput, actor r
 		return runmodel.FinishManagedExecutionResult{}, errors.Join(err, cleanupErr, finishErr)
 	}
 
-	managed, err := service.managedFinish(finishCtx, input, redactedArgv, finish, files, actor)
+	managed, err := service.managedFinish(finishCtx, input, redactedArgv, finish, files, tree, actor)
 	if err != nil {
 		cleanupErr := errors.Join(service.artifacts.Remove(files[0]), service.artifacts.Remove(files[1]))
 		finish.Status = runmodel.ExecutionFailed
@@ -200,6 +207,7 @@ func (service *Service) managedFinish(
 	redactedArgv []string,
 	finish runmodel.FinishExecutionInput,
 	files []artifactstore.File,
+	tree treeFingerprint,
 	actor runmodel.ActorSnapshot,
 ) (runmodel.FinishManagedExecutionResult, error) {
 	artifacts := make([]runmodel.ArtifactInput, 0, 2)
@@ -239,10 +247,43 @@ func (service *Service) managedFinish(
 			ExitCode:    finish.ExitCode,
 			DurationMS:  finish.DurationMS,
 			Summary:     summary,
+			TreeState:   tree.state,
+			TreeCommit:  tree.commit,
+			TreeDigest:  tree.digest,
 		}
 	}
 
 	return service.runs.FinishManagedExecution(ctx, managed, actor)
+}
+
+// treeFingerprint is the state of the project's working tree after a check.
+type treeFingerprint struct {
+	state  runmodel.TreeState
+	commit string
+	digest string
+}
+
+// treeCaptureTimeout bounds fingerprinting a large working tree.
+const treeCaptureTimeout = 2 * time.Minute
+
+// captureTree fingerprints the project's working tree after the check ran, so
+// the validation stays tied to the code it checked, including any files the
+// check itself wrote. It runs on its own deadline: the check has finished and
+// its result must be recorded even when the caller has gone. A failure leaves
+// the validation unbound instead of losing it.
+func captureTree(projectRoot string) treeFingerprint {
+	ctx, cancel := context.WithTimeout(context.Background(), treeCaptureTimeout)
+	defer cancel()
+
+	state, err := worktree.Capture(ctx, projectRoot)
+	if errors.Is(err, worktree.ErrNotRepository) {
+		return treeFingerprint{state: runmodel.TreeStateNoGit}
+	}
+	if err != nil {
+		return treeFingerprint{state: runmodel.TreeStateUnavailable}
+	}
+
+	return treeFingerprint{state: runmodel.TreeStateBound, commit: state.Commit, digest: state.Digest}
 }
 
 func authorizeCommand(input ExecuteInput) (string, error) {

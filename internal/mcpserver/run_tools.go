@@ -191,7 +191,7 @@ func addRunTools(server *mcp.Server, projects *project.Service, runs *runapp.Ser
 
 func addManagedRunTools(server *mcp.Server, projects *project.Service, runs *runapp.Service, workflow *runworkflow.Service, root string, actor actorIdentity, profile Profile) {
 	addManagedExecutionTool(server, "run_exec", "Execute a managed command for a scoped run.", projects, runs, workflow, root, actor, false)
-	addManagedExecutionTool(server, "run_validate", "Run a check (tests, a build, a linter) through Istok for your run of the task: Istok executes the command in the project and records its exit code and output as evidence, which a check run in your own shell cannot give. Prefer it to running the check yourself and reporting it with task_evidence. Pass task_id, and argv without a shell.", projects, runs, workflow, root, actor, true)
+	addManagedExecutionTool(server, "run_validate", "Run a check (tests, a build, a linter) through Istok for your run of the task: Istok executes the command in the project and records its exit code and output as evidence, tied to the state of the code it checked, which a check run in your own shell cannot give. Run it after your last change to the code: task_done refuses a validation when the code has changed since. Prefer it to running the check yourself and reporting it with task_evidence. Pass task_id, and argv without a shell.", projects, runs, workflow, root, actor, true)
 
 	mcp.AddTool(server, tool("run_heartbeat", "Extend the current scoped run lease.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in runHeartbeatInput) (*mcp.CallToolResult, RunResult, error) {
 		_, _, err := runShowInCurrentProject(ctx, projects, runs, root, in.RunID)

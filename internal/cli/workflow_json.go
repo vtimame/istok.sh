@@ -137,6 +137,9 @@ type validationJSON struct {
 	ExitCode    *int      `json:"exit_code,omitempty"`
 	DurationMS  *int64    `json:"duration_ms,omitempty"`
 	Summary     string    `json:"summary"`
+	TreeState   string    `json:"tree_state,omitempty"`
+	TreeCommit  string    `json:"tree_commit,omitempty"`
+	TreeDigest  string    `json:"tree_digest,omitempty"`
 	Actor       actorJSON `json:"actor"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -281,6 +284,7 @@ func validationJSONValue(value runmodel.Validation) validationJSON {
 	return validationJSON{
 		ID: value.ID, ExecutionID: value.ExecutionID, Source: string(value.Source), Status: string(value.Status),
 		Command: value.Command, ExitCode: value.ExitCode, DurationMS: value.DurationMS, Summary: value.Summary,
+		TreeState: string(value.TreeState), TreeCommit: value.TreeCommit, TreeDigest: value.TreeDigest,
 		Actor: actorJSONValue(value.Actor), CreatedAt: value.CreatedAt,
 	}
 }

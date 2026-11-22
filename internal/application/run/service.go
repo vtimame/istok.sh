@@ -15,6 +15,7 @@ type Service struct {
 	taskResolver   TaskResolver
 	contextBuilder ContextPackageBuilder
 	leases         LeaseArbiter
+	projects       ProjectResolver
 }
 
 const defaultLeaseDuration = 15 * time.Minute
@@ -433,6 +434,9 @@ func (s *Service) CompleteTask(ctx context.Context, selector task.Selector, inpu
 		return task.Task{}, run.Completion{}, err
 	}
 	if err := taskValue.RequireActive(); err != nil {
+		return task.Task{}, run.Completion{}, err
+	}
+	if err := s.requireFreshValidation(ctx, taskValue, trim(input.RunID), trim(input.ValidationID)); err != nil {
 		return task.Task{}, run.Completion{}, err
 	}
 

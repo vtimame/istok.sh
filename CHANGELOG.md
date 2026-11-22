@@ -4,6 +4,28 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-22
+
+### Added
+
+- A validation run by Istok is tied to the code it checked. After the command
+  finishes, Istok fingerprints the project's working tree in Git: the commit
+  and every change on top of it, including untracked files that `.gitignore`
+  does not exclude. Fingerprinting is read-only and takes no Git locks.
+- Completing a task refuses a validation when the code changed after the check
+  passed, with the error `evidence_stale`. The run stays open, so the agent
+  runs the check again or completes with `not_verified_reason`. Committing the
+  checked changes does not count as a change.
+- `task show` tells whether a check is tied to code, and the JSON output of a
+  validation carries `tree_state`, `tree_commit` and `tree_digest`.
+
+### Changed
+
+- In a project without Git a validation is marked as not tied to code and
+  still counts. Attested evidence and validations recorded before this release
+  are not checked.
+- Storage migration 00018 adds the fingerprint columns to validations.
+
 ## [0.5.7] - 2026-11-22
 
 ### Changed
@@ -372,6 +394,7 @@ durable tasks, runs and evidence.
 - Signed releases for Linux and macOS (amd64 and arm64) and secure self-update
   with `istok update`.
 
+[0.6.0]: https://github.com/vtimame/istok.sh/compare/v0.5.7...v0.6.0
 [0.5.7]: https://github.com/vtimame/istok.sh/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/vtimame/istok.sh/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/vtimame/istok.sh/compare/v0.5.4...v0.5.5

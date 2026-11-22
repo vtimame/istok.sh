@@ -105,6 +105,12 @@ func (s *Service) DoneTask(ctx context.Context, selector task.Selector, input Ta
 	}
 	if validationID != "" {
 		reason = ""
+
+		// Check before the run finishes: a stale validation leaves the run
+		// active, so the agent can run the check again in it.
+		if err := s.requireFreshValidation(ctx, taskValue, finished.ID, validationID); err != nil {
+			return TaskDone{}, err
+		}
 	}
 
 	if finished.Status == run.StatusActive {

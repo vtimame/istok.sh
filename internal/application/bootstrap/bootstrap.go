@@ -148,6 +148,7 @@ func kernelOptions(path string) fx.Option {
 		fx.Provide(func(repository *runrepo.Repository) taskapp.ActiveRunInspector { return repository }),
 		fx.Provide(runapp.NewService),
 		fx.Provide(taskapp.NewService),
+		fx.Invoke(func(runs *runapp.Service, projects *project.Service) { runs.UseProjects(projects) }),
 		fx.Invoke(coordinateWithHub),
 	)
 }

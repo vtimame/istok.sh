@@ -64,7 +64,7 @@ func (r *Repository) FinishManagedExecution(ctx context.Context, input runmodel.
 			if validation.Status != expected {
 				return runmodel.NewError(runmodel.CodeInvalid, "executed validation status does not match execution result")
 			}
-			_, err = conn.ExecContext(ctx, `INSERT INTO validations (id,execution_id,source,status,command,exit_code,duration_ms,summary,actor_id,actor_kind,actor_name,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, validation.ID, input.ExecutionID, validation.Source, validation.Status, validation.Command, validation.ExitCode, validation.DurationMS, validation.Summary, actor.ID, actor.Kind, actor.Name, stamp(now))
+			_, err = conn.ExecContext(ctx, `INSERT INTO validations (id,execution_id,source,status,command,exit_code,duration_ms,summary,tree_state,tree_commit,tree_digest,actor_id,actor_kind,actor_name,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, validation.ID, input.ExecutionID, validation.Source, validation.Status, validation.Command, validation.ExitCode, validation.DurationMS, validation.Summary, validation.TreeState, validation.TreeCommit, validation.TreeDigest, actor.ID, actor.Kind, actor.Name, stamp(now))
 			if err != nil {
 				return mapSQLError(err, "managed validation conflicts with existing data")
 			}

@@ -177,6 +177,9 @@ type RecordValidationInput struct {
 	ExitCode    *int             `json:"exit_code,omitempty"`
 	DurationMS  *int64           `json:"duration_ms,omitempty"`
 	Summary     string           `json:"summary"`
+	TreeState   TreeState        `json:"tree_state,omitempty"`
+	TreeCommit  string           `json:"tree_commit,omitempty"`
+	TreeDigest  string           `json:"tree_digest,omitempty"`
 }
 
 type ArtifactInput struct {

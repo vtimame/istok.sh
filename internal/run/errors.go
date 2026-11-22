@@ -15,6 +15,7 @@ const (
 	CodeActiveRunExists   Code = "active_run_exists"
 	CodeInvalidTransition Code = "invalid_transition"
 	CodeEvidenceRequired  Code = "evidence_required"
+	CodeEvidenceStale     Code = "evidence_stale"
 	CodeInternal          Code = "internal_error"
 )
 

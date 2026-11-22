@@ -142,7 +142,7 @@ func addShortcutTools(server *mcp.Server, projects *project.Service, tasks *task
 		return nil, EvidenceResult{SchemaVersion: runSchemaVersion, Execution: &evidence.Execution, Validation: &evidence.Validation}, nil
 	})
 
-	mcp.AddTool(server, tool("task_done", "Finish your run of the task and complete the task in one call. Uses a passed validation of the run, preferably one run with run_validate, or closes it unverified with not_verified_reason.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskDoneInput) (*mcp.CallToolResult, TaskDoneResult, error) {
+	mcp.AddTool(server, tool("task_done", "Finish your run of the task and complete the task in one call. Uses a passed validation of the run, preferably one run with run_validate, or closes it unverified with not_verified_reason. A validation from run_validate counts only while the code is as it was when the check ran: if you changed the code since, the call fails with evidence_stale and the run stays open, so run the check again first.", false, false, false), func(ctx context.Context, _ *mcp.CallToolRequest, in taskDoneInput) (*mcp.CallToolResult, TaskDoneResult, error) {
 		selector, err := currentTaskSelector(ctx, projects, root, in.TaskID)
 		if err != nil {
 			return runErrorTool(err), TaskDoneResult{SchemaVersion: runSchemaVersion, Error: toolError(err)}, nil
