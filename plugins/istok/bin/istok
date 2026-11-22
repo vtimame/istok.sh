@@ -18,7 +18,7 @@ MIN_VERSION="0.5.4"
 
 # RELEASE_TAG pins the release to download, such as v0.5.5; empty means the
 # latest release. The npm package sets it to its own version, so
-# "npx istok@0.5.5" never runs an older binary than 0.5.5.
+# "npx istok-cli@0.5.5" never runs an older binary than 0.5.5.
 RELEASE_TAG=""
 
 # The public key of the release signing certificate. Every release archive

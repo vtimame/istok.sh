@@ -1,12 +1,12 @@
 #!/bin/sh
-# Renders the npm package "istok" for a release into a directory.
+# Renders the npm package "istok-cli" for a release into a directory.
 #
 #   scripts/npm-package.sh v0.5.5 dist/npm
 #
 # The package holds no binary: its "istok" command is the plugin launcher,
 # pinned to this release. On first run it downloads the release archive for
 # the platform, checks its SHA-256 and its signature, and runs it. That lets
-# MCP clients start Istok with "npx istok@0.5.5 mcp".
+# MCP clients start Istok with "npx istok-cli@0.5.5 mcp".
 
 set -eu
 
@@ -39,11 +39,11 @@ chmod 0755 "$out/bin/istok"
 cp "$root/LICENSE" "$out/LICENSE"
 
 jq -n --arg version "$version" '{
-  name: "istok",
+  name: "istok-cli",
   version: $version,
   description: "Local task tracker and MCP server for coding agents: Istok runs the agent'"'"'s checks itself and keeps the proof behind \"done\".",
   mcpName: "io.github.vtimame/istok",
-  bin: { istok: "bin/istok" },
+  bin: { istok: "bin/istok", "istok-cli": "bin/istok" },
   files: ["bin/istok", "LICENSE", "README.md"],
   os: ["darwin", "linux"],
   cpu: ["x64", "arm64"],
@@ -56,7 +56,7 @@ jq -n --arg version "$version" '{
 }' > "$out/package.json"
 
 cat > "$out/README.md" <<EOF
-# istok
+# istok-cli
 
 Istok is a local task tracker and MCP server for coding agents. The agent
 records tasks and runs through MCP and runs its checks through Istok, which
@@ -68,7 +68,7 @@ This package starts Istok $version for MCP clients:
 \`\`\`json
 {
   "mcpServers": {
-    "istok": { "command": "npx", "args": ["-y", "istok@$version", "mcp"] }
+    "istok": { "command": "npx", "args": ["-y", "istok-cli@$version", "mcp"] }
   }
 }
 \`\`\`

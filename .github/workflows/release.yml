@@ -270,7 +270,7 @@ jobs:
             commit -am "istok ${GITHUB_REF_NAME#v}"
           git push origin HEAD:main
 
-  # The npm package "istok" and the server entry in the MCP Registry
+  # The npm package "istok-cli" and the server entry in the MCP Registry
   # (registry.modelcontextprotocol.io). Both sign in through GitHub OIDC:
   # npm trusts this workflow as the package's trusted publisher, and the
   # registry grants io.github.vtimame/* to workflows of this repository.
@@ -299,8 +299,8 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           scripts/npm-package.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/npm"
 
-          if [ "$(npm view "istok@$version" version 2>/dev/null || true)" = "$version" ]; then
-            echo "istok@$version is already on npm."
+          if [ "$(npm view "istok-cli@$version" version 2>/dev/null || true)" = "$version" ]; then
+            echo "istok-cli@$version is already on npm."
             exit 0
           fi
 
@@ -328,7 +328,7 @@ jobs:
           # The registry checks mcpName in the published package, which npm
           # may take a moment to serve after the publish above.
           for attempt in 1 2 3 4 5 6; do
-            [ "$(npm view "istok@$version" mcpName 2>/dev/null || true)" = io.github.vtimame/istok ] && break
+            [ "$(npm view "istok-cli@$version" mcpName 2>/dev/null || true)" = io.github.vtimame/istok ] && break
             sleep 10
           done
 

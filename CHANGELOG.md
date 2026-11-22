@@ -8,8 +8,8 @@ All notable changes to Istok are documented here. The format follows
 
 ### Added
 
-- The npm package `istok` and the entry `io.github.vtimame/istok` in the MCP
-  Registry. MCP clients start Istok with `npx -y istok@<version> mcp`; the
+- The npm package `istok-cli` and the entry `io.github.vtimame/istok` in the MCP
+  Registry. MCP clients start Istok with `npx -y istok-cli@<version> mcp`; the
   package holds only the launcher, which downloads the release of its own
   version and checks its checksum and signature. The release workflow
   publishes both through GitHub OIDC.
