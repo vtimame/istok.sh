@@ -350,10 +350,22 @@ func writeHistory(output *strings.Builder, events []task.Event, lost map[string]
 	}
 
 	bodies := make([]historyBody, len(events))
+	finished := ""
 	for index, event := range events {
 		bodies[index] = parseHistoryBody(event.Type, event.Body)
 		if commit, ok := task.CommitOf(event); ok && lost[commit.SHA] {
 			bodies[index].Text += "\nNot on any branch any more: the history was rewritten after linking."
+		}
+
+		// task_done finishes the run and completes the task with the same
+		// summary; the completion does not repeat it.
+		switch event.Type {
+		case "run_finished":
+			finished = strings.TrimSpace(bodies[index].Text)
+		case "completed":
+			if finished != "" && strings.TrimSpace(bodies[index].Text) == finished {
+				bodies[index].Text = ""
+			}
 		}
 	}
 

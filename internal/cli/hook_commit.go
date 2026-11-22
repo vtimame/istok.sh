@@ -23,7 +23,7 @@ import (
 var gitCommitCommand = regexp.MustCompile(`\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(?:commit|commit-tree|reset|rebase|cherry-pick|merge|am|pull|revert)(?:$|[\s;&|)])`)
 
 // commitWindow is how recent a HEAD commit must be to count as the one the
-// agent just made.
+// agent just made. A commit made before the run started never counts.
 const commitWindow = 10 * time.Minute
 
 // hookActor writes the commits the hook links.
@@ -51,11 +51,6 @@ func linkCommitHook(ctx context.Context, database, cwd string, input hookInput) 
 			return nil
 		}
 
-		commits, err := gitcommit.Recent(ctx, current.Root.CanonicalPath, time.Now().Add(-commitWindow))
-		if err != nil || len(commits) == 0 {
-			return err
-		}
-
 		briefs, err := handoffapp.NewService(tasks, runs).Resume(ctx, handoffapp.ResumeInput{ProjectID: current.ID, ActorID: os.Getenv("ISTOK_AGENT_ID")})
 		if err != nil {
 			return err
@@ -75,9 +70,32 @@ func linkCommitHook(ctx context.Context, database, cwd string, input hookInput) 
 			return nil
 		}
 
+		// Only commits made during the run belong to its task. Git keeps commit
+		// times in whole seconds, so the run counts from the start of the
+		// second it began in, and the commit HEAD was on at the claim, its base
+		// commit, is left out.
+		since := time.Now().Add(-commitWindow)
+		if started := live[0].ActiveRun.StartedAt.Truncate(time.Second).Add(-time.Nanosecond); started.After(since) {
+			since = started
+		}
+
+		shown, err := runs.ShowRun(ctx, live[0].ActiveRun.ID)
+		if err != nil {
+			return err
+		}
+
+		commits, err := gitcommit.Recent(ctx, current.Root.CanonicalPath, since)
+		if err != nil || len(commits) == 0 {
+			return err
+		}
+
 		owner := live[0].Task
 		var linked []string
 		for _, commit := range commits {
+			if isBaseCommit(commit, shown.Run.BaseCommit) {
+				continue
+			}
+
 			_, added, err := tasks.LinkCommit(ctx, task.Selector{ProjectID: current.ID, ID: owner.ID}, commit, hookActor)
 			if err != nil {
 				return err
@@ -97,6 +115,16 @@ func linkCommitHook(ctx context.Context, database, cwd string, input hookInput) 
 	}
 
 	return postToolUseContext(message)
+}
+
+// isBaseCommit tells whether commit is the run's base commit, the HEAD of the
+// project root when the run was claimed.
+func isBaseCommit(commit task.Commit, base string) bool {
+	if base == "" || (commit.Repository != "" && commit.Repository != ".") {
+		return false
+	}
+
+	return commit.SHA == base
 }
 
 // postToolUseContext is the hook output that adds message to the agent's

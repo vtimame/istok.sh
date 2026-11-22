@@ -15,6 +15,13 @@ All notable changes to Istok are documented here. The format follows
   `istok run show` lists the checks of the run the same way, before its
   artifacts. The JSON output is unchanged.
 
+### Fixed
+
+- The Claude Code hook no longer links a commit made before the run started,
+  such as the commit HEAD was on when the agent claimed the task.
+- `istok task show` no longer repeats the run summary under `completed` when
+  `task_done` finished the run and completed the task with the same text.
+
 ## [0.5.1] - 2026-11-21
 
 The first release with these changes. The `v0.5.0` tag was never released:
