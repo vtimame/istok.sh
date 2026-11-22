@@ -50,13 +50,23 @@ Istok is a local CLI and MCP server. Your agent records its work through MCP whi
 
 ## Quick start
 
+**With Claude Code**, install the plugin. It brings the MCP server and the hooks, and downloads Istok on first use when it is not installed yet:
+
+```
+/plugin install istok --marketplace vtimame/istok.sh
+```
+
+Then go to step 3. To use `istok` in your own terminal too, install it as in step 1.
+
 **1. Install** (Linux and macOS, no root needed):
 
 ```sh
 curl -fsSL https://get.istok.sh | sh
 ```
 
-**2. Connect your agent** once, for your user. For Claude Code:
+Or with Homebrew: `brew install vtimame/tap/istok`.
+
+**2. Connect your agent** once, for your user. For Claude Code without the plugin:
 
 ```sh
 claude mcp add --transport stdio --scope user istok -- \
@@ -123,7 +133,7 @@ On the device, `istok sync join CODE` registers it and `istok sync enable` in a 
 
 Releases are built for Linux (x86-64, ARM64) and macOS (Intel, Apple Silicon). Windows is not supported yet.
 
-Releases are signed. `istok update` checks for a newer stable release, verifies it, backs up the database and migrates it; `istok update --check` only reports.
+Releases are signed. `istok update` checks for a newer stable release, verifies it, backs up the database and migrates it; `istok update --check` only reports. A Homebrew install is updated with `brew upgrade istok`.
 
 ## Build from source
 

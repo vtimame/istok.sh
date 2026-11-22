@@ -4,6 +4,27 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Claude Code plugin.** This repository is now a plugin marketplace:
+  `/plugin install istok --marketplace vtimame/istok.sh` adds the MCP server
+  and the hooks in one step. The plugin's launcher uses an `istok` on `PATH`
+  when it is this version or newer; otherwise it downloads the latest
+  release into the plugin's data directory, checks its SHA-256 checksum and
+  its release signature, and runs that copy.
+- **Homebrew formula.** Each release updates `istok` in the tap
+  `vtimame/homebrew-tap`: `brew install vtimame/tap/istok`.
+
+### Changed
+
+- `istok update` no longer replaces a Homebrew-managed binary and tells you to
+  run `brew upgrade istok` instead.
+- A plugin hook does nothing when `istok hooks install` already put the same
+  hook into the Claude Code settings, so the agent does not get its output
+  twice.
+
 ## [0.5.2] - 2026-11-22
 
 ### Changed

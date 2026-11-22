@@ -223,6 +223,45 @@ jobs:
           fi
           gh api "${args[@]}" >/dev/null
 
+  # The Homebrew formula in vtimame/homebrew-tap. It needs the secret
+  # HOMEBREW_TAP_TOKEN, a token that can write the contents of the tap
+  # repository; without it the job only renders the formula.
+  homebrew-tap:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Render the formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
+          scripts/homebrew-formula.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/istok.rb"
+          cat "$RUNNER_TEMP/istok.rb"
+      - name: Publish the formula to the tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP: vtimame/homebrew-tap
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set; the formula was not published."
+            exit 0
+          fi
+
+          path=Formula/istok.rb
+          content="$(base64 -w0 "$RUNNER_TEMP/istok.rb")"
+          existing_sha="$(gh api "repos/$TAP/contents/$path" --jq .sha 2>/dev/null || true)"
+          args=(--method PUT "repos/$TAP/contents/$path" -f "message=istok ${GITHUB_REF_NAME#v}" -f "content=$content")
+          if [ -n "$existing_sha" ]; then
+            args+=(-f "sha=$existing_sha")
+          fi
+          gh api "${args[@]}" >/dev/null
+
   # The sync hub image. Built after the release, so an image tag always has
   # a published release with the same version.
   hub-image:

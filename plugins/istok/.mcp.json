@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "istok": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/istok",
+      "args": ["mcp", "--actor-id", "claude", "--actor-name", "Claude Code"]
+    }
+  }
+}

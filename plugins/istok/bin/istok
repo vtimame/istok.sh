@@ -1,0 +1,154 @@
+#!/bin/sh
+# Istok launcher for the Claude Code plugin.
+#
+# Runs the istok binary with the given arguments. It uses an istok on PATH
+# when that one is recent enough, such as a Homebrew or get.istok.sh install;
+# otherwise it downloads the latest release into the plugin's data directory,
+# verifies its SHA-256 checksum and its release signature, and runs that copy.
+#
+# stdout belongs to istok (MCP and hooks speak through it), so every message
+# of the launcher goes to stderr.
+
+set -eu
+
+REPO="vtimame/istok.sh"
+
+# MIN_VERSION is the oldest istok this plugin's hooks and MCP setup work with.
+MIN_VERSION="0.5.3"
+
+# The public key of the release signing certificate. Every release archive
+# carries an ECDSA P-256 signature (.sig) made with its private key.
+PUBLIC_KEY='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERzbRlIuv88w4R2DORh6LtTHRvAkA
+uj6OxspPdO3ynGWHErhHh3nHkydMuL80NRuxGRovh/CRh1FUhP2rOeDrkA==
+-----END PUBLIC KEY-----'
+
+DATA_DIR="${CLAUDE_PLUGIN_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/istok/plugin}"
+MANAGED="$DATA_DIR/bin/istok"
+
+say() {
+  printf 'istok launcher: %s\n' "$*" >&2
+}
+
+fail() {
+  say "$*"
+  exit 1
+}
+
+# version_ok tells whether the binary reports MIN_VERSION or newer.
+version_ok() {
+  reported="$("$1" version 2>/dev/null | head -n 1)" || return 1
+
+  printf '%s\n' "$reported" | awk -v min="$MIN_VERSION" '
+    {
+      sub(/^v/, "", $1)
+      if ($1 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/) exit 1
+      split($1, have, ".")
+      split(min, want, ".")
+      for (i = 1; i <= 3; i++) {
+        if (have[i] + 0 > want[i] + 0) exit 0
+        if (have[i] + 0 < want[i] + 0) exit 1
+      }
+      exit 0
+    }
+  '
+}
+
+# path_istok prints an istok on PATH other than this launcher.
+path_istok() {
+  self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+
+  old_ifs="$IFS"
+  IFS=:
+  for directory in $PATH; do
+    candidate="${directory:-.}/istok"
+    [ -f "$candidate" ] && [ -x "$candidate" ] || continue
+
+    resolved="$(cd "$(dirname "$candidate")" && pwd -P)/istok"
+    [ "$resolved" = "$self" ] && continue
+
+    IFS="$old_ifs"
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  IFS="$old_ifs"
+
+  return 1
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  else
+    fail "cannot verify the download: install sha256sum or shasum"
+  fi
+}
+
+download() {
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+    --retry 2 --connect-timeout 10 --max-time 120 "$1" --output "$2"
+}
+
+# install_release downloads, verifies and installs the latest release.
+install_release() {
+  command -v curl >/dev/null 2>&1 || fail "curl is required to download istok"
+  command -v tar >/dev/null 2>&1 || fail "tar is required to unpack istok"
+  command -v openssl >/dev/null 2>&1 || fail "openssl is required to verify the istok release signature"
+
+  case "$(uname -s)" in
+    Linux) os=linux ;;
+    Darwin) os=darwin ;;
+    *) fail "unsupported operating system $(uname -s): Istok runs on Linux and macOS" ;;
+  esac
+  case "$(uname -m)" in
+    x86_64 | amd64) arch=amd64 ;;
+    arm64 | aarch64) arch=arm64 ;;
+    *) fail "unsupported architecture $(uname -m)" ;;
+  esac
+
+  asset="istok_${os}_${arch}.tar.gz"
+  base="https://github.com/$REPO/releases/latest/download"
+
+  mkdir -p "$DATA_DIR/bin"
+  work="$(mktemp -d "$DATA_DIR/download.XXXXXX")"
+  trap 'rm -rf "$work"' EXIT INT TERM
+
+  say "downloading $asset from github.com/$REPO"
+  download "$base/$asset" "$work/$asset" || fail "download of $asset failed"
+  download "$base/$asset.sig" "$work/$asset.sig" || fail "download of $asset.sig failed"
+  download "$base/SHA256SUMS" "$work/SHA256SUMS" || fail "download of SHA256SUMS failed"
+
+  expected="$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset { print $1; exit }' "$work/SHA256SUMS")"
+  [ -n "$expected" ] || fail "SHA256SUMS has no checksum for $asset"
+  [ "$(sha256 "$work/$asset")" = "$expected" ] || fail "checksum of $asset does not match SHA256SUMS"
+
+  printf '%s\n' "$PUBLIC_KEY" > "$work/release.pub"
+  openssl dgst -sha256 -verify "$work/release.pub" -signature "$work/$asset.sig" "$work/$asset" >/dev/null 2>&1 ||
+    fail "release signature of $asset is not valid"
+
+  tar -xzf "$work/$asset" -C "$work" istok || fail "$asset has no istok binary"
+  chmod 0755 "$work/istok"
+  version_ok "$work/istok" || fail "the latest release is older than $MIN_VERSION or does not run here"
+
+  # rename is atomic, so a concurrent launcher sees either copy whole.
+  mv -f "$work/istok" "$MANAGED"
+  say "installed $("$MANAGED" version) into $DATA_DIR/bin"
+}
+
+if [ -n "${ISTOK_BIN:-}" ]; then
+  exec "$ISTOK_BIN" "$@"
+fi
+
+if found="$(path_istok)" && version_ok "$found"; then
+  exec "$found" "$@"
+fi
+
+if [ ! -x "$MANAGED" ] || ! version_ok "$MANAGED"; then
+  install_release
+  trap - EXIT INT TERM
+  rm -rf "$work"
+fi
+
+exec "$MANAGED" "$@"

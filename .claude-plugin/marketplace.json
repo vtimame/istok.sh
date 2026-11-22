@@ -1,0 +1,15 @@
+{
+  "name": "istok",
+  "description": "Istok for Claude Code",
+  "owner": {
+    "name": "Timur Valitov",
+    "url": "https://github.com/vtimame"
+  },
+  "plugins": [
+    {
+      "name": "istok",
+      "source": "./plugins/istok",
+      "description": "Local tasks, runs and checks for your coding agent: Istok keeps the proof behind \"done\" and carries work across sessions."
+    }
+  ]
+}

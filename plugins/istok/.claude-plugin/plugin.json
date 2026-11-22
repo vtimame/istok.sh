@@ -1,0 +1,14 @@
+{
+  "name": "istok",
+  "displayName": "Istok",
+  "version": "0.5.3",
+  "description": "Local tasks, runs and checks for your coding agent: Istok keeps the proof behind \"done\" and carries work across sessions.",
+  "author": {
+    "name": "Timur Valitov",
+    "url": "https://github.com/vtimame"
+  },
+  "homepage": "https://istok.sh",
+  "repository": "https://github.com/vtimame/istok.sh",
+  "license": "Apache-2.0",
+  "keywords": ["tasks", "mcp", "verification", "local-first", "handoff"]
+}
