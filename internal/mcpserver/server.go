@@ -124,8 +124,8 @@ func New(health HealthChecker, service *project.Service, tasks *taskapp.Service,
 		}
 		return nil, result(p), nil
 	})
-	mcp.AddTool(server, tool("project_init", "Initialize the server root as a project.", false, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
-		Name string `json:"name,omitempty"`
+	mcp.AddTool(server, tool("project_init", "Register the directory this MCP server was started in (the server root) as an Istok project, so tasks, runs and context can be recorded for it. Nothing is written into the directory itself; the project lives in Istok's local database. If the directory is already registered, the existing project is returned with created=false and nothing changes. Call project_current first and use this only when the directory is not registered and the user asked to register it.", false, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+		Name string `json:"name,omitempty" jsonschema:"Display name of a new project. Defaults to the name of the directory. Ignored when the directory is already registered."`
 	}) (*mcp.CallToolResult, InitResult, error) {
 		initialized, err := service.Init(ctx, config.Root, in.Name)
 		if err != nil {

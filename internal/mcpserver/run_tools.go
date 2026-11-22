@@ -233,7 +233,7 @@ func addManagedRunTools(server *mcp.Server, projects *project.Service, runs *run
 	})
 
 	if profile == Worker || profile == Supervisor || profile == Admin {
-		mcp.AddTool(server, tool("run_recover", "Recover a scoped run lease.", false, true, false), func(ctx context.Context, _ *mcp.CallToolRequest, in runRecoverInput) (*mcp.CallToolResult, RunResult, error) {
+		mcp.AddTool(server, tool("run_recover", "Take back your own active run of a task after its lease expired, for example after the session was interrupted for longer than the lease. It issues a new lease to you, cancels the run's executions still marked as running, and records the reason in the task history. Only the actor who owns the lease can recover it. While the lease is still valid this fails; pass force=true only when you know the previous holder of your lease is gone. To simply continue your own run, call task_start with the task_id instead.", false, true, false), func(ctx context.Context, _ *mcp.CallToolRequest, in runRecoverInput) (*mcp.CallToolResult, RunResult, error) {
 			_, _, err := runShowInCurrentProject(ctx, projects, runs, root, in.RunID)
 			if err != nil {
 				return runErrorTool(err), runErrorResult(err), nil

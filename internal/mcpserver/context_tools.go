@@ -48,7 +48,7 @@ func addContextEnabledTools(server *mcp.Server, projects *project.Service, conte
 }
 
 func addContextAddTool(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
-	mcp.AddTool(server, tool("context_add", "Add saved context to the current project.", false, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextAddInput) (*mcp.CallToolResult, ContextResult, error) {
+	mcp.AddTool(server, tool("context_add", "Save a rule, decision, constraint or note for the current project, so later sessions and other agents see it. Use it when the user asks you to remember something for this project. Instructions (kind=instruction) are delivered with every task_start by default; other kinds are delivered when they match the task. To change or retire an existing record, find it with context_list and use context_update instead of adding a duplicate. For longer reusable documentation, use knowledge instead.", false, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextAddInput) (*mcp.CallToolResult, ContextResult, error) {
 		current, err := projects.Current(ctx, root)
 		if err != nil {
 			return errorTool(err), contextErrorResult(err), nil
@@ -93,7 +93,7 @@ func addContextAddTool(server *mcp.Server, projects *project.Service, contexts *
 }
 
 func addContextUpdateTool(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string, actor actorIdentity) {
-	mcp.AddTool(server, tool("context_update", "Update saved context in the current project.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextUpdateInput) (*mcp.CallToolResult, ContextResult, error) {
+	mcp.AddTool(server, tool("context_update", "Change a saved context record of the current project: its text, kind, tags, delivery or expiry. Only the fields you pass change; an empty string clears review_after, expires_at or superseded_by. Get context_id and the current revision from context_list; the update fails with revision_conflict if the record changed since, so read it again and retry. To retire a record in favour of a newer one, set superseded_by to the replacement's id.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextUpdateInput) (*mcp.CallToolResult, ContextResult, error) {
 		current, value, err := currentContextRecord(ctx, projects, contexts, root, in.ContextID, false)
 		if err != nil {
 			return errorTool(err), contextErrorResult(err), nil
@@ -172,7 +172,7 @@ func addContextDoctorTool(server *mcp.Server, projects *project.Service, context
 }
 
 func addContextListTool(server *mcp.Server, projects *project.Service, contexts *contextapp.Service, root string) {
-	mcp.AddTool(server, tool("context_list", "List saved context in the current project.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextListInput) (*mcp.CallToolResult, ContextListResult, error) {
+	mcp.AddTool(server, tool("context_list", "List the saved context of the current project: rules, decisions, constraints and notes, with their ids and revisions. Archived records and disabled instructions are left out unless include_deleted or include_disabled is set; the filters combine with AND. Use it to check what the project already remembers before context_add, or to find the record and revision for context_update.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in contextListInput) (*mcp.CallToolResult, ContextListResult, error) {
 		current, err := projects.Current(ctx, root)
 		if err != nil {
 			return errorTool(err), contextListErrorResult(err), nil

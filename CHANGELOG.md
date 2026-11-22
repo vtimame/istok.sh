@@ -4,6 +4,16 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Clearer MCP tool descriptions for `project_init`, `run_recover`,
+  `context_add`, `context_list`, `context_update` and `task_show`: what each
+  tool changes, when to use it instead of its neighbours, and what its
+  parameters mean. `project_init` and `run_recover` now describe every
+  parameter.
+
 ## [0.5.4] - 2026-11-22
 
 ### Fixed

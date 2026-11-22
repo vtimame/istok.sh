@@ -145,9 +145,9 @@ type runArtifactVerifyInput struct {
 }
 
 type runRecoverInput struct {
-	RunID  string `json:"run_id"`
-	Force  bool   `json:"force,omitempty"`
-	Reason string `json:"reason"`
+	RunID  string `json:"run_id" jsonschema:"Canonical UUIDv7 of the active run to recover, as returned by task_start or task_show."`
+	Force  bool   `json:"force,omitempty" jsonschema:"Recover even though the lease has not expired yet. Use only when the previous session holding your lease is certainly gone."`
+	Reason string `json:"reason" jsonschema:"Why the run is recovered; recorded in the task history."`
 }
 
 type runAbandonInput struct {

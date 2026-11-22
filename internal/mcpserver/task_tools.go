@@ -77,7 +77,7 @@ func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.
 		}
 		return nil, taskListResult(values, nil), nil
 	})
-	mcp.AddTool(server, tool("task_show", "Show a task in the current project.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskShowInput) (*mcp.CallToolResult, TaskShowResult, error) {
+	mcp.AddTool(server, tool("task_show", "Read one task of the current project with its full history: the task fields and revision, every event (progress, comments, runs, checks, commits), its dependencies, blockers and dependents, and whether it has an active or expired run. Use it to review a task or to get the current revision before an update; to start working on the task, call task_start instead, which also returns the context and handoff you need.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskShowInput) (*mcp.CallToolResult, TaskShowResult, error) {
 		current, err := currentTaskProject(ctx, projects, root)
 		if err != nil {
 			return errorTool(err), taskShowErrorResult(err), nil
