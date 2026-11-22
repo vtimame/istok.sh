@@ -33,10 +33,10 @@
 Your coding agent says "done". Istok keeps the proof: the task, every attempt, and the checks behind the result, with Istok running the commands itself. It all stays with your project instead of inside one conversation, so a new session — or a different agent, or another of your machines — picks up where the last one stopped.
 
 <p align="center">
-  <img src=".github/assets/demo.gif" width="760" alt="istok task show: a task Claude Code finished, with go build and go test run by Istok and a gofmt check reported by the agent">
+  <img src=".github/assets/demo.gif" width="760" alt="istok task show: a task Claude Code finished, with go build and go test run by Istok">
 </p>
 
-<p align="center"><sub>A bug fix Claude Code made in a sample project. Istok ran <code>go build</code> and <code>go test</code> itself; the <code>gofmt</code> check is only the agent's word, and is marked so.</sub></p>
+<p align="center"><sub>A bug fix Claude Code made in a sample project. It could not run the tests, said so and left the task open; then Istok ran <code>go build</code> and <code>go test</code> itself, and the task closed.</sub></p>
 
 ## Why
 
