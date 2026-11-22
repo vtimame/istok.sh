@@ -44,7 +44,7 @@ func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.
 		}
 		return nil, taskResult(value), nil
 	})
-	mcp.AddTool(server, tool("task_update", "Update a task in the current project.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskUpdateInput) (*mcp.CallToolResult, TaskResult, error) {
+	mcp.AddTool(server, tool("task_update", "Change the title, description, acceptance criteria or notes of a task in the current project. Pass the revision from task_show as expected_revision; fields you omit stay as they are. Status changes go through task_block, task_done and the other task tools.", false, true, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskUpdateInput) (*mcp.CallToolResult, TaskResult, error) {
 		current, err := currentTaskProject(ctx, projects, root)
 		if err != nil {
 			return errorTool(err), taskErrorResult(err), nil
@@ -77,7 +77,7 @@ func addTaskTools(server *mcp.Server, projects *project.Service, tasks *taskapp.
 		}
 		return nil, taskListResult(values, nil), nil
 	})
-	mcp.AddTool(server, tool("task_show", "Read one task of the current project with its full history: the task fields and revision, every event (progress, comments, runs, checks, commits), its dependencies, blockers and dependents, and whether it has an active or expired run. Use it to review a task or to get the current revision before an update; to start working on the task, call task_start instead, which also returns the context and handoff you need.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskShowInput) (*mcp.CallToolResult, TaskShowResult, error) {
+	mcp.AddTool(server, tool("task_show", "Read one task of the current project with its full history: the task fields and revision, every event (progress, comments, runs, checks, commits), its dependencies, blockers and dependents, and whether it has an active or expired run. Use it to review a task, or to read its current revision for compare-and-swap, such as task_block's optional expected_revision or task_update, which is listed when Istok runs with --tools full; to start working on the task, call task_start instead, which also returns the context and handoff you need.", true, false, true), func(ctx context.Context, _ *mcp.CallToolRequest, in taskShowInput) (*mcp.CallToolResult, TaskShowResult, error) {
 		current, err := currentTaskProject(ctx, projects, root)
 		if err != nil {
 			return errorTool(err), taskShowErrorResult(err), nil
