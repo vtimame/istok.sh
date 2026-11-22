@@ -2,43 +2,43 @@ last_release_id: 1
 last_asset_id: 8
 releases:
     - id: 1
-      name: v0.5.2
-      tag_name: v0.5.2
-      url: https://github.com/vtimame/istok.sh/releases/tag/v0.5.2
+      name: v0.5.3
+      tag_name: v0.5.3
+      url: https://github.com/vtimame/istok.sh/releases/tag/v0.5.3
       draft: false
       prerelease: false
-      published_at: 2026-11-22T17:48:43Z
-      release_notes: 'Release notes: https://github.com/vtimame/istok.sh/releases/tag/v0.5.2'
+      published_at: 2026-11-22T18:34:00Z
+      release_notes: 'Release notes: https://github.com/vtimame/istok.sh/releases/tag/v0.5.3'
       assets:
         - id: 1
           name: istok_darwin_amd64.tar.gz
-          size: 14414732
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_darwin_amd64.tar.gz
+          size: 14417587
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_darwin_amd64.tar.gz
         - id: 2
           name: istok_darwin_amd64.tar.gz.sig
-          size: 70
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_darwin_amd64.tar.gz.sig
+          size: 71
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_darwin_amd64.tar.gz.sig
         - id: 3
           name: istok_darwin_arm64.tar.gz
-          size: 13277966
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_darwin_arm64.tar.gz
+          size: 13280684
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_darwin_arm64.tar.gz
         - id: 4
           name: istok_darwin_arm64.tar.gz.sig
-          size: 70
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_darwin_arm64.tar.gz.sig
+          size: 71
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_darwin_arm64.tar.gz.sig
         - id: 5
           name: istok_linux_amd64.tar.gz
-          size: 14337551
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_linux_amd64.tar.gz
+          size: 14338269
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_linux_amd64.tar.gz
         - id: 6
           name: istok_linux_amd64.tar.gz.sig
-          size: 70
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_linux_amd64.tar.gz.sig
+          size: 72
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_linux_amd64.tar.gz.sig
         - id: 7
           name: istok_linux_arm64.tar.gz
-          size: 12935414
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_linux_arm64.tar.gz
+          size: 12938700
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_linux_arm64.tar.gz
         - id: 8
           name: istok_linux_arm64.tar.gz.sig
-          size: 71
-          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.2/istok_linux_arm64.tar.gz.sig
+          size: 72
+          url: https://github.com/vtimame/istok.sh/releases/download/v0.5.3/istok_linux_arm64.tar.gz.sig
