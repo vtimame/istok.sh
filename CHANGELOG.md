@@ -4,6 +4,21 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The npm package `istok` and the entry `io.github.vtimame/istok` in the MCP
+  Registry. MCP clients start Istok with `npx -y istok@<version> mcp`; the
+  package holds only the launcher, which downloads the release of its own
+  version and checks its checksum and signature. The release workflow
+  publishes both through GitHub OIDC.
+
+### Fixed
+
+- The plugin launcher no longer risks running itself in a loop when it is
+  installed as a symlink, as npm does.
+
 ## [0.5.5] - 2026-11-22
 
 ### Changed

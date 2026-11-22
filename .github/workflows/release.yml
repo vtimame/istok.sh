@@ -270,6 +270,71 @@ jobs:
             commit -am "istok ${GITHUB_REF_NAME#v}"
           git push origin HEAD:main
 
+  # The npm package "istok" and the server entry in the MCP Registry
+  # (registry.modelcontextprotocol.io). Both sign in through GitHub OIDC:
+  # npm trusts this workflow as the package's trusted publisher, and the
+  # registry grants io.github.vtimame/* to workflows of this repository.
+  # A rerun skips what is already published.
+  npm-mcp-registry:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.13
+      MCP_PUBLISHER_SHA256: 7a708f418788d962a1ca3d6744d4cf86ed95f790d33c7abf562916ff83be61d2
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Publish the npm package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/npm-package.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/npm"
+
+          if [ "$(npm view "istok@$version" version 2>/dev/null || true)" = "$version" ]; then
+            echo "istok@$version is already on npm."
+            exit 0
+          fi
+
+          cd "$RUNNER_TEMP/npm"
+          npm publish --access public
+      - name: Publish to the MCP Registry
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          status="$(curl -s -o /dev/null -w '%{http_code}' "https://registry.modelcontextprotocol.io/v0/servers/io.github.vtimame%2Fistok/versions/$version")"
+          if [ "$status" = 200 ]; then
+            echo "io.github.vtimame/istok $version is already in the MCP Registry."
+            exit 0
+          fi
+
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" mcp-publisher.tar.gz | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+
+          jq --arg version "$version" '.version = $version | .packages[0].version = $version' \
+            "$GITHUB_WORKSPACE/server.json" > server.json
+          cat server.json
+
+          # The registry checks mcpName in the published package, which npm
+          # may take a moment to serve after the publish above.
+          for attempt in 1 2 3 4 5 6; do
+            [ "$(npm view "istok@$version" mcpName 2>/dev/null || true)" = io.github.vtimame/istok ] && break
+            sleep 10
+          done
+
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
   # The sync hub image. Built after the release, so an image tag always has
   # a published release with the same version.
   hub-image:

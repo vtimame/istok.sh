@@ -16,6 +16,11 @@ REPO="vtimame/istok.sh"
 # MIN_VERSION is the oldest istok this plugin's hooks and MCP setup work with.
 MIN_VERSION="0.5.4"
 
+# RELEASE_TAG pins the release to download, such as v0.5.5; empty means the
+# latest release. The npm package sets it to its own version, so
+# "npx istok@0.5.5" never runs an older binary than 0.5.5.
+RELEASE_TAG=""
+
 # The public key of the release signing certificate. Every release archive
 # carries an ECDSA P-256 signature (.sig) made with its private key.
 PUBLIC_KEY='-----BEGIN PUBLIC KEY-----
@@ -37,7 +42,7 @@ fail() {
 
 # version_ok tells whether the binary reports MIN_VERSION or newer.
 version_ok() {
-  reported="$("$1" version 2>/dev/null | head -n 1)" || return 1
+  reported="$(ISTOK_LAUNCHED=1 "$1" version 2>/dev/null | head -n 1)" || return 1
 
   printf '%s\n' "$reported" | awk -v min="$MIN_VERSION" '
     {
@@ -109,7 +114,11 @@ install_release() {
   esac
 
   asset="istok_${os}_${arch}.tar.gz"
-  base="https://github.com/$REPO/releases/latest/download"
+  if [ -n "$RELEASE_TAG" ]; then
+    base="https://github.com/$REPO/releases/download/$RELEASE_TAG"
+  else
+    base="https://github.com/$REPO/releases/latest/download"
+  fi
 
   work="$(mktemp -d "$DATA_DIR/download.XXXXXX")"
   trap 'rm -rf "$work"; rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
@@ -129,7 +138,7 @@ install_release() {
 
   tar -xzf "$work/$asset" -C "$work" istok || fail "$asset has no istok binary"
   chmod 0755 "$work/istok"
-  version_ok "$work/istok" || fail "the latest release is older than $MIN_VERSION or does not run here"
+  version_ok "$work/istok" || fail "the downloaded release is older than $MIN_VERSION or does not run here"
 
   # rename is atomic, so a concurrent launcher sees either copy whole.
   mv -f "$work/istok" "$MANAGED"
@@ -140,8 +149,10 @@ if [ -n "${ISTOK_BIN:-}" ]; then
   exec "$ISTOK_BIN" "$@"
 fi
 
-if found="$(path_istok)" && version_ok "$found"; then
-  exec "$found" "$@"
+# ISTOK_LAUNCHED guards against running itself in a loop: npm installs the
+# launcher as a symlink, which the path comparison above may not recognize.
+if [ -z "${ISTOK_LAUNCHED:-}" ] && found="$(path_istok)" && version_ok "$found"; then
+  ISTOK_LAUNCHED=1 exec "$found" "$@"
 fi
 
 # managed_ok tells whether the plugin's own copy is installed and recent.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.vtimame/istok",
+  "title": "Istok",
+  "description": "Local task tracker for coding agents that runs their checks and keeps the proof behind done.",
+  "websiteUrl": "https://istok.sh",
+  "repository": {
+    "url": "https://github.com/vtimame/istok.sh",
+    "source": "github"
+  },
+  "version": "0.5.5",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "istok",
+      "version": "0.5.5",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
