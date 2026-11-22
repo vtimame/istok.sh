@@ -111,9 +111,8 @@ install_release() {
   asset="istok_${os}_${arch}.tar.gz"
   base="https://github.com/$REPO/releases/latest/download"
 
-  mkdir -p "$DATA_DIR/bin"
   work="$(mktemp -d "$DATA_DIR/download.XXXXXX")"
-  trap 'rm -rf "$work"' EXIT INT TERM
+  trap 'rm -rf "$work"; rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
 
   say "downloading $asset from github.com/$REPO"
   download "$base/$asset" "$work/$asset" || fail "download of $asset failed"
@@ -145,10 +144,44 @@ if found="$(path_istok)" && version_ok "$found"; then
   exec "$found" "$@"
 fi
 
-if [ ! -x "$MANAGED" ] || ! version_ok "$MANAGED"; then
-  install_release
+# managed_ok tells whether the plugin's own copy is installed and recent.
+managed_ok() {
+  [ -x "$MANAGED" ] && version_ok "$MANAGED"
+}
+
+# take_lock lets one launcher download at a time: the MCP server and the
+# SessionStart hook start together on the first run. The others wait for it
+# and then use its copy. A lock older than ten minutes is left from a killed
+# launcher and is taken over.
+take_lock() {
+  waited=0
+  until mkdir "$LOCK" 2>/dev/null; do
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+      rmdir "$LOCK" 2>/dev/null || true
+      continue
+    fi
+    [ "$waited" -lt 150 ] || fail "another launcher is still downloading istok; remove $LOCK if none is running"
+
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+LOCK="$DATA_DIR/download.lock"
+
+if ! managed_ok; then
+  mkdir -p "$DATA_DIR/bin"
+  take_lock
+  trap 'rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
+
+  # Another launcher may have installed it while this one waited.
+  if ! managed_ok; then
+    install_release
+    rm -rf "$work"
+  fi
+
+  rmdir "$LOCK" 2>/dev/null || true
   trap - EXIT INT TERM
-  rm -rf "$work"
 fi
 
 exec "$MANAGED" "$@"

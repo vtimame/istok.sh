@@ -4,6 +4,19 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `istok mcp` exits as soon as Claude Code asks it to. Recent Claude Code
+  versions keep a `subscriptions/listen` request open, and closing the
+  session waited for it forever, so Claude Code killed the server after
+  half a second. The MCP SDK is updated to v1.8.0, which ends that request
+  when the session closes.
+- The plugin downloads Istok once on the first run. The MCP server and the
+  SessionStart hook start together; the second launcher now waits for the
+  first one's download instead of fetching the release again.
+
 ## [0.5.3] - 2026-11-22
 
 ### Added
