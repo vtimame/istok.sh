@@ -325,10 +325,10 @@ jobs:
             "$GITHUB_WORKSPACE/server.json" > server.json
           cat server.json
 
-          # The registry checks mcpName in the published package, which npm
-          # may take a moment to serve after the publish above.
-          for attempt in 1 2 3 4 5 6; do
-            [ "$(npm view "istok-cli@$version" mcpName 2>/dev/null || true)" = io.github.vtimame/istok ] && break
+          # The registry reads the version from registry.npmjs.org, which may
+          # serve it a few minutes after the publish above.
+          for attempt in $(seq 30); do
+            [ "$(curl -s "https://registry.npmjs.org/istok-cli/$version" | jq -r .mcpName)" = io.github.vtimame/istok ] && break
             sleep 10
           done
 
