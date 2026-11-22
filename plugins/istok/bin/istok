@@ -14,7 +14,7 @@ set -eu
 REPO="vtimame/istok.sh"
 
 # MIN_VERSION is the oldest istok this plugin's hooks and MCP setup work with.
-MIN_VERSION="0.5.3"
+MIN_VERSION="0.5.4"
 
 # The public key of the release signing certificate. Every release archive
 # carries an ECDSA P-256 signature (.sig) made with its private key.
