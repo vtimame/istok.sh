@@ -4,6 +4,17 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`istok task show` lists the checks of the task.** A new Checks section
+  shows every validation of the task's runs, oldest first: the result, the
+  command, its exit code and duration, and whether Istok ran the command
+  (`run by Istok`) or the agent only reported it (`reported by Claude`).
+  `istok run show` lists the checks of the run the same way, before its
+  artifacts. The JSON output is unchanged.
+
 ## [0.5.1] - 2026-11-21
 
 The first release with these changes. The `v0.5.0` tag was never released:

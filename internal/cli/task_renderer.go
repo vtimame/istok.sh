@@ -10,6 +10,7 @@ import (
 	prettytext "github.com/jedib0t/go-pretty/v6/text"
 
 	"github.com/vtimame/istok.sh/internal/cli/presentation"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
@@ -157,16 +158,16 @@ func taskListBlockedBy(value task.TaskListItem) string {
 
 // RenderTaskShow remains available for renderers that do not have project context.
 func (humanTaskRenderer) RenderTaskShow(value task.Show) string {
-	return renderTaskShow("Task", value, nil)
+	return renderTaskShow("Task", value, nil, nil)
 }
 
 // RenderProjectTaskShow marks the linked commits in lost as no longer on any
-// branch.
-func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Show, lost map[string]bool) string {
-	return renderTaskShow(projectName, value, lost)
+// branch and lists the checks of the task's runs.
+func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Show, lost map[string]bool, checks []runmodel.Validation) string {
+	return renderTaskShow(projectName, value, lost, checks)
 }
 
-func renderTaskShow(projectName string, value task.Show, lost map[string]bool) string {
+func renderTaskShow(projectName string, value task.Show, lost map[string]bool, checks []runmodel.Validation) string {
 	var output strings.Builder
 	state := renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.Blockers))
 
@@ -193,6 +194,13 @@ func renderTaskShow(projectName string, value task.Show, lost map[string]bool) s
 	writeRelations(&output, "Blocked by", value.Blockers)
 	writeRelations(&output, "Blocks", value.Dependents)
 	output.WriteString("\n")
+
+	if checks != nil {
+		output.WriteString(presentation.SectionTitle("Checks"))
+		output.WriteString("\n")
+		writeChecks(&output, checks)
+		output.WriteString("\n")
+	}
 
 	output.WriteString(presentation.SectionTitle("History"))
 	output.WriteString("\n")

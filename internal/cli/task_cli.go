@@ -6,15 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
 	"go.uber.org/fx"
 
 	"github.com/vtimame/istok.sh/internal/application/bootstrap"
+	runapp "github.com/vtimame/istok.sh/internal/application/run"
 	taskapp "github.com/vtimame/istok.sh/internal/application/task"
 	"github.com/vtimame/istok.sh/internal/gitcommit"
 	"github.com/vtimame/istok.sh/internal/project"
+	runmodel "github.com/vtimame/istok.sh/internal/run"
 	"github.com/vtimame/istok.sh/internal/task"
 )
 
@@ -40,6 +43,9 @@ type taskCommandResult struct {
 
 	// LostCommits are linked commits that no ref holds any more.
 	LostCommits map[string]bool
+
+	// Checks are the validations of every run of the shown task, oldest first.
+	Checks []runmodel.Validation
 }
 
 type taskListItemJSON struct {
@@ -110,7 +116,7 @@ func runTaskListCommand(ctx context.Context, command TaskListCommand, cwd string
 }
 
 func runTaskShow(ctx context.Context, command TaskShowCommand, cwd string, output io.Writer) error {
-	return runTaskApplication(ctx, command.Database, command.JSON, output, func(projects *project.Service, tasks *taskapp.Service) (taskCommandResult, error) {
+	return runTaskApplicationWithRuns(ctx, command.Database, command.JSON, output, func(projects *project.Service, tasks *taskapp.Service, runs *runapp.Service) (taskCommandResult, error) {
 		current, err := projects.Current(ctx, cwd)
 		if err != nil {
 			return taskCommandResult{}, err
@@ -121,13 +127,46 @@ func runTaskShow(ctx context.Context, command TaskShowCommand, cwd string, outpu
 			return taskCommandResult{}, err
 		}
 
-		var lost map[string]bool
-		if current.Root != nil && !command.JSON {
-			lost = gitcommit.Lost(ctx, current.Root.CanonicalPath, linkedCommits(value.Events))
+		result := taskCommandResult{kind: taskCommandResultShow, Project: current, Show: value}
+		if command.JSON {
+			return result, nil
 		}
 
-		return taskCommandResult{kind: taskCommandResultShow, Project: current, Show: value, LostCommits: lost}, nil
+		if current.Root != nil {
+			result.LostCommits = gitcommit.Lost(ctx, current.Root.CanonicalPath, linkedCommits(value.Events))
+		}
+
+		checks, err := taskChecks(ctx, runs, value.Task.ID)
+		if err != nil {
+			return taskCommandResult{}, err
+		}
+		result.Checks = checks
+
+		return result, nil
 	})
+}
+
+// taskChecks returns the validations of every run of the task, oldest first.
+func taskChecks(ctx context.Context, runs *runapp.Service, taskID string) ([]runmodel.Validation, error) {
+	values, err := runs.ListRuns(ctx, runmodel.ListOptions{TaskID: taskID})
+	if err != nil {
+		return nil, err
+	}
+
+	var checks []runmodel.Validation
+	for _, value := range values {
+		shown, err := runs.ShowRun(ctx, value.ID)
+		if err != nil {
+			return nil, err
+		}
+		checks = append(checks, shown.Validations...)
+	}
+
+	sort.SliceStable(checks, func(i, j int) bool {
+		return checks[i].CreatedAt.Before(checks[j].CreatedAt)
+	})
+
+	return checks, nil
 }
 
 func runTaskCommand(ctx context.Context, command TaskCommand, commandName, cwd string, output io.Writer) error {
@@ -257,14 +296,22 @@ func runTaskDependency(ctx context.Context, command TaskDependencyAddCommand, ad
 }
 
 func runTaskApplication(ctx context.Context, database string, jsonOutput bool, output io.Writer, action func(*project.Service, *taskapp.Service) (taskCommandResult, error)) error {
+	return runTaskApplicationWithRuns(ctx, database, jsonOutput, output, func(projects *project.Service, tasks *taskapp.Service, _ *runapp.Service) (taskCommandResult, error) {
+		return action(projects, tasks)
+	})
+}
+
+func runTaskApplicationWithRuns(ctx context.Context, database string, jsonOutput bool, output io.Writer, action func(*project.Service, *taskapp.Service, *runapp.Service) (taskCommandResult, error)) error {
 	var projects *project.Service
 	var tasks *taskapp.Service
+	var runs *runapp.Service
 	app := fx.New(
 		fx.NopLogger,
 		bootstrap.TaskOptions(database),
-		fx.Invoke(func(projectService *project.Service, taskService *taskapp.Service) {
+		fx.Invoke(func(projectService *project.Service, taskService *taskapp.Service, runService *runapp.Service) {
 			projects = projectService
 			tasks = taskService
+			runs = runService
 		}),
 	)
 	if err := app.Start(ctx); err != nil {
@@ -274,7 +321,7 @@ func runTaskApplication(ctx context.Context, database string, jsonOutput bool, o
 		return err
 	}
 
-	value, actionErr := action(projects, tasks)
+	value, actionErr := action(projects, tasks, runs)
 	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -337,7 +384,7 @@ func renderTaskCommandResult(value taskCommandResult) string {
 		}
 		return humanTaskRenderer{}.RenderProjectTaskList(value.Project.Name, value.Tasks)
 	case taskCommandResultShow:
-		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show, value.LostCommits)
+		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show, value.LostCommits, value.Checks)
 	default:
 		return ""
 	}

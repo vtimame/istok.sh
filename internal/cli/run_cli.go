@@ -644,6 +644,17 @@ func renderRunShowView(value runShowView) string {
 	output.WriteString(presentation.SectionTitle("Evidence"))
 	output.WriteString("\n")
 	output.WriteString(presentation.RailLine(fmt.Sprintf("%d executions · %d validations · %d artifacts", len(value.Executions), len(value.Validations), len(value.Artifacts))))
+	if len(value.Validations) > 0 {
+		output.WriteString("\n\n")
+		output.WriteString(presentation.SectionTitle("Checks"))
+		output.WriteString("\n")
+
+		var checks strings.Builder
+		writeChecks(&checks, value.Validations)
+		output.WriteString(strings.TrimSuffix(checks.String(), "\n"))
+		output.WriteString("\n\n")
+		output.WriteString(presentation.SectionTitle("Artifacts"))
+	}
 	for _, artifact := range value.Artifacts {
 		output.WriteString("\n")
 		output.WriteString(presentation.RailLine(fmt.Sprintf("%s %s %s", presentation.Metadata(string(artifact.Kind)), presentation.Warning(artifact.ID), presentation.Metadata(formatArtifactSize(artifact)))))
