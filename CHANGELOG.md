@@ -4,6 +4,16 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.7] - 2026-11-22
+
+### Changed
+
+- Clearer MCP tool descriptions: `task_show` names the tools that use a task
+  revision, `context_add` says that only `--tools full` writes knowledge, and
+  `task_update` describes what it changes.
+- The release workflow waits up to five minutes for npm to serve a new
+  version before publishing it to the MCP Registry.
+
 ## [0.5.6] - 2026-11-22
 
 ### Added
@@ -362,6 +372,7 @@ durable tasks, runs and evidence.
 - Signed releases for Linux and macOS (amd64 and arm64) and secure self-update
   with `istok update`.
 
+[0.5.7]: https://github.com/vtimame/istok.sh/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/vtimame/istok.sh/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/vtimame/istok.sh/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/vtimame/istok.sh/compare/v0.5.3...v0.5.4

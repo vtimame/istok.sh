@@ -1,7 +1,7 @@
 {
   "name": "istok",
   "displayName": "Istok",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Local tasks, runs and checks for your coding agent: Istok keeps the proof behind \"done\" and carries work across sessions.",
   "author": {
     "name": "Timur Valitov",
