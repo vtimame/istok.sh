@@ -28,6 +28,9 @@
   <a href="https://istok.sh">
     <img src="https://img.shields.io/badge/docs-istok.sh-green?style=flat-square" alt="Documentation">
   </a>
+  <a href="https://glama.ai/mcp/servers/vtimame/istok.sh">
+    <img src="https://glama.ai/mcp/servers/vtimame/istok.sh/badges/score.svg" alt="vtimame/istok.sh MCP server">
+  </a>
 </p>
 
 Your coding agent says "done". Istok keeps the proof: the task, every attempt, and the checks behind the result, with Istok running the commands itself. It all stays with your project instead of inside one conversation, so a new session — or a different agent, or another of your machines — picks up where the last one stopped.
