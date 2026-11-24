@@ -11,7 +11,8 @@ import (
 // writeChecks lists validations one per line: the result, the command, its
 // exit code and duration, and who stands behind it. A check Istok ran itself
 // is evidence; a check the agent only reported is its word, and says so.
-func writeChecks(output *strings.Builder, checks []runmodel.Validation) {
+// Checks in changed ran on code that has changed since.
+func writeChecks(output *strings.Builder, checks []runmodel.Validation, changed map[string]bool) {
 	if len(checks) == 0 {
 		output.WriteString(presentation.RailLine("—"))
 		output.WriteString("\n")
@@ -24,7 +25,7 @@ func writeChecks(output *strings.Builder, checks []runmodel.Validation) {
 			presentation.StyledStatus(string(check.Status)),
 			checkCommand(check),
 			presentation.Metadata(checkResult(check)),
-			checkSource(check),
+			checkSource(check, changed[check.ID]),
 		})
 	}
 
@@ -57,10 +58,14 @@ func checkResult(check runmodel.Validation) string {
 	return strings.Join(parts, " · ")
 }
 
-func checkSource(check runmodel.Validation) string {
+func checkSource(check runmodel.Validation, changed bool) string {
 	if check.Source == runmodel.ValidationSourceExecuted {
 		switch check.TreeState {
 		case runmodel.TreeStateBound:
+			if changed {
+				return presentation.Brand("run by Istok") + presentation.Warning(" · code changed since: run it again")
+			}
+
 			return presentation.Brand("run by Istok") + presentation.Metadata(" · tied to code (base "+shortCommit(check.TreeCommit)+")")
 		case runmodel.TreeStateNoGit:
 			return presentation.Brand("run by Istok") + presentation.Warning(" · not tied to code: no Git")

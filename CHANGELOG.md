@@ -4,6 +4,22 @@ All notable changes to Istok are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Istok uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-11-24
+
+### Added
+
+- `istok task show` marks a check Istok ran whose code has changed since with
+  "code changed since: run it again", while the task is open. Before, the
+  check looked passed until completion refused it with `evidence_stale`.
+- A launch demo, `.github/assets/proof.gif`, recorded with VHS from
+  `.github/assets/proof.tape`: the agent edits the code after its tests
+  passed, completion is refused and the rerun catches the bug.
+
+### Changed
+
+- The README and the quick start say how to use Istok on Windows: the Linux
+  build inside WSL, with the agent running there too.
+
 ## [0.6.0] - 2026-11-22
 
 ### Added
@@ -394,6 +410,7 @@ durable tasks, runs and evidence.
 - Signed releases for Linux and macOS (amd64 and arm64) and secure self-update
   with `istok update`.
 
+[0.6.1]: https://github.com/vtimame/istok.sh/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/vtimame/istok.sh/compare/v0.5.7...v0.6.0
 [0.5.7]: https://github.com/vtimame/istok.sh/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/vtimame/istok.sh/compare/v0.5.5...v0.5.6

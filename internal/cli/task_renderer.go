@@ -158,16 +158,29 @@ func taskListBlockedBy(value task.TaskListItem) string {
 
 // RenderTaskShow remains available for renderers that do not have project context.
 func (humanTaskRenderer) RenderTaskShow(value task.Show) string {
-	return renderTaskShow("Task", value, nil, nil)
+	return renderTaskShow("Task", value, nil, nil, nil)
 }
 
 // RenderProjectTaskShow marks the linked commits in lost as no longer on any
-// branch and lists the checks of the task's runs.
-func (humanTaskRenderer) RenderProjectTaskShow(projectName string, value task.Show, lost map[string]bool, checks []runmodel.Validation) string {
-	return renderTaskShow(projectName, value, lost, checks)
+// branch and lists the checks of the task's runs, marking those in changed
+// as run on code that has changed since.
+func (humanTaskRenderer) RenderProjectTaskShow(
+	projectName string,
+	value task.Show,
+	lost map[string]bool,
+	checks []runmodel.Validation,
+	changed map[string]bool,
+) string {
+	return renderTaskShow(projectName, value, lost, checks, changed)
 }
 
-func renderTaskShow(projectName string, value task.Show, lost map[string]bool, checks []runmodel.Validation) string {
+func renderTaskShow(
+	projectName string,
+	value task.Show,
+	lost map[string]bool,
+	checks []runmodel.Validation,
+	changed map[string]bool,
+) string {
 	var output strings.Builder
 	state := renderEffectiveState(task.DeriveState(value.Task, value.HasActiveRun && !value.HasExpiredRun, value.Blockers))
 
@@ -198,7 +211,7 @@ func renderTaskShow(projectName string, value task.Show, lost map[string]bool, c
 	if checks != nil {
 		output.WriteString(presentation.SectionTitle("Checks"))
 		output.WriteString("\n")
-		writeChecks(&output, checks)
+		writeChecks(&output, checks, changed)
 		output.WriteString("\n")
 	}
 

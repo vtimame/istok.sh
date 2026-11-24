@@ -650,7 +650,7 @@ func renderRunShowView(value runShowView) string {
 		output.WriteString("\n")
 
 		var checks strings.Builder
-		writeChecks(&checks, value.Validations)
+		writeChecks(&checks, value.Validations, nil)
 		output.WriteString(strings.TrimSuffix(checks.String(), "\n"))
 		output.WriteString("\n\n")
 		output.WriteString(presentation.SectionTitle("Artifacts"))

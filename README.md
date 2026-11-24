@@ -134,7 +134,7 @@ On the device, `istok sync join CODE` registers it and `istok sync enable` in a 
 
 ## Platforms
 
-Releases are built for Linux (x86-64, ARM64) and macOS (Intel, Apple Silicon). Windows is not supported yet.
+Releases are built for Linux (x86-64, ARM64) and macOS (Intel, Apple Silicon). Windows is not supported natively yet: on Windows, install the Linux build inside WSL and run your agent there too, so both see the same files and Git.
 
 Releases are signed. `istok update` checks for a newer stable release, verifies it, backs up the database and migrates it; `istok update --check` only reports. A Homebrew install is updated with `brew upgrade istok`.
 

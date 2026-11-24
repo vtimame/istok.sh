@@ -46,6 +46,10 @@ type taskCommandResult struct {
 
 	// Checks are the validations of every run of the shown task, oldest first.
 	Checks []runmodel.Validation
+
+	// ChangedChecks are checks of an open task whose code has changed since
+	// they ran.
+	ChangedChecks map[string]bool
 }
 
 type taskListItemJSON struct {
@@ -141,6 +145,12 @@ func runTaskShow(ctx context.Context, command TaskShowCommand, cwd string, outpu
 			return taskCommandResult{}, err
 		}
 		result.Checks = checks
+
+		// Only an open task can still be completed on its checks; the code of a
+		// finished one is expected to move on.
+		if current.Root != nil && value.Task.Status != task.StatusDone {
+			result.ChangedChecks = changedChecks(ctx, current.Root.CanonicalPath, checks)
+		}
 
 		return result, nil
 	})
@@ -384,7 +394,7 @@ func renderTaskCommandResult(value taskCommandResult) string {
 		}
 		return humanTaskRenderer{}.RenderProjectTaskList(value.Project.Name, value.Tasks)
 	case taskCommandResultShow:
-		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show, value.LostCommits, value.Checks)
+		return humanTaskRenderer{}.RenderProjectTaskShow(value.Project.Name, value.Show, value.LostCommits, value.Checks, value.ChangedChecks)
 	default:
 		return ""
 	}
